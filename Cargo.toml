@@ -1,7 +1,13 @@
-[package]
-name = "WebARKitLib.rs"
+[workspace]
+members = [
+    "crates/core",
+]
+exclude = [
+    ".agents",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 authors = ["kalwalt <github@kalwaltart.it>"]
 edition = "2021"
-
-[dependnencies]

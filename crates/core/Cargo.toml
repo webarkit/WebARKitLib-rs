@@ -1,0 +1,8 @@
+[package]
+name = "core"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+byteorder = "1.5.0"
