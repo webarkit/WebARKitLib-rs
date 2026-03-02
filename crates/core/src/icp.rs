@@ -159,6 +159,7 @@ pub fn icp_point(
     mat_xw2xc: &mut [[ARdouble; 4]; 3],
 ) -> Result<ARdouble, &'static str> {
     if data.screen_coord.len() < 3 || data.world_coord.len() < 3 {
+        println!("ICP Point: Not enough points");
         return Err("Not enough points for ICP");
     }
 
@@ -192,10 +193,21 @@ pub fn icp_point(
             du[j * 2 + 1] = dy;
         }
         err1 /= num_points as ARdouble;
+        
+        // println!("Loop {}, err1: {}, err0: {}", loop_idx, err1, err0);
 
-        if err1 < handle.break_loop_error_thresh { break; }
-        if loop_idx > 0 && err1 < handle.break_loop_error_thresh2 && (err1 / err0) > handle.break_loop_error_ratio_thresh { break; }
-        if loop_idx == handle.max_loop { break; }
+        if err1 < handle.break_loop_error_thresh { 
+            // println!("ICP Point: Break loop threshold reached");
+            break; 
+        }
+        if loop_idx > 0 && err1 < handle.break_loop_error_thresh2 && (err1 / err0) > handle.break_loop_error_ratio_thresh { 
+            // println!("ICP Point: Break loop ratio reached");
+            break; 
+        }
+        if loop_idx == handle.max_loop { 
+            // println!("ICP Point: Max loop reached");
+            break; 
+        }
         err0 = err1;
 
         for j in 0..num_points {
@@ -208,7 +220,10 @@ pub fn icp_point(
             }
         }
 
-        icp_get_delta_s(&mut ds, &du, &j_u_s_table, num_points * 2)?;
+        if let Err(e) = icp_get_delta_s(&mut ds, &du, &j_u_s_table, num_points * 2) {
+            println!("ICP Point: icp_get_delta_s failed: {}", e);
+            return Err(e);
+        }
         icp_update_mat(mat_xw2xc, &ds);
 
         loop_idx += 1;
@@ -271,20 +286,26 @@ fn icp_get_j_t_s(j_t_s: &mut [[ARdouble; 6]; 12]) {
 }
 
 fn icp_get_j_xc_s(j_xc_s: &mut [[ARdouble; 6]; 3], camera_coord: &mut ICP3DCoordT, t0: &[[ARdouble; 4]; 3], world_coord: &ICP3DCoordT) {
-    let mut j_xc_t_flat = [0.0; 36];
-    
-    let mut write_j_xc_t = |r: usize, c: usize, val: f64| j_xc_t_flat[r * 12 + c] = val;
+    let mut j_xc_t = [[0.0; 12]; 3];
+
+    camera_coord.x = t0[0][0]*world_coord.x + t0[0][1]*world_coord.y + t0[0][2]*world_coord.z + t0[0][3];
+    camera_coord.y = t0[1][0]*world_coord.x + t0[1][1]*world_coord.y + t0[1][2]*world_coord.z + t0[1][3];
+    camera_coord.z = t0[2][0]*world_coord.x + t0[2][1]*world_coord.y + t0[2][2]*world_coord.z + t0[2][3];
 
     for j in 0..3 {
-        write_j_xc_t(j, j * 3 + 0, world_coord.x);
-        write_j_xc_t(j, j * 3 + 1, world_coord.y);
-        write_j_xc_t(j, j * 3 + 2, world_coord.z);
-        write_j_xc_t(j, 9, if j == 0 { 1.0 } else { 0.0 });
-        write_j_xc_t(j, 10, if j == 1 { 1.0 } else { 0.0 });
-        write_j_xc_t(j, 11, if j == 2 { 1.0 } else { 0.0 });
+        j_xc_t[j][0] = t0[j][0] * world_coord.x;
+        j_xc_t[j][1] = t0[j][0] * world_coord.y;
+        j_xc_t[j][2] = t0[j][0] * world_coord.z;
+        j_xc_t[j][3] = t0[j][1] * world_coord.x;
+        j_xc_t[j][4] = t0[j][1] * world_coord.y;
+        j_xc_t[j][5] = t0[j][1] * world_coord.z;
+        j_xc_t[j][6] = t0[j][2] * world_coord.x;
+        j_xc_t[j][7] = t0[j][2] * world_coord.y;
+        j_xc_t[j][8] = t0[j][2] * world_coord.z;
+        j_xc_t[j][9] = t0[j][0];
+        j_xc_t[j][10] = t0[j][1];
+        j_xc_t[j][11] = t0[j][2];
     }
-    
-    icp_get_xc_from_xw_by_mat_xw2xc(camera_coord, t0, world_coord);
 
     let mut j_t_s = [[0.0; 6]; 12];
     icp_get_j_t_s(&mut j_t_s);
@@ -293,7 +314,7 @@ fn icp_get_j_xc_s(j_xc_s: &mut [[ARdouble; 6]; 3], camera_coord: &mut ICP3DCoord
         for i in 0..6 {
             j_xc_s[j][i] = 0.0;
             for k in 0..12 {
-                j_xc_s[j][i] += j_xc_t_flat[j * 12 + k] * j_t_s[k][i];
+                j_xc_s[j][i] += j_xc_t[j][k] * j_t_s[k][i];
             }
         }
     }
@@ -398,13 +419,313 @@ pub fn icp_get_delta_s(s: &mut [ARdouble; 6], du: &[ARdouble], j_u_s: &[[ARdoubl
     let mut mat_jt_j = (&mat_jt * &mat_j)?;
     let mat_jt_u = (&mat_jt * &mat_u)?;
 
-    mat_jt_j.self_inv()?;
+    if let Err(e) = mat_jt_j.self_inv() {
+        return Err(e);
+    }
 
     let mat_s = (&mat_jt_j * &mat_jt_u)?;
 
     for i in 0..6 {
         s[i] = mat_s.m[i];
     }
+
+    Ok(())
+}
+
+pub fn icp_create_handle(mat_xc2u: &[[ARdouble; 4]; 3]) -> Result<*mut ICPHandleT, &'static str> {
+    let mut handle = Box::new(ICPHandleT::default());
+    for j in 0..3 {
+        for i in 0..4 {
+            handle.mat_xc2u[j][i] = mat_xc2u[j][i];
+        }
+    }
+    Ok(Box::into_raw(handle))
+}
+
+pub fn icp_delete_handle(handle: &mut *mut ICPHandleT) -> Result<(), &'static str> {
+    if handle.is_null() {
+        return Err("Null handle");
+    }
+    unsafe {
+        drop(Box::from_raw(*handle));
+    }
+    *handle = std::ptr::null_mut();
+    Ok(())
+}
+
+fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
+    let mut v1 = [rot[0][0], rot[0][1], rot[0][2]];
+    let mut v2 = [rot[1][0], rot[1][1], rot[1][2]];
+    let mut v3 = [
+        v1[1] * v2[2] - v1[2] * v2[1],
+        v1[2] * v2[0] - v1[0] * v2[2],
+        v1[0] * v2[1] - v1[1] * v2[0],
+    ];
+    let w = (v3[0]*v3[0] + v3[1]*v3[1] + v3[2]*v3[2]).sqrt();
+    if w == 0.0 { return Err("Collinear vectors in check_rotation"); }
+    v3[0] /= w; v3[1] /= w; v3[2] /= w;
+
+    let mut cb = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+    if cb < 0.0 { cb = -cb; }
+    let ca = ((cb + 1.0).sqrt() + (1.0 - cb).sqrt()) * 0.5;
+
+    let mut rot_flag = 0;
+    if v3[1] * v1[0] - v1[1] * v3[0] != 0.0 {
+        rot_flag = 0;
+    } else {
+        if v3[2] * v1[0] - v1[2] * v3[0] != 0.0 {
+            v1.swap(1, 2);
+            v3.swap(1, 2);
+            rot_flag = 1;
+        } else {
+            v1.swap(0, 2);
+            v3.swap(0, 2);
+            rot_flag = 2;
+        }
+    }
+
+    let denom1 = v3[1] * v1[0] - v1[1] * v3[0];
+    if denom1 == 0.0 { return Err("check_rotation denom1 is 0"); }
+    let k1 = (v1[1]*v3[2] - v3[1]*v1[2]) / denom1;
+    let k2 = (v3[1] * ca) / denom1;
+
+    let denom2 = v3[0] * v1[1] - v1[0] * v3[1];
+    if denom2 == 0.0 { return Err("check_rotation denom2 is 0"); }
+    let k3 = (v1[0]*v3[2] - v3[0]*v1[2]) / denom2;
+    let k4 = (v3[0] * ca) / denom2;
+
+    let a = k1*k1 + k3*k3 + 1.0;
+    let b = k1*k2 + k3*k4;
+    let c = k2*k2 + k4*k4 - 1.0;
+
+    let d = b*b - a*c;
+    if d < 0.0 { return Err("check_rotation complex roots"); }
+    
+    let mut r1 = (-b + d.sqrt()) / a;
+    let mut p1 = k1*r1 + k2;
+    let mut q1 = k3*r1 + k4;
+    let mut r2 = (-b - d.sqrt()) / a;
+    let mut p2 = k1*r2 + k2;
+    let mut q2 = k3*r2 + k4;
+
+    if rot_flag == 1 {
+        std::mem::swap(&mut q1, &mut r1);
+        std::mem::swap(&mut q2, &mut r2);
+        v1.swap(1, 2);
+        v3.swap(1, 2);
+    } else if rot_flag == 2 {
+        std::mem::swap(&mut p1, &mut r1);
+        std::mem::swap(&mut p2, &mut r2);
+        v1.swap(0, 2);
+        v3.swap(0, 2);
+    }
+
+    if v3[1] * v2[0] - v2[1] * v3[0] != 0.0 {
+        rot_flag = 0;
+    } else {
+        if v3[2] * v2[0] - v2[2] * v3[0] != 0.0 {
+            v2.swap(1, 2);
+            v3.swap(1, 2);
+            rot_flag = 1;
+        } else {
+            v2.swap(0, 2);
+            v3.swap(0, 2);
+            rot_flag = 2;
+        }
+    }
+
+    let denom3 = v3[1] * v2[0] - v2[1] * v3[0];
+    if denom3 == 0.0 { return Err("check_rotation denom3 is 0"); }
+    let k1_2 = (v2[1]*v3[2] - v3[1]*v2[2]) / denom3;
+    let k2_2 = (v3[1] * ca) / denom3;
+
+    let denom4 = v3[0] * v2[1] - v2[0] * v3[1];
+    if denom4 == 0.0 { return Err("check_rotation denom4 is 0"); }
+    let k3_2 = (v2[0]*v3[2] - v3[0]*v2[2]) / denom4;
+    let k4_2 = (v3[0] * ca) / denom4;
+
+    let a_2 = k1_2*k1_2 + k3_2*k3_2 + 1.0;
+    let b_2 = k1_2*k2_2 + k3_2*k4_2;
+    let c_2 = k2_2*k2_2 + k4_2*k4_2 - 1.0;
+
+    let d_2 = b_2*b_2 - a_2*c_2;
+    if d_2 < 0.0 { return Err("check_rotation complex roots 2"); }
+
+    let mut r3 = (-b_2 + d_2.sqrt()) / a_2;
+    let mut p3 = k1_2*r3 + k2_2;
+    let mut q3 = k3_2*r3 + k4_2;
+    let mut r4 = (-b_2 - d_2.sqrt()) / a_2;
+    let mut p4 = k1_2*r4 + k2_2;
+    let mut q4 = k3_2*r4 + k4_2;
+
+    if rot_flag == 1 {
+        std::mem::swap(&mut q3, &mut r3);
+        std::mem::swap(&mut q4, &mut r4);
+        v2.swap(1, 2);
+        v3.swap(1, 2);
+    } else if rot_flag == 2 {
+        std::mem::swap(&mut p3, &mut r3);
+        std::mem::swap(&mut p4, &mut r4);
+        v2.swap(0, 2);
+        v3.swap(0, 2);
+    }
+
+    let e1 = (p1*p3 + q1*q3 + r1*r3).abs();
+    let e2 = (p1*p4 + q1*q4 + r1*r4).abs();
+    let e3 = (p2*p3 + q2*q3 + r2*r3).abs();
+    let e4 = (p2*p4 + q2*q4 + r2*r4).abs();
+
+    if e1 < e2 {
+        if e1 < e3 {
+            if e1 < e4 {
+                rot[0][0] = p1; rot[0][1] = q1; rot[0][2] = r1;
+                rot[1][0] = p3; rot[1][1] = q3; rot[1][2] = r3;
+            } else {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p4; rot[1][1] = q4; rot[1][2] = r4;
+            }
+        } else {
+            if e3 < e4 {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p3; rot[1][1] = q3; rot[1][2] = r3;
+            } else {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p4; rot[1][1] = q4; rot[1][2] = r4;
+            }
+        }
+    } else {
+        if e2 < e3 {
+            if e2 < e4 {
+                rot[0][0] = p1; rot[0][1] = q1; rot[0][2] = r1;
+                rot[1][0] = p4; rot[1][1] = q4; rot[1][2] = r4;
+            } else {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p4; rot[1][1] = q4; rot[1][2] = r4;
+            }
+        } else {
+            if e3 < e4 {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p3; rot[1][1] = q3; rot[1][2] = r3;
+            } else {
+                rot[0][0] = p2; rot[0][1] = q2; rot[0][2] = r2;
+                rot[1][0] = p4; rot[1][1] = q4; rot[1][2] = r4;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub fn icp_get_init_xw2xc_from_planar_data(
+    mat_xc2u: &[[ARdouble; 4]; 3],
+    screen_coord: &[ICP2DCoordT],
+    world_coord: &[ICP3DCoordT],
+    num: usize,
+    init_mat_xw2xc: &mut [[ARdouble; 4]; 3]
+) -> Result<(), &'static str> {
+    if num < 4 { return Err("Needs at least 4 points"); }
+    for i in 0..num {
+        if world_coord[i].z != 0.0 { return Err("Points must be planar (Z=0)"); }
+    }
+    if mat_xc2u[0][0] == 0.0 { return Err("mat_xc2u[0][0] is zero"); }
+    if mat_xc2u[1][0] != 0.0 { return Err("mat_xc2u[1][0] is not zero"); }
+    if mat_xc2u[1][1] == 0.0 { return Err("mat_xc2u[1][1] is zero"); }
+    if mat_xc2u[2][0] != 0.0 || mat_xc2u[2][1] != 0.0 || mat_xc2u[2][2] != 1.0 {
+        return Err("mat_xc2u row 2 invalid");
+    }
+    if mat_xc2u[0][3] != 0.0 || mat_xc2u[1][3] != 0.0 || mat_xc2u[2][3] != 0.0 {
+        return Err("mat_xc2u translation column invalid");
+    }
+
+    let mut mat_a = ARMat::new(num as i32 * 2, 8);
+    let mut mat_b = ARMat::new(num as i32 * 2, 1);
+
+    for i in 0..num {
+        mat_a.m[i * 16 + 0] = world_coord[i].x;
+        mat_a.m[i * 16 + 1] = world_coord[i].y;
+        mat_a.m[i * 16 + 2] = 1.0;
+        mat_a.m[i * 16 + 3] = 0.0;
+        mat_a.m[i * 16 + 4] = 0.0;
+        mat_a.m[i * 16 + 5] = 0.0;
+        mat_a.m[i * 16 + 6] = -(world_coord[i].x) * (screen_coord[i].x);
+        mat_a.m[i * 16 + 7] = -(world_coord[i].y) * (screen_coord[i].x);
+        
+        mat_a.m[i * 16 + 8]  = 0.0;
+        mat_a.m[i * 16 + 9]  = 0.0;
+        mat_a.m[i * 16 + 10] = 0.0;
+        mat_a.m[i * 16 + 11] = world_coord[i].x;
+        mat_a.m[i * 16 + 12] = world_coord[i].y;
+        mat_a.m[i * 16 + 13] = 1.0;
+        mat_a.m[i * 16 + 14] = -(world_coord[i].x) * (screen_coord[i].y);
+        mat_a.m[i * 16 + 15] = -(world_coord[i].y) * (screen_coord[i].y);
+
+        mat_b.m[i * 2 + 0] = screen_coord[i].x;
+        mat_b.m[i * 2 + 1] = screen_coord[i].y;
+    }
+    
+    let mat_at = mat_a.transpose();
+    let mut mat_ata = (&mat_at * &mat_a)?;
+    let mat_atb = (&mat_at * &mat_b)?;
+    
+    // println!("mat_ata:\n{:?}", mat_ata);
+    mat_ata.self_inv()?;
+    // println!("mat_ata_inv:\n{:?}", mat_ata);
+    
+    let mat_c = (&mat_ata * &mat_atb)?;
+    // println!("mat_c:\n{:?}", mat_c);
+
+    let mut v = [[0.0; 3]; 3];
+    let mut t = [0.0; 3];
+
+    v[0][2] = mat_c.m[6];
+    v[0][1] = (mat_c.m[3] - mat_xc2u[1][2] * v[0][2]) / mat_xc2u[1][1];
+    v[0][0] = (mat_c.m[0] - mat_xc2u[0][2] * v[0][2] - mat_xc2u[0][1] * v[0][1]) / mat_xc2u[0][0];
+    
+    v[1][2] = mat_c.m[7];
+    v[1][1] = (mat_c.m[4] - mat_xc2u[1][2] * v[1][2]) / mat_xc2u[1][1];
+    v[1][0] = (mat_c.m[1] - mat_xc2u[0][2] * v[1][2] - mat_xc2u[0][1] * v[1][1]) / mat_xc2u[0][0];
+    
+    t[2] = 1.0;
+    t[1] = (mat_c.m[5] - mat_xc2u[1][2] * t[2]) / mat_xc2u[1][1];
+    t[0] = (mat_c.m[2] - mat_xc2u[0][2] * t[2] - mat_xc2u[0][1] * t[1]) / mat_xc2u[0][0];
+
+    let mut l1 = (v[0][0]*v[0][0] + v[0][1]*v[0][1] + v[0][2]*v[0][2]).sqrt();
+    let mut l2 = (v[1][0]*v[1][0] + v[1][1]*v[1][1] + v[1][2]*v[1][2]).sqrt();
+    
+    v[0][0] /= l1;
+    v[0][1] /= l1;
+    v[0][2] /= l1;
+    
+    v[1][0] /= l2;
+    v[1][1] /= l2;
+    v[1][2] /= l2;
+    
+    t[0] /= (l1+l2)/2.0;
+    t[1] /= (l1+l2)/2.0;
+    t[2] /= (l1+l2)/2.0;
+    
+    if t[2] < 0.0 {
+        v[0][0] = -v[0][0]; v[0][1] = -v[0][1]; v[0][2] = -v[0][2];
+        v[1][0] = -v[1][0]; v[1][1] = -v[1][1]; v[1][2] = -v[1][2];
+        t[0] = -t[0]; t[1] = -t[1]; t[2] = -t[2];
+    }
+    
+    
+    // println!("v after rotation check:\n{:?}", v);
+    
+    v[2][0] = v[0][1] * v[1][2] - v[0][2] * v[1][1];
+    v[2][1] = v[0][2] * v[1][0] - v[0][0] * v[1][2];
+    v[2][2] = v[0][0] * v[1][1] - v[0][1] * v[1][0];
+    
+    l1 = (v[2][0]*v[2][0] + v[2][1]*v[2][1] + v[2][2]*v[2][2]).sqrt();
+    v[2][0] /= l1;
+    v[2][1] /= l1;
+    v[2][2] /= l1;
+    
+    init_mat_xw2xc[0][0] = v[0][0]; init_mat_xw2xc[1][0] = v[0][1]; init_mat_xw2xc[2][0] = v[0][2];
+    init_mat_xw2xc[0][1] = v[1][0]; init_mat_xw2xc[1][1] = v[1][1]; init_mat_xw2xc[2][1] = v[1][2];
+    init_mat_xw2xc[0][2] = v[2][0]; init_mat_xw2xc[1][2] = v[2][1]; init_mat_xw2xc[2][2] = v[2][2];
+    init_mat_xw2xc[0][3] = t[0];    init_mat_xw2xc[1][3] = t[1];    init_mat_xw2xc[2][3] = t[2];
 
     Ok(())
 }
