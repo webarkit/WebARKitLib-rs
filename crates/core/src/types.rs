@@ -166,30 +166,27 @@ impl Default for ARTrackingHistory {
 
 pub type ARLabelingLabelType = i16;
 
-#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ARLabelInfo {
-    pub label_image: *mut ARLabelingLabelType,
+    pub label_image: Vec<ARLabelingLabelType>,
     pub label_num: i32,
-    pub area: Box<[i32; AR_LABELING_WORK_SIZE]>,
-    pub clip: Box<[[i32; 4]; AR_LABELING_WORK_SIZE]>,
-    pub pos: Box<[[ARdouble; 2]; AR_LABELING_WORK_SIZE]>,
-    pub work: Box<[i32; AR_LABELING_WORK_SIZE]>,
-    pub work2: Box<[i32; AR_LABELING_WORK_SIZE * 7]>,
+    pub area: Vec<i32>,
+    pub clip: Vec<[i32; 4]>,
+    pub pos: Vec<[ARdouble; 2]>,
+    pub work: Vec<i32>,
+    pub work2: Vec<i32>,
 }
 
 impl Default for ARLabelInfo {
     fn default() -> Self {
         Self {
-            label_image: std::ptr::null_mut(),
+            label_image: Vec::new(),
             label_num: 0,
-            // Using vec![].into_boxed_slice().try_into().unwrap() to allocate directly on the heap
-            // to bypass the stack entirely.
-            area: vec![0; AR_LABELING_WORK_SIZE].into_boxed_slice().try_into().unwrap(),
-            clip: vec![[0; 4]; AR_LABELING_WORK_SIZE].into_boxed_slice().try_into().unwrap(),
-            pos: vec![[0.0; 2]; AR_LABELING_WORK_SIZE].into_boxed_slice().try_into().unwrap(),
-            work: vec![0; AR_LABELING_WORK_SIZE].into_boxed_slice().try_into().unwrap(),
-            work2: vec![0; AR_LABELING_WORK_SIZE * 7].into_boxed_slice().try_into().unwrap(),
+            area: vec![0; AR_LABELING_WORK_SIZE],
+            clip: vec![[0; 4]; AR_LABELING_WORK_SIZE],
+            pos: vec![[0.0; 2]; AR_LABELING_WORK_SIZE],
+            work: vec![0; AR_LABELING_WORK_SIZE],
+            work2: vec![0; AR_LABELING_WORK_SIZE * 7],
         }
     }
 }
@@ -322,17 +319,7 @@ impl Default for ARHandle {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ICPHandleT {
-    _dummy: u8,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ICPStereoHandleT {
-    _dummy: u8,
-}
+pub use crate::icp::{ICPHandleT, ICPStereoHandleT};
 
 /// Structure holding state of an instance of the monocular pose estimator.
 #[derive(Debug, Clone)]
