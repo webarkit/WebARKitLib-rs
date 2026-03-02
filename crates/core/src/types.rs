@@ -8,6 +8,32 @@ pub const AR_CHAIN_MAX: usize = 10000;
 pub const AR_SQUARE_MAX: usize = 30;
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
+/// A structure to hold a timestamp in seconds and microseconds, with arbitrary epoch.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[repr(C)]
+pub struct AR2VideoTimestampT {
+    pub sec: u64,
+    pub usec: u32,
+}
+
+/// A structure which carries information about a video frame retrieved by the video library.
+#[derive(Debug, Clone, Default)]
+pub struct AR2VideoBufferT {
+    /// A pointer to the packed video data for this video frame.
+    /// In Rust, we use a slice or Vec depending on ownership, usually represented as a raw slice or Vec.
+    pub buff: Option<Vec<u8>>,
+    /// For multi-planar video frames, arrays of planes.
+    pub buf_planes: Option<Vec<Vec<u8>>>,
+    /// Number of planes.
+    pub buf_plane_count: u32,
+    /// Luminance-only version of the image.
+    pub buff_luma: Option<Vec<u8>>,
+    /// Set to true when buff is valid.
+    pub fill_flag: bool,
+    /// Time at which the buffer was filled.
+    pub time: AR2VideoTimestampT,
+}
+
 /// Structure holding camera parameters, including image size, projection matrix and lens distortion parameters.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[repr(C)]
@@ -130,19 +156,17 @@ impl Default for ARMarkerInfo {
 }
 
 // Opaque/dummy types for ARHandle dependencies
-#[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ARParamLTf {
-    pub i2o: *mut f32,
-    pub o2i: *mut f32,
+    pub i2o: Vec<f32>,
+    pub o2i: Vec<f32>,
     pub xsize: i32,
     pub ysize: i32,
     pub x_off: i32,
     pub y_off: i32,
 }
 
-#[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ARParamLT {
     pub param: ARParam,
     pub param_ltf: ARParamLTf,
@@ -191,10 +215,16 @@ impl Default for ARLabelInfo {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ARPattHandle {
-    _dummy: u8,
+    pub patt_num: i32,
+    pub patt_num_max: i32,
+    pub pattf: Vec<i32>,
+    pub patt: Vec<Vec<i32>>,
+    pub pattpow: Vec<ARdouble>,
+    pub patt_bw: Vec<Vec<i32>>,
+    pub pattpow_bw: Vec<ARdouble>,
+    pub patt_size: i32,
 }
 
 #[repr(C)]
