@@ -9,6 +9,7 @@ pub const AR_SQUARE_FIT_THRESH: f64 = 0.05;
 pub const AR_CHAIN_MAX: usize = 10000;
 pub const AR_SQUARE_MAX: usize = 30;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ImageProcMode {
     FrameImage = 0,
     FieldImage = 1,
@@ -55,6 +56,10 @@ pub fn ar_detect_marker(
         &mut ar_handle.label_info,
         ar_handle.ar_debug != 0
     )?;
+    
+    if ar_handle.ar_debug != 0 {
+        println!("[DEBUG] ar_labeling found {} labels.", ar_handle.label_info.label_num);
+    }
 
     let image_proc_mode = if ar_handle.ar_image_proc_mode == 0 {
         ImageProcMode::FrameImage
@@ -74,6 +79,10 @@ pub fn ar_detect_marker(
         &mut ar_handle.marker2_num,
     )?;
 
+    if ar_handle.ar_debug != 0 {
+        println!("[DEBUG] ar_detect_marker2 found {} square candidates.", ar_handle.marker2_num);
+    }
+
     if ar_handle.ar_param_lt.is_null() {
         return Err("ARParamLT is null in ARHandle");
     }
@@ -86,6 +95,12 @@ pub fn ar_detect_marker(
     
     let param_ltf = unsafe { &(*ar_handle.ar_param_lt).param_ltf };
 
+    let patt_handle_opt = if !ar_handle.patt_handle.is_null() {
+        Some(unsafe { &*ar_handle.patt_handle })
+    } else {
+        None
+    };
+
     ar_get_marker_info(
         color_buff,
         ar_handle.xsize,
@@ -97,10 +112,15 @@ pub fn ar_detect_marker(
         ar_handle.ar_pattern_detection_mode,
         param_ltf,
         ar_handle.patt_ratio,
+        patt_handle_opt,
         &mut *ar_handle.marker_info,
         &mut ar_handle.marker_num,
         ar_handle.matrix_code_type,
     )?;
+
+    if ar_handle.ar_debug != 0 {
+        println!("[DEBUG] ar_get_marker_info produced {} final markers.", ar_handle.marker_num);
+    }
 
     Ok(())
 }
@@ -134,12 +154,15 @@ pub fn ar_detect_marker2(
     let label_num = label_info.label_num as usize;
     for i in 0..label_num {
         if label_info.area[i] < area_min_local || label_info.area[i] > area_max_local {
+            println!("[DEBUG] Label {} skipped due to Area ({}) not in [{}, {}]", i, label_info.area[i], area_min_local, area_max_local); 
             continue;
         }
         if label_info.clip[i][0] <= 1 || label_info.clip[i][1] >= xsize_local - 2 {
+            println!("[DEBUG] Label {} skipped due to X-Clip bounds", i);
             continue;
         }
         if label_info.clip[i][2] <= 1 || label_info.clip[i][3] >= ysize_local - 2 {
+            println!("[DEBUG] Label {} skipped due to Y-Clip bounds", i);
             continue;
         }
 
@@ -156,11 +179,13 @@ pub fn ar_detect_marker2(
         );
         
         if ret.is_err() {
+            println!("[DEBUG] ar_get_contour failed for label {}: {:?}", i, ret.unwrap_err());
             continue;
         }
 
         let ret = check_square(label_info.area[i], &mut current_marker, square_fit_thresh);
         if ret.is_err() {
+            println!("[DEBUG] check_square failed for label {}: {:?}", i, ret.unwrap_err());
             continue;
         }
 
@@ -239,8 +264,8 @@ fn ar_get_contour(
     
     let mut sx = -1;
     let sy = clip[2];
-    let mut p_idx = (sy * xsize + clip[0]) as usize;
     
+    let mut p_idx = (sy * xsize + clip[0]) as usize;
     for i in clip[0]..=clip[1] {
         if p_idx < limage.len() {
             let val = limage[p_idx];
@@ -253,6 +278,18 @@ fn ar_get_contour(
     }
     
     if sx == -1 {
+        let mut row_dump = String::new();
+        let mut p_idx_d = (sy * xsize + clip[0]) as usize;
+        for _ in clip[0]..=clip[1] {
+            if p_idx_d < limage.len() {
+                let v = limage[p_idx_d];
+                if v > 0 {
+                    row_dump.push_str(&format!("{}({}),", v, label_ref[(v - 1) as usize]));
+                }
+            }
+            p_idx_d += 1;
+        }
+        println!("[DEBUG] ar_get_contour failed. label={}. clip={:?}. Found on row: {}", label, clip, row_dump);
         return Err("Contour start point not found");
     }
 
@@ -318,9 +355,11 @@ fn ar_get_contour(
         marker_info2.x_coord[i - v1] = marker_info2.x_coord[i];
         marker_info2.y_coord[i - v1] = marker_info2.y_coord[i];
     }
+    
+    let offset = coord_num - v1;
     for i in 0..v1 {
-        marker_info2.x_coord[i - v1 + coord_num] = wx[i];
-        marker_info2.y_coord[i - v1 + coord_num] = wy[i];
+        marker_info2.x_coord[offset + i] = wx[i];
+        marker_info2.y_coord[offset + i] = wy[i];
     }
     
     let end_idx = marker_info2.coord_num as usize;
@@ -506,16 +545,17 @@ pub fn ar_get_line(
 
 /// Ports arGetMarkerInfo from arGetMarkerInfo.c
 pub fn ar_get_marker_info(
-    _image: &[u8],
-    _xsize: i32,
-    _ysize: i32,
-    _pixel_format: crate::types::ARPixelFormat,
+    image: &[u8],
+    xsize: i32,
+    ysize: i32,
+    pixel_format: crate::types::ARPixelFormat,
     marker_info2: &[ARMarkerInfo2],
     marker2_num: i32,
-    _image_proc_mode: ImageProcMode,
-    _patt_detect_mode: i32,
+    image_proc_mode: ImageProcMode,
+    patt_detect_mode: i32,
     param_ltf: &ARParamLTf,
-    _patt_ratio: ARdouble,
+    patt_ratio: ARdouble,
+    patt_handle_opt: Option<&crate::types::ARPattHandle>,
     marker_info: &mut [ARMarkerInfo],
     marker_num: &mut i32,
     _matrix_code_type: crate::types::ARMatrixCodeType,
@@ -544,7 +584,68 @@ pub fn ar_get_marker_info(
             continue;
         }
 
-        // TODO: Pattern matching integration
+        if let Some(patt_handle) = patt_handle_opt {
+            if patt_handle.patt_num > 0 {
+                let patt_size = patt_handle.patt_size;
+            let ext_patt_len = if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR {
+                (patt_size * patt_size * 3) as usize
+            } else {
+                (patt_size * patt_size) as usize
+            };
+            let mut ext_patt = vec![0u8; ext_patt_len];
+            
+            let res = crate::pattern::ar_patt_get_image(
+                image_proc_mode as i32,
+                patt_detect_mode,
+                patt_size,
+                patt_size * 2, // Sample size factor (e.g. AR_PATT_SAMPLE_FACTOR1)
+                image,
+                xsize,
+                ysize,
+                pixel_format,
+                &marker_info[j].vertex,
+                patt_ratio,
+                &mut ext_patt,
+            );
+            
+            if res.is_ok() {
+                let mut p_code = -1;
+                let mut p_dir = 0;
+                let mut p_cf = -1.0;
+                let match_res = crate::pattern::pattern_match(
+                    patt_handle,
+                    patt_detect_mode,
+                    &ext_patt,
+                    patt_size,
+                    &mut p_code,
+                    &mut p_dir,
+                    &mut p_cf,
+                );
+                
+                if match_res.is_ok() && p_code >= 0 {
+                    marker_info[j].id = p_code;
+                    marker_info[j].dir = p_dir;
+                    marker_info[j].cf = p_cf;
+                } else {
+                    marker_info[j].id = -1;
+                    marker_info[j].dir = 0;
+                    marker_info[j].cf = p_cf;
+                }
+            } else {
+                marker_info[j].id = -1;
+                marker_info[j].dir = 0;
+                marker_info[j].cf = -1.0;
+            }
+        } else {
+            marker_info[j].id = -1;
+            marker_info[j].dir = 0;
+            marker_info[j].cf = 0.0;
+        }
+        } else {
+            marker_info[j].id = -1;
+            marker_info[j].dir = 0;
+            marker_info[j].cf = 0.0;
+        }
 
         j += 1;
     }
