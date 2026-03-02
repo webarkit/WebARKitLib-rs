@@ -82,12 +82,11 @@ pub fn ar_labeling(
 
     // Scan the inner pixel region (skip boundaries 0, and max-1)
     for j in 1..lysize - 1 {
-        let mut source_idx = match proc_mode {
-            ImageProcMode::FrameImage => j * row_stride + 1,
-            ImageProcMode::FieldImage => (j * 2 + 1) * xsize as usize + 2,
-        };
-
         for i in 1..lxsize - 1 {
+            let source_idx = match proc_mode {
+                ImageProcMode::FrameImage => j * row_stride + i,
+                ImageProcMode::FieldImage => (j * 2 + 1) * xsize as usize + (i * 2), // See AR_LABELING_FIELD_IMAGE macro
+            };
             let pixel = image[source_idx];
 
             let p_idx = j * lxsize + i;
@@ -170,6 +169,7 @@ pub fn ar_labeling(
                     if work2[l + 4] < i as i32 { work2[l + 4] = i as i32; }
                 } else {
                     wk_max += 1;
+                    // println!("[DEBUG] Creating new label {} at ({}, {})", wk_max, i, j);
                     if wk_max > AR_LABELING_WORK_SIZE {
                         return Err("Labeling work array overflow");
                     }
@@ -185,9 +185,9 @@ pub fn ar_labeling(
                     work2[l + 5] = j as i32;  // clip[2] (ymin)
                     work2[l + 6] = j as i32;  // clip[3] (ymax)
                 }
+            } else {
+                label_img[p_idx] = 0;
             }
-
-            source_idx += col_stride;
         }
     }
 
@@ -246,16 +246,6 @@ pub fn ar_labeling(
         if label_info.area[i] > 0 {
             label_info.pos[i][0] /= label_info.area[i] as ARdouble;
             label_info.pos[i][1] /= label_info.area[i] as ARdouble;
-        }
-    }
-
-    // Also correct labeling image 
-    for r in 1..lysize - 1 {
-        for c in 1..lxsize - 1 {
-            let label_val = label_img[r * lxsize + c];
-            if label_val > 0 {
-                label_img[r * lxsize + c] = work[label_val as usize - 1] as crate::types::ARLabelingLabelType;
-            }
         }
     }
 

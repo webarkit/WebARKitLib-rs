@@ -279,6 +279,173 @@ pub fn pattern_match(
     }
 }
 
+pub fn get_cpara(world: &[[ARdouble; 2]; 4], vertex: &[[ARdouble; 2]; 4], para: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
+    use crate::math::{ARMat};
+    let mut a = ARMat::new(8, 8);
+    let mut b = ARMat::new(8, 1);
+
+    for i in 0..4 {
+        a.m[i * 16 + 0] = world[i][0];
+        a.m[i * 16 + 1] = world[i][1];
+        a.m[i * 16 + 2] = 1.0;
+        a.m[i * 16 + 3] = 0.0;
+        a.m[i * 16 + 4] = 0.0;
+        a.m[i * 16 + 5] = 0.0;
+        a.m[i * 16 + 6] = -world[i][0] * vertex[i][0];
+        a.m[i * 16 + 7] = -world[i][1] * vertex[i][0];
+        
+        a.m[i * 16 + 8] = 0.0;
+        a.m[i * 16 + 9] = 0.0;
+        a.m[i * 16 + 10] = 0.0;
+        a.m[i * 16 + 11] = world[i][0];
+        a.m[i * 16 + 12] = world[i][1];
+        a.m[i * 16 + 13] = 1.0;
+        a.m[i * 16 + 14] = -world[i][0] * vertex[i][1];
+        a.m[i * 16 + 15] = -world[i][1] * vertex[i][1];
+
+        b.m[i * 2 + 0] = vertex[i][0];
+        b.m[i * 2 + 1] = vertex[i][1];
+    }
+
+    a.self_inv()?;
+    let c = (&a * &b)?;
+
+    for i in 0..2 {
+        para[i][0] = c.m[i * 3 + 0];
+        para[i][1] = c.m[i * 3 + 1];
+        para[i][2] = c.m[i * 3 + 2];
+    }
+    para[2][0] = c.m[6];
+    para[2][1] = c.m[7];
+    para[2][2] = 1.0;
+
+    Ok(())
+}
+
+pub fn ar_patt_get_image(
+    image_proc_mode: i32,
+    patt_detect_mode: i32,
+    patt_size: i32,
+    sample_size: i32,
+    image: &[u8],
+    xsize: i32,
+    ysize: i32,
+    _pixel_format: crate::types::ARPixelFormat,
+    vertex: &[[ARdouble; 2]; 4],
+    patt_ratio: ARdouble,
+    ext_patt: &mut [u8],
+) -> Result<(), &'static str> {
+    let mut world = [[0.0; 2]; 4];
+    let mut para = [[0.0; 3]; 3];
+
+    world[0][0] = 100.0;
+    world[0][1] = 100.0;
+    world[1][0] = 110.0;
+    world[1][1] = 100.0;
+    world[2][0] = 110.0;
+    world[2][1] = 110.0;
+    world[3][0] = 100.0;
+    world[3][1] = 110.0;
+
+    get_cpara(&world, vertex, &mut para)?;
+
+    let mut lx1 = ((vertex[0][0] - vertex[1][0]).powi(2) + (vertex[0][1] - vertex[1][1]).powi(2)) as i32;
+    let lx2 = ((vertex[2][0] - vertex[3][0]).powi(2) + (vertex[2][1] - vertex[3][1]).powi(2)) as i32;
+    let mut ly1 = ((vertex[1][0] - vertex[2][0]).powi(2) + (vertex[1][1] - vertex[2][1]).powi(2)) as i32;
+    let ly2 = ((vertex[3][0] - vertex[0][0]).powi(2) + (vertex[3][1] - vertex[0][1]).powi(2)) as i32;
+
+    if lx2 > lx1 { lx1 = lx2; }
+    if ly2 > ly1 { ly1 = ly2; }
+
+    let lx_patt = (lx1 as ARdouble * patt_ratio * patt_ratio) as i32;
+    let ly_patt = (ly1 as ARdouble * patt_ratio * patt_ratio) as i32;
+
+    let mut xdiv2 = patt_size;
+    let mut ydiv2 = patt_size;
+
+    if image_proc_mode == 0 { // AR_IMAGE_PROC_FRAME_IMAGE
+        while xdiv2 * xdiv2 < lx_patt && xdiv2 < sample_size { xdiv2 *= 2; }
+        while ydiv2 * ydiv2 < ly_patt && ydiv2 < sample_size { ydiv2 *= 2; }
+    } else {
+        while xdiv2 * xdiv2 * 4 < lx_patt && xdiv2 < sample_size { xdiv2 *= 2; }
+        while ydiv2 * ydiv2 * 4 < ly_patt && ydiv2 < sample_size { ydiv2 *= 2; }
+    }
+    
+    if xdiv2 > sample_size { xdiv2 = sample_size; }
+    if ydiv2 > sample_size { ydiv2 = sample_size; }
+
+    let xdiv = xdiv2 / patt_size;
+    let ydiv = ydiv2 / patt_size;
+    
+    let patt_ratio1 = (1.0 - patt_ratio) / 2.0 * 10.0;
+    let patt_ratio2 = patt_ratio * 10.0;
+
+    if patt_detect_mode == AR_TEMPLATE_MATCHING_COLOR {
+        let mut ext_patt2 = vec![0u32; (patt_size * patt_size * 3) as usize];
+        
+        for j in 0..ydiv2 {
+            let yw = (100.0 + patt_ratio1) + patt_ratio2 * (j as f64 + 0.5) / (ydiv2 as f64);
+            for i in 0..xdiv2 {
+                let xw = (100.0 + patt_ratio1) + patt_ratio2 * (i as f64 + 0.5) / (xdiv2 as f64);
+                let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
+                if d == 0.0 { return Err("Division by zero in homography"); }
+                
+                let xc = ((para[0][0] * xw + para[0][1] * yw + para[0][2]) / d) as i32;
+                let yc = ((para[1][0] * xw + para[1][1] * yw + para[1][2]) / d) as i32;
+
+                if xc >= 0 && xc < xsize && yc >= 0 && yc < ysize {
+                    // RGB assumes 3 bytes per pixel in the source buffer
+                    let src_idx = ((yc * xsize + xc) * 3) as usize;
+                    if src_idx + 2 < image.len() {
+                        let dst_idx = (((j / ydiv) * patt_size + (i / xdiv)) * 3) as usize;
+                        ext_patt2[dst_idx + 0] += image[src_idx + 0] as u32; // R
+                        ext_patt2[dst_idx + 1] += image[src_idx + 1] as u32; // G
+                        ext_patt2[dst_idx + 2] += image[src_idx + 2] as u32; // B
+                    }
+                }
+            }
+        }
+        
+        for i in 0..(patt_size * patt_size * 3) as usize {
+            if i < ext_patt.len() {
+                ext_patt[i] = (ext_patt2[i] / (xdiv * ydiv) as u32) as u8;
+            }
+        }
+    } else {
+        let mut ext_patt2 = vec![0u32; (patt_size * patt_size) as usize];
+        
+        for j in 0..ydiv2 {
+            let yw = (100.0 + patt_ratio1) + patt_ratio2 * (j as f64 + 0.5) / (ydiv2 as f64);
+            for i in 0..xdiv2 {
+                let xw = (100.0 + patt_ratio1) + patt_ratio2 * (i as f64 + 0.5) / (xdiv2 as f64);
+                let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
+                if d == 0.0 { return Err("Division by zero in homography"); }
+                
+                let xc = ((para[0][0] * xw + para[0][1] * yw + para[0][2]) / d) as i32;
+                let yc = ((para[1][0] * xw + para[1][1] * yw + para[1][2]) / d) as i32;
+
+                if xc >= 0 && xc < xsize && yc >= 0 && yc < ysize {
+                    // Assuming Luma takes 1 byte per pixel! Wait, if image is RGB, Luma would be 3 bytes?
+                    // if it's RGB buffer, we must convert to luma. Assuming Luma/Mono buffer passed in natively:
+                    let src_idx = (yc * xsize + xc) as usize;
+                    if src_idx < image.len() {
+                        let dst_idx = ((j / ydiv) * patt_size + (i / xdiv)) as usize;
+                        ext_patt2[dst_idx] += image[src_idx] as u32;
+                    }
+                }
+            }
+        }
+        
+        for i in 0..(patt_size * patt_size) as usize {
+            if i < ext_patt.len() {
+                ext_patt[i] = (ext_patt2[i] / (xdiv * ydiv) as u32) as u8;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
