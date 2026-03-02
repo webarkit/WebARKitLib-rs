@@ -772,4 +772,25 @@ mod tests {
         assert_eq!(vec.v.len(), 0);
         assert_eq!(vec.clm, 0);
     }
+
+    #[test]
+    fn test_self_inv_singularity_repro() {
+        // Create a 6x6 matrix similar to typical mat_jt_j in ICP
+        let mut a = ARMat::new(6, 6);
+        // Fill the diagonal to make it strictly non-singular
+        for i in 0..6 {
+            a.m[i * 6 + i] = 1.0;
+        }
+        
+        let inv_res = a.self_inv();
+        assert!(inv_res.is_ok(), "Identity matrix should never be singular");
+        
+        // Let's create a known singular matrix (two identical rows)
+        let mut b = ARMat::new(6, 6);
+        for i in 0..6 { b.m[0 * 6 + i] = 1.0; }
+        for i in 0..6 { b.m[1 * 6 + i] = 1.0; }
+        
+        let inv_res_b = b.self_inv();
+        assert!(inv_res_b.is_err(), "Matrix with identical rows must be singular");
+    }
 }

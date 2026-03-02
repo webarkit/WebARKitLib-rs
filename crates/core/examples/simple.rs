@@ -1,6 +1,7 @@
 use core::{
     marker::ar_detect_marker,
     pattern::ar_patt_load,
+    pose::{ar_3d_create_handle, ar_get_trans_mat_square, ar_3d_delete_handle},
     types::{AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARMatrixCodeType, ARPixelFormat, ARParamLT, ARParamLTf, ARParam},
     image_proc::ARImageProcInfo,
 };
@@ -12,12 +13,12 @@ fn main() {
 
     // Load ARParam
     println!("Loading camera parameters...");
-    let param_file = File::open("crates/core/examples/Data/camera_para.dat").expect("Failed to open camera_para.dat");
+    let param_file = File::open("examples/Data/camera_para.dat").expect("Failed to open camera_para.dat");
     let param = ARParam::load(param_file).expect("Failed to read camera_para.dat");
     
     // Load image
-    println!("Loading image `crates/core/examples/Data/img.jpg`...");
-    let img = ImageReader::open("crates/core/examples/Data/img.jpg").unwrap().decode().unwrap();
+    println!("Loading image `examples/Data/img.jpg`...");
+    let img = ImageReader::open("examples/Data/img.jpg").unwrap().decode().unwrap();
     let width = img.width() as i32;
     let height = img.height() as i32;
     println!("Image dimensions: {}x{}", width, height);
@@ -39,7 +40,7 @@ fn main() {
             p[0] = 255; // White region
         }
     }
-    thresh_img.save("crates/core/examples/Data/thresh.png").unwrap();
+    thresh_img.save("examples/Data/thresh.png").unwrap();
     
     // We mock an identity lookup table for the image size to avoid distortion failure
     let mut param_ltf = ARParamLTf::default();
@@ -57,9 +58,12 @@ fn main() {
     }
     
     let mut param_lt = Box::new(ARParamLT {
-        param,
+        param: param.clone(),
         param_ltf,
     });
+
+    println!("Initializing AR3DHandle for pose estimation...");
+    let mut ar3d_handle_ptr = ar_3d_create_handle(&param).expect("Failed to create AR3DHandle");
 
     // Initialize the main tracking handle
     let mut ar_handle = ARHandle::default();
@@ -86,7 +90,7 @@ fn main() {
     patt_handle.pattpow_bw = vec![0.0; 50 * 4];
     
     println!("Loading hiro pattern...");
-    match ar_patt_load(&mut patt_handle, "crates/core/examples/Data/patt.hiro") {
+    match ar_patt_load(&mut patt_handle, "examples/Data/patt.hiro") {
         Ok(idx) => println!("Pattern loaded successfully at index {}.", idx),
         Err(e) => {
             eprintln!("Failed to load pattern: {}", e);
@@ -136,18 +140,29 @@ fn main() {
                     imageproc::drawing::draw_line_segment_mut(&mut out_img, (v[1][0] as f32, v[1][1] as f32), (v[2][0] as f32, v[2][1] as f32), color);
                     imageproc::drawing::draw_line_segment_mut(&mut out_img, (v[2][0] as f32, v[2][1] as f32), (v[3][0] as f32, v[3][1] as f32), color);
                     imageproc::drawing::draw_line_segment_mut(&mut out_img, (v[3][0] as f32, v[3][1] as f32), (v[0][0] as f32, v[0][1] as f32), color);
+
+                    let mut trans_mat = [[0.0; 4]; 3];
+                    // width parameter defaults to 80.0 mm in ARToolKit standard examples
+                    let err = ar_get_trans_mat_square(unsafe { &*ar3d_handle_ptr }, marker, 80.0, &mut trans_mat).unwrap_or(100000000.0);
+                    println!("  Extracted 3D Pose (ICP Error: {:.4}):", err);
+                    println!("    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]", trans_mat[0][0], trans_mat[0][1], trans_mat[0][2], trans_mat[0][3]);
+                    println!("    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]", trans_mat[1][0], trans_mat[1][1], trans_mat[1][2], trans_mat[1][3]);
+                    println!("    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]", trans_mat[2][0], trans_mat[2][1], trans_mat[2][2], trans_mat[2][3]);
                 }
             }
 
             println!("Saving found.jpg...");
             let rgb_img = image::DynamicImage::ImageRgba8(out_img).into_rgb8();
-            rgb_img.save("crates/core/examples/Data/found.jpg").unwrap();
+            rgb_img.save("examples/Data/found.jpg").unwrap();
         },
         Err(e) => eprintln!("Error during marker detection: {}", e)
     }
 
     // Debug: Save colored label image to disk
     println!("Saving debug label image...");
+    
+    // Cleanup 3D Extrinsics Handle
+    ar_3d_delete_handle(&mut ar3d_handle_ptr).expect("Failed to delete AR3DHandle");
     let mut color_map = std::collections::HashMap::new();
     let mut label_img = image::RgbImage::new(width as u32, height as u32);
     
@@ -169,5 +184,5 @@ fn main() {
             }
         }
     }
-    label_img.save("crates/core/examples/Data/label.png").unwrap();
+    label_img.save("examples/Data/label.png").unwrap();
 }
