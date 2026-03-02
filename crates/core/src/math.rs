@@ -2,12 +2,13 @@
 //! Translated from ARToolKit C headers (matrix.h)
 
 use crate::types::ARdouble;
+use std::ops::Mul;
 
 /// Matrix structure
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct ARMat {
-    pub m: *mut ARdouble,
+    pub m: Vec<ARdouble>,
     pub row: i32,
     pub clm: i32,
 }
@@ -15,10 +16,561 @@ pub struct ARMat {
 impl Default for ARMat {
     fn default() -> Self {
         Self {
-            m: std::ptr::null_mut(),
+            m: Vec::new(),
             row: 0,
             clm: 0,
         }
+    }
+}
+
+impl ARMat {
+    /// Allocate a new matrix with specified dimensions
+    pub fn new(row: i32, clm: i32) -> Self {
+        let size = (row * clm) as usize;
+        Self {
+            m: vec![0.0; size],
+            row,
+            clm,
+        }
+    }
+
+    /// Transpose the matrix
+    pub fn transpose(&self) -> ARMat {
+        let mut dest = ARMat::new(self.clm, self.row);
+        let dest_clm = dest.clm as usize;
+        let src_clm = self.clm as usize;
+
+        for r in 0..(dest.row as usize) {
+            for c in 0..(dest.clm as usize) {
+                // dest(r, c) = source(c, r)
+                dest.m[r * dest_clm + c] = self.m[c * src_clm + r];
+            }
+        }
+        dest
+    }
+
+    /// Calculate the determinant of a square matrix
+    pub fn det(&self) -> f64 {
+        if self.row != self.clm {
+            return 0.0; // ARToolKit returns 0.0 for non-square matrices
+        }
+
+        let dimen = self.row as usize;
+        let mut ap = self.m.clone(); // Clone to avoid mutating self
+        let mut det = 1.0;
+        let mut is = 0;
+
+        for k in 0..(dimen - 1) {
+            let mut mmax = k;
+            for i in (k + 1)..dimen {
+                if ap[i * dimen + k].abs() > ap[mmax * dimen + k].abs() {
+                    mmax = i;
+                }
+            }
+            if mmax != k {
+                for j in k..dimen {
+                    let work = ap[k * dimen + j];
+                    ap[k * dimen + j] = ap[mmax * dimen + j];
+                    ap[mmax * dimen + j] = work;
+                }
+                is += 1;
+            }
+            for i in (k + 1)..dimen {
+                let work = ap[i * dimen + k] / ap[k * dimen + k];
+                for j in (k + 1)..dimen {
+                    ap[i * dimen + j] -= work * ap[k * dimen + j];
+                }
+            }
+        }
+
+        for i in 0..dimen {
+            det *= ap[i * dimen + i];
+        }
+        for _ in 0..is {
+            det *= -1.0;
+        }
+
+        det
+    }
+
+    /// Invert the matrix in place using Gauss-Jordan elimination with column shifting
+    pub fn self_inv(&mut self) -> Result<(), &'static str> {
+        let dimen = self.row as usize;
+        if dimen != self.clm as usize {
+            return Err("Matrix must be square");
+        }
+        if dimen > 500 {
+            return Err("Matrix too large");
+        }
+        if dimen == 0 {
+            return Err("Matrix is empty");
+        }
+        if dimen == 1 {
+            self.m[0] = 1.0 / self.m[0];
+            return Ok(());
+        }
+
+        let mut nos = vec![0; dimen];
+        for n in 0..dimen {
+            nos[n] = n;
+        }
+
+        for n in 0..dimen {
+            let mut p = 0.0;
+            let mut ip = -1isize;
+
+            for i in n..dimen {
+                let pbuf = self.m[i * dimen + 0].abs();
+                if p < pbuf {
+                    p = pbuf;
+                    ip = i as isize;
+                }
+            }
+
+            if p <= 1.0e-10 || ip == -1 {
+                return Err("Matrix is singular");
+            }
+
+            let ip = ip as usize;
+
+            let nwork = nos[ip];
+            nos[ip] = nos[n];
+            nos[n] = nwork;
+
+            for j in 0..dimen {
+                let work = self.m[ip * dimen + j];
+                self.m[ip * dimen + j] = self.m[n * dimen + j];
+                self.m[n * dimen + j] = work;
+            }
+
+            let work = self.m[n * dimen + 0];
+            for j in 1..dimen {
+                self.m[n * dimen + j - 1] = self.m[n * dimen + j] / work;
+            }
+            self.m[n * dimen + dimen - 1] = 1.0 / work;
+
+            for i in 0..dimen {
+                if i != n {
+                    let work = self.m[i * dimen + 0];
+                    for j in 1..dimen {
+                        self.m[i * dimen + j - 1] = self.m[i * dimen + j] - work * self.m[n * dimen + j - 1];
+                    }
+                    self.m[i * dimen + dimen - 1] = -work * self.m[n * dimen + dimen - 1];
+                }
+            }
+        }
+
+        for n in 0..dimen {
+            let mut j = n;
+            while j < dimen {
+                if nos[j] == n { break; }
+                j += 1;
+            }
+            nos[j] = nos[n];
+            for i in 0..dimen {
+                let work = self.m[i * dimen + j];
+                self.m[i * dimen + j] = self.m[i * dimen + n];
+                self.m[i * dimen + n] = work;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Return a new inverted matrix
+    pub fn inv(&self) -> Result<ARMat, &'static str> {
+        let mut dest = self.clone();
+        dest.self_inv()?;
+        Ok(dest)
+    }
+
+    /// Tridiagonalize symmetric matrix (port of arVecTridiagonalize)
+    pub fn tridiagonalize(&mut self, d: &mut [ARdouble], e: &mut [ARdouble]) -> Result<(), &'static str> {
+        let dim = self.row as usize;
+        if dim != self.clm as usize || dim != d.len() || dim != e.len() + 1 {
+            return Err("Mismatched dimensions for tridiagonalize");
+        }
+
+        for k in 0..dim.saturating_sub(2) {
+            d[k] = self.m[k * dim + k];
+
+            e[k] = household(&mut self.m[k * dim + k + 1 .. k * dim + dim]);
+            if e[k] == 0.0 { continue; }
+
+            for i in (k + 1)..dim {
+                let mut s = 0.0;
+                for j in (k + 1)..i {
+                    s += self.m[j * dim + i] * self.m[k * dim + j];
+                }
+                for j in i..dim {
+                    s += self.m[i * dim + j] * self.m[k * dim + j];
+                }
+                d[i] = s;
+            }
+
+            let t = inner_product(&self.m[k * dim + k + 1 .. k * dim + dim], &d[k + 1 .. dim]) / 2.0;
+
+            for i in (k + 1..dim).rev() {
+                let p = self.m[k * dim + i];
+                d[i] -= t * p;
+                let q = d[i];
+                for j in i..dim {
+                    self.m[i * dim + j] -= p * d[j] + q * self.m[k * dim + j];
+                }
+            }
+        }
+
+        if dim >= 2 {
+            d[dim - 2] = self.m[(dim - 2) * dim + (dim - 2)];
+            e[dim - 2] = self.m[(dim - 2) * dim + (dim - 1)];
+        }
+
+        if dim >= 1 {
+            d[dim - 1] = self.m[(dim - 1) * dim + (dim - 1)];
+        }
+
+        for k in (0..dim).rev() {
+            if k < dim.saturating_sub(2) {
+                for i in (k + 1)..dim {
+                    let mut t = 0.0;
+                    for j in (k + 1)..dim {
+                        t += self.m[k * dim + j] * self.m[i * dim + j];
+                    }
+                    for j in (k + 1)..dim {
+                        self.m[i * dim + j] -= t * self.m[k * dim + j];
+                    }
+                }
+            }
+            for i in 0..dim {
+                self.m[k * dim + i] = 0.0;
+            }
+            self.m[k * dim + k] = 1.0;
+        }
+
+        Ok(())
+    }
+}
+
+/// Helper for vector inner product
+pub fn inner_product(x: &[ARdouble], y: &[ARdouble]) -> ARdouble {
+    x.iter().zip(y.iter()).map(|(a, b)| a * b).sum()
+}
+
+/// Helper for vector householder reflection
+pub fn household(x: &mut [ARdouble]) -> ARdouble {
+    let mut s = inner_product(x, x).sqrt();
+    if s != 0.0 {
+        if x[0] < 0.0 { s = -s; }
+        x[0] += s;
+        let t = 1.0 / (x[0] * s).sqrt();
+        for val in x.iter_mut() {
+            *val *= t;
+        }
+    }
+    -s
+}
+
+pub fn qrm(a: &mut ARMat, dv: &mut [ARdouble]) -> Result<(), &'static str> {
+    let dim = a.row as usize;
+    if dim != a.clm as usize || dim < 2 || dv.len() != dim {
+        return Err("Invalid dimensions for QRM");
+    }
+
+    let mut ev = vec![0.0; dim];
+    a.tridiagonalize(dv, &mut ev[1..])?;
+    ev[0] = 0.0;
+
+    let eps = 1e-6;
+    let vzero = 1e-16;
+    let max_iter = 100;
+
+    for h in (1..dim).rev() {
+        let mut j = h;
+        while j > 0 && ev[j].abs() > eps * (dv[j - 1].abs() + dv[j].abs()) { j -= 1; }
+        if j == h { continue; }
+
+        let mut iter = 0;
+        while ev[h].abs() > eps * (dv[h - 1].abs() + dv[h].abs()) {
+            iter += 1;
+            if iter > max_iter { break; }
+
+            let mut w = (dv[h - 1] - dv[h]) / 2.0;
+            let mut t = ev[h] * ev[h];
+            let mut s = (w * w + t).sqrt();
+            if w < 0.0 { s = -s; }
+            let mut x = dv[j] - dv[h] + t / (w + s);
+            let mut y = ev[j + 1];
+
+            for k in j..h {
+                let c: ARdouble;
+                if x.abs() >= y.abs() {
+                    if x.abs() > vzero {
+                        t = -y / x;
+                        c = 1.0 / (t * t + 1.0).sqrt();
+                        s = t * c;
+                    } else {
+                        c = 1.0;
+                        s = 0.0;
+                    }
+                } else {
+                    t = -x / y;
+                    s = 1.0 / (t * t + 1.0).sqrt();
+                    c = t * s;
+                }
+                w = dv[k] - dv[k + 1];
+                t = (w * s + 2.0 * c * ev[k + 1]) * s;
+                dv[k] -= t;
+                dv[k + 1] += t;
+                if k > j { ev[k] = c * ev[k] - s * y; }
+                ev[k + 1] += s * (c * w - 2.0 * s * ev[k + 1]);
+
+                for i in 0..dim {
+                    let rx = a.m[k * dim + i];
+                    let ry = a.m[(k + 1) * dim + i];
+                    a.m[k * dim + i] = c * rx - s * ry;
+                    a.m[(k + 1) * dim + i] = s * rx + c * ry;
+                }
+                if k < h - 1 {
+                    x = ev[k + 1];
+                    y = -s * ev[k + 2];
+                    ev[k + 2] *= c;
+                }
+            }
+        }
+    }
+
+    for k in 0..dim - 1 {
+        let mut h = k;
+        let mut t = dv[h];
+        for i in k + 1..dim {
+            if dv[i] > t {
+                h = i;
+                t = dv[h];
+            }
+        }
+        dv[h] = dv[k];
+        dv[k] = t;
+        for i in 0..dim {
+            let w = a.m[h * dim + i];
+            a.m[h * dim + i] = a.m[k * dim + i];
+            a.m[k * dim + i] = w;
+        }
+    }
+    Ok(())
+}
+
+impl ARMat {
+    pub fn ex(&self, mean: &mut [ARdouble]) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        if row == 0 || clm == 0 || mean.len() != clm {
+            return Err("Invalid dimensions for EX");
+        }
+
+        for i in 0..clm { mean[i] = 0.0; }
+
+        for r in 0..row {
+            for c in 0..clm {
+                mean[c] += self.m[r * clm + c];
+            }
+        }
+
+        for i in 0..clm {
+            mean[i] /= row as ARdouble;
+        }
+        Ok(())
+    }
+
+    pub fn center(&mut self, mean: &[ARdouble]) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        if mean.len() != clm { return Err("Invalid dimensions for CENTER"); }
+
+        for r in 0..row {
+            for c in 0..clm {
+                self.m[r * clm + c] -= mean[c];
+            }
+        }
+        Ok(())
+    }
+
+    pub fn x_by_xt(&self, output: &mut ARMat) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        if output.row as usize != row || output.clm as usize != row {
+            return Err("Invalid dimensions for x_by_xt");
+        }
+
+        for i in 0..row {
+            for j in 0..row {
+                if j < i {
+                    output.m[i * row + j] = output.m[j * row + i];
+                } else {
+                    let mut out = 0.0;
+                    for k in 0..clm {
+                        out += self.m[i * clm + k] * self.m[j * clm + k];
+                    }
+                    output.m[i * row + j] = out;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn xt_by_x(&self, output: &mut ARMat) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        if output.row as usize != clm || output.clm as usize != clm {
+            return Err("Invalid dimensions for xt_by_x");
+        }
+
+        for i in 0..clm {
+            for j in 0..clm {
+                if j < i {
+                    output.m[i * clm + j] = output.m[j * clm + i];
+                } else {
+                    let mut out = 0.0;
+                    for k in 0..row {
+                        out += self.m[k * clm + i] * self.m[k * clm + j];
+                    }
+                    output.m[i * clm + j] = out;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn ev_create(&self, u: &ARMat, output: &mut ARMat, ev: &mut [ARdouble]) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        if row == 0 || clm == 0 || u.row as usize != row || u.clm as usize != row 
+           || output.row as usize != row || output.clm as usize != clm || ev.len() != row {
+            return Err("Invalid dimensions for EV_create");
+        }
+
+        let mut i = 0;
+        while i < row {
+            if ev[i] < 1e-16 { break; }
+            let work = 1.0 / ev[i].abs().sqrt();
+            for j in 0..clm {
+                let mut sum = 0.0;
+                for k in 0..row {
+                    sum += u.m[i * row + k] * self.m[k * clm + j];
+                }
+                output.m[i * clm + j] = sum * work;
+            }
+            i += 1;
+        }
+
+        while i < row {
+            ev[i] = 0.0;
+            for j in 0..clm {
+                output.m[i * clm + j] = 0.0;
+            }
+            i += 1;
+        }
+        Ok(())
+    }
+
+    pub fn pca_internal(&self, output: &mut ARMat, ev: &mut [ARdouble]) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        let min = row.min(clm);
+        if row < 2 || clm < 2 || output.clm as usize != clm || output.row as usize != min || ev.len() != min {
+            return Err("Invalid dimensions for PCA internal");
+        }
+
+        let mut u = ARMat::new(min as i32, min as i32);
+        if row < clm {
+            self.x_by_xt(&mut u)?;
+        } else {
+            self.xt_by_x(&mut u)?;
+        }
+
+        qrm(&mut u, ev)?;
+
+        if row < clm {
+            self.ev_create(&u, output, ev)?;
+        } else {
+            let mut i = 0;
+            while i < min {
+                if ev[i] < 1e-16 { break; }
+                for j in 0..min {
+                    output.m[i * clm + j] = u.m[i * min + j];
+                }
+                i += 1;
+            }
+            while i < min {
+                ev[i] = 0.0;
+                for j in 0..min {
+                    output.m[i * clm + j] = 0.0;
+                }
+                i += 1;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn pca(&self, evec: &mut ARMat, ev: &mut ARVec, mean: &mut ARVec) -> Result<(), &'static str> {
+        let row = self.row as usize;
+        let clm = self.clm as usize;
+        let check = row.min(clm);
+        if row < 2 || clm < 2 || evec.clm as usize != clm || evec.row as usize != check 
+           || ev.clm as usize != check || mean.clm as usize != clm {
+            return Err("Invalid dimensions for PCA");
+        }
+
+        let mut work = self.clone();
+        work.ex(&mut mean.v)?;
+        work.center(&mean.v)?;
+        
+        let srow = (row as f64).sqrt();
+        for val in work.m.iter_mut() {
+            *val /= srow;
+        }
+
+        work.pca_internal(evec, &mut ev.v)?;
+
+        let sum: f64 = ev.v.iter().sum();
+        if sum != 0.0 {
+            for val in ev.v.iter_mut() {
+                *val /= sum;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'a, 'b> Mul<&'b ARMat> for &'a ARMat {
+    type Output = Result<ARMat, &'static str>;
+
+    /// Multiplies two matrices (`self` * `rhs`). 
+    /// Port of `arMatrixMul` from `mMul.c`.
+    fn mul(self, rhs: &'b ARMat) -> Self::Output {
+        if self.clm != rhs.row {
+            return Err("Matrix dimensions do not match for multiplication");
+        }
+
+        let mut dest = ARMat::new(self.row, rhs.clm);
+        let dest_clm = dest.clm as usize;
+        let a_clm = self.clm as usize;
+        let b_clm = rhs.clm as usize;
+
+        for r in 0..(dest.row as usize) {
+            for c in 0..(dest.clm as usize) {
+                let mut sum = 0.0;
+                let mut p1_idx = r * a_clm;
+                let mut p2_idx = c;
+                for _ in 0..a_clm {
+                    sum += self.m[p1_idx] * rhs.m[p2_idx];
+                    p1_idx += 1;
+                    p2_idx += b_clm;
+                }
+                dest.m[r * dest_clm + c] = sum;
+            }
+        }
+
+        Ok(dest)
     }
 }
 
@@ -26,7 +578,7 @@ impl Default for ARMat {
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct ARMatf {
-    pub m: *mut f32,
+    pub m: Vec<f32>,
     pub row: i32,
     pub clm: i32,
 }
@@ -34,10 +586,55 @@ pub struct ARMatf {
 impl Default for ARMatf {
     fn default() -> Self {
         Self {
-            m: std::ptr::null_mut(),
+            m: Vec::new(),
             row: 0,
             clm: 0,
         }
+    }
+}
+
+impl ARMatf {
+    /// Allocate a new matrix with specified dimensions
+    pub fn new(row: i32, clm: i32) -> Self {
+        let size = (row * clm) as usize;
+        Self {
+            m: vec![0.0; size],
+            row,
+            clm,
+        }
+    }
+}
+
+impl<'a, 'b> Mul<&'b ARMatf> for &'a ARMatf {
+    type Output = Result<ARMatf, &'static str>;
+
+    /// Multiplies two matrices (`self` * `rhs`). 
+    /// Port of `arMatrixMulf` from `mMul.c`.
+    fn mul(self, rhs: &'b ARMatf) -> Self::Output {
+        if self.clm != rhs.row {
+            return Err("Matrix dimensions do not match for multiplication");
+        }
+
+        let mut dest = ARMatf::new(self.row, rhs.clm);
+        let dest_clm = dest.clm as usize;
+        let a_clm = self.clm as usize;
+        let b_clm = rhs.clm as usize;
+
+        for r in 0..(dest.row as usize) {
+            for c in 0..(dest.clm as usize) {
+                let mut sum = 0.0;
+                let mut p1_idx = r * a_clm;
+                let mut p2_idx = c;
+                for _ in 0..a_clm {
+                    sum += self.m[p1_idx] * rhs.m[p2_idx];
+                    p1_idx += 1;
+                    p2_idx += b_clm;
+                }
+                dest.m[r * dest_clm + c] = sum;
+            }
+        }
+
+        Ok(dest)
     }
 }
 
@@ -45,15 +642,25 @@ impl Default for ARMatf {
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct ARVec {
-    pub v: *mut ARdouble,
+    pub v: Vec<ARdouble>,
     pub clm: i32,
 }
 
 impl Default for ARVec {
     fn default() -> Self {
         Self {
-            v: std::ptr::null_mut(),
+            v: Vec::new(),
             clm: 0,
+        }
+    }
+}
+
+impl ARVec {
+    /// Allocate a new vector with specified columns
+    pub fn new(clm: i32) -> Self {
+        Self {
+            v: vec![0.0; clm as usize],
+            clm,
         }
     }
 }
@@ -65,15 +672,96 @@ mod tests {
     #[test]
     fn test_armat_default_initialization() {
         let mat = ARMat::default();
-        assert_eq!(mat.m, std::ptr::null_mut());
+        assert_eq!(mat.m.len(), 0);
         assert_eq!(mat.row, 0);
         assert_eq!(mat.clm, 0);
     }
 
     #[test]
+    fn test_armat_multiplication() {
+        let mut a = ARMat::new(2, 3);
+        a.m = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        // [ 1 2 3 ]
+        // [ 4 5 6 ]
+
+        let mut b = ARMat::new(3, 2);
+        b.m = vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0];
+        // [ 7   8 ]
+        // [ 9  10 ]
+        // [ 11 12 ]
+
+        let result = (&a * &b).unwrap();
+        
+        assert_eq!(result.row, 2);
+        assert_eq!(result.clm, 2);
+        // Calculation:
+        // [0][0] = 1*7 + 2*9 + 3*11 = 7 + 18 + 33 = 58
+        // [0][1] = 1*8 + 2*10 + 3*12 = 8 + 20 + 36 = 64
+        // [1][0] = 4*7 + 5*9 + 6*11 = 28 + 45 + 66 = 139
+        // [1][1] = 4*8 + 5*10 + 6*12 = 32 + 50 + 72 = 154
+        assert_eq!(result.m, vec![58.0, 64.0, 139.0, 154.0]);
+    }
+
+    #[test]
+    fn test_armat_transpose() {
+        let mut a = ARMat::new(2, 3);
+        a.m = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        // [ 1 2 3 ]
+        // [ 4 5 6 ]
+
+        let result = a.transpose();
+        assert_eq!(result.row, 3);
+        assert_eq!(result.clm, 2);
+        // [ 1 4 ]
+        // [ 2 5 ]
+        // [ 3 6 ]
+        assert_eq!(result.m, vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0]);
+    }
+
+    #[test]
+    fn test_armat_det() {
+        let mut a = ARMat::new(3, 3);
+        a.m = vec![
+            6.0, 1.0, 1.0, 
+            4.0, -2.0, 5.0, 
+            2.0, 8.0, 7.0
+        ];
+        
+        let det = a.det();
+        // Determinant of A: 
+        // 6 * (-14 - 40) - 1 * (28 - 10) + 1 * (32 - (-4))
+        // 6 * (-54) - 18 + 36
+        // -324 - 18 + 36 = -306
+        assert_eq!(det.round(), -306.0);
+    }
+
+    #[test]
+    fn test_armat_inv() {
+        let mut a = ARMat::new(2, 2);
+        a.m = vec![
+            4.0, 7.0,
+            2.0, 6.0
+        ];
+        
+        // Inverse of [4 7; 2 6] is 1/(24-14) * [6 -7; -2 4] = 0.1 * [6 -7; -2 4]
+        // = [0.6, -0.7; -0.2, 0.4]
+
+        let inv_a = a.inv().expect("Failed to invert matrix");
+        
+        assert_eq!(inv_a.row, 2);
+        assert_eq!(inv_a.clm, 2);
+        
+        let epsilon = 1e-6;
+        assert!((inv_a.m[0] - 0.6).abs() < epsilon);
+        assert!((inv_a.m[1] - (-0.7)).abs() < epsilon);
+        assert!((inv_a.m[2] - (-0.2)).abs() < epsilon);
+        assert!((inv_a.m[3] - 0.4).abs() < epsilon);
+    }
+
+    #[test]
     fn test_armatf_default_initialization() {
         let matf = ARMatf::default();
-        assert_eq!(matf.m, std::ptr::null_mut());
+        assert_eq!(matf.m.len(), 0);
         assert_eq!(matf.row, 0);
         assert_eq!(matf.clm, 0);
     }
@@ -81,7 +769,7 @@ mod tests {
     #[test]
     fn test_arvec_default_initialization() {
         let vec = ARVec::default();
-        assert_eq!(vec.v, std::ptr::null_mut());
+        assert_eq!(vec.v.len(), 0);
         assert_eq!(vec.clm, 0);
     }
 }
