@@ -39,6 +39,28 @@ impl ARParam {
     }
 }
 
+impl crate::types::ARParamLTf {
+    /// Applies 2D distortion correction lookup
+    pub fn observ2ideal(&self, ox: f32, oy: f32) -> Result<(f32, f32), &'static str> {
+        let px = (ox + 0.5) as i32 + self.x_off;
+        let py = (oy + 0.5) as i32 + self.y_off;
+        
+        if px < 0 || px >= self.xsize || py < 0 || py >= self.ysize {
+            return Err("Coordinates out of bounds in lookup table");
+        }
+        
+        let idx = ((py * self.xsize + px) * 2) as usize;
+        if idx + 1 >= self.o2i.len() {
+            return Err("Lookup table not properly initialized");
+        }
+        
+        let ix = self.o2i[idx];
+        let iy = self.o2i[idx + 1];
+        
+        Ok((ix, iy))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
