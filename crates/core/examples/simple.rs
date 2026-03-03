@@ -5,10 +5,11 @@ use core::{
     types::{AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARMatrixCodeType, ARPixelFormat, ARParamLT, ARParamLTf, ARParam},
     image_proc::ARImageProcInfo,
 };
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use std::fs::File;
 
 fn main() {
+    env_logger::init();
     println!("WebARKitLib Example: Simple Marker Detection");
 
     // Load ARParam

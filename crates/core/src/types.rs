@@ -236,7 +236,22 @@ pub struct ARImageProcInfo {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ARPixelFormat {
-    Invalid = 0,
+    Invalid = -1,
+    RGB = 0,
+    BGR,
+    RGBA,
+    BGRA,
+    ABGR,
+    MONO,
+    ARGB,
+    TwoVuy,
+    Yuvs,
+    Rgb565,
+    Rgba5551,
+    Rgba4444,
+    FourTwoZeroV,
+    FourTwoZeroF,
+    NV21,
 }
 
 impl Default for ARPixelFormat {

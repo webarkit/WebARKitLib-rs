@@ -59,6 +59,26 @@ impl crate::types::ARParamLTf {
         
         Ok((ix, iy))
     }
+
+    /// Applies inverse distortion lookup (calibrated to measured)
+    pub fn ideal2observ(&self, ix: f32, iy: f32) -> Result<(f32, f32), &'static str> {
+        let px = (ix + 0.5) as i32 + self.x_off;
+        let py = (iy + 0.5) as i32 + self.y_off;
+        
+        if px < 0 || px >= self.xsize || py < 0 || py >= self.ysize {
+            return Err("Coordinates out of bounds in lookup table");
+        }
+        
+        let idx = ((py * self.xsize + px) * 2) as usize;
+        if idx + 1 >= self.i2o.len() {
+            return Err("Lookup table not properly initialized");
+        }
+        
+        let ox = self.i2o[idx];
+        let oy = self.i2o[idx + 1];
+        
+        Ok((ox, oy))
+    }
 }
 
 #[cfg(test)]

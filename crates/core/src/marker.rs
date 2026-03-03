@@ -2,6 +2,7 @@
 //! Ported from arDetectMarker.c, arDetectMarker2.c, and arGetMarkerInfo.c
 
 use crate::types::{ARLabelInfo, ARMarkerInfo2, ARdouble};
+use log::debug;
 
 pub const AR_AREA_MAX: i32 = 100000;
 pub const AR_AREA_MIN: i32 = 70;
@@ -58,7 +59,7 @@ pub fn ar_detect_marker(
     )?;
     
     if ar_handle.ar_debug != 0 {
-        println!("[DEBUG] ar_labeling found {} labels.", ar_handle.label_info.label_num);
+        debug!("ar_labeling found {} labels.", ar_handle.label_info.label_num);
     }
 
     let image_proc_mode = if ar_handle.ar_image_proc_mode == 0 {
@@ -80,7 +81,7 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        println!("[DEBUG] ar_detect_marker2 found {} square candidates.", ar_handle.marker2_num);
+        debug!("ar_detect_marker2 found {} square candidates.", ar_handle.marker2_num);
     }
 
     if ar_handle.ar_param_lt.is_null() {
@@ -119,7 +120,7 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        println!("[DEBUG] ar_get_marker_info produced {} final markers.", ar_handle.marker_num);
+        debug!("ar_get_marker_info produced {} final markers.", ar_handle.marker_num);
     }
 
     Ok(())
@@ -154,15 +155,15 @@ pub fn ar_detect_marker2(
     let label_num = label_info.label_num as usize;
     for i in 0..label_num {
         if label_info.area[i] < area_min_local || label_info.area[i] > area_max_local {
-            println!("[DEBUG] Label {} skipped due to Area ({}) not in [{}, {}]", i, label_info.area[i], area_min_local, area_max_local); 
+            debug!("Label {} skipped due to Area ({}) not in [{}, {}]", i, label_info.area[i], area_min_local, area_max_local); 
             continue;
         }
         if label_info.clip[i][0] <= 1 || label_info.clip[i][1] >= xsize_local - 2 {
-            println!("[DEBUG] Label {} skipped due to X-Clip bounds", i);
+            debug!("Label {} skipped due to X-Clip bounds", i);
             continue;
         }
         if label_info.clip[i][2] <= 1 || label_info.clip[i][3] >= ysize_local - 2 {
-            println!("[DEBUG] Label {} skipped due to Y-Clip bounds", i);
+            debug!("Label {} skipped due to Y-Clip bounds", i);
             continue;
         }
 
@@ -179,13 +180,13 @@ pub fn ar_detect_marker2(
         );
         
         if ret.is_err() {
-            println!("[DEBUG] ar_get_contour failed for label {}: {:?}", i, ret.unwrap_err());
+            debug!("ar_get_contour failed for label {}: {:?}", i, ret.unwrap_err());
             continue;
         }
 
         let ret = check_square(label_info.area[i], &mut current_marker, square_fit_thresh);
         if ret.is_err() {
-            println!("[DEBUG] check_square failed for label {}: {:?}", i, ret.unwrap_err());
+            debug!("check_square failed for label {}: {:?}", i, ret.unwrap_err());
             continue;
         }
 
@@ -289,7 +290,7 @@ fn ar_get_contour(
             }
             p_idx_d += 1;
         }
-        println!("[DEBUG] ar_get_contour failed. label={}. clip={:?}. Found on row: {}", label, clip, row_dump);
+        debug!("ar_get_contour failed. label={}. clip={:?}. Found on row: {}", label, clip, row_dump);
         return Err("Contour start point not found");
     }
 

@@ -2,6 +2,7 @@
 //! Translated from ARToolKit C headers (arLabeling.c, arLabelingSub.h)
 
 use crate::types::{ARLabelInfo, ARdouble};
+use log::debug;
 
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
@@ -169,7 +170,7 @@ pub fn ar_labeling(
                     if work2[l + 4] < i as i32 { work2[l + 4] = i as i32; }
                 } else {
                     wk_max += 1;
-                    // println!("[DEBUG] Creating new label {} at ({}, {})", wk_max, i, j);
+                    debug!("Creating new label {} at ({}, {})", wk_max, i, j);
                     if wk_max > AR_LABELING_WORK_SIZE {
                         return Err("Labeling work array overflow");
                     }

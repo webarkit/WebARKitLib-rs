@@ -1,5 +1,6 @@
 use crate::types::{AR3DHandle, ARParam, ARMarkerInfo, ARdouble};
 use crate::icp::{icp_create_handle, icp_delete_handle, ICP2DCoordT, ICP3DCoordT, ICPDataT, icp_get_init_xw2xc_from_planar_data, icp_point};
+// use log::debug; // Removed unused import
 
 pub fn ar_3d_create_handle(ar_param: &ARParam) -> Result<*mut AR3DHandle, &'static str> {
     let icp_handle = icp_create_handle(&ar_param.mat)?;
@@ -39,9 +40,10 @@ pub fn ar_get_trans_mat_square(
         marker_info.dir
     };
     
-    let mut screen_coord = vec![ICP2DCoordT::default(); 4];
-    let mut world_coord = vec![ICP3DCoordT::default(); 4];
+    let screen_coord = vec![ICP2DCoordT::default(); 4];
+    let world_coord = vec![ICP3DCoordT::default(); 4];
     
+    let mut screen_coord = vec![ICP2DCoordT::default(); 4];
     screen_coord[0].x = marker_info.vertex[((4 - dir) % 4) as usize][0];
     screen_coord[0].y = marker_info.vertex[((4 - dir) % 4) as usize][1];
     screen_coord[1].x = marker_info.vertex[((5 - dir) % 4) as usize][0];
@@ -51,6 +53,7 @@ pub fn ar_get_trans_mat_square(
     screen_coord[3].x = marker_info.vertex[((7 - dir) % 4) as usize][0];
     screen_coord[3].y = marker_info.vertex[((7 - dir) % 4) as usize][1];
     
+    let mut world_coord = vec![ICP3DCoordT::default(); 4];
     world_coord[0].x = -width / 2.0; world_coord[0].y = width / 2.0;  world_coord[0].z = 0.0;
     world_coord[1].x = width / 2.0;  world_coord[1].y = width / 2.0;  world_coord[1].z = 0.0;
     world_coord[2].x = width / 2.0;  world_coord[2].y = -width / 2.0; world_coord[2].z = 0.0;
