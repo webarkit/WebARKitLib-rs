@@ -1064,7 +1064,7 @@ pub fn ar2_tracking(
             Ok(res) => {
                 if res.sim > handle.sim_thresh {
                     if handle.tracking_mode == AR2_TRACKING_6DOF {
-                        let (ix, iy) = cparam_lt.param_ltf.observ2ideal(res.pos2d[0], res.pos2d[1]).map_err(|_| -1)?;
+                        let (ix, iy) = cparam_lt.unwrap().param_ltf.observ2ideal(res.pos2d[0], res.pos2d[1]).map_err(|_| -1)?;
                         handle.pos2d[num as usize][0] = ix;
                         handle.pos2d[num as usize][1] = iy;
                     } else {

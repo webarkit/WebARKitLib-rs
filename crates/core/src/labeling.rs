@@ -41,20 +41,24 @@ pub fn ar_labeling(
     let lxsize: usize;
     let lysize: usize;
     let row_stride: usize;
-    let col_stride: usize;
+    let _col_stride: usize;
 
     match proc_mode {
         ImageProcMode::FrameImage => {
             lxsize = xsize as usize;
             lysize = ysize as usize;
             row_stride = xsize as usize;
-            col_stride = 1;
+            _col_stride = 1;
         }
         ImageProcMode::FieldImage => {
             lxsize = (xsize / 2) as usize;
             lysize = (ysize / 2) as usize;
             row_stride = (xsize * 2) as usize; // skip every other row
-            col_stride = 2; // skip every other column
+            if ysize < 480 { // Assuming 'height' in the snippet refers to ysize
+                _col_stride = 1;
+            } else {
+                _col_stride = 2; // skip every other column
+            }
         }
     }
 

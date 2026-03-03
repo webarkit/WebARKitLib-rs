@@ -166,10 +166,46 @@ pub struct ARParamLTf {
     pub y_off: i32,
 }
 
+impl ARParamLTf {
+    pub fn new_basic(xsize: i32, ysize: i32) -> Self {
+        let i2o = vec![0.0f32; (xsize * ysize * 2) as usize];
+        let mut o2i = vec![0.0f32; (xsize * ysize * 2) as usize];
+        for y in 0..ysize {
+            for x in 0..xsize {
+                let idx = ((y * xsize + x) * 2) as usize;
+                o2i[idx] = x as f32;
+                o2i[idx + 1] = y as f32;
+            }
+        }
+        Self {
+            i2o,
+            o2i,
+            xsize,
+            ysize,
+            x_off: 0,
+            y_off: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ARParamLT {
     pub param: ARParam,
     pub param_ltf: ARParamLTf,
+}
+
+impl ARParamLT {
+    pub fn new(param: ARParam, param_ltf: ARParamLTf) -> Self {
+        Self { param, param_ltf }
+    }
+    
+    pub fn new_basic(param: ARParam) -> Self {
+        let param_ltf = ARParamLTf::new_basic(param.xsize, param.ysize);
+        Self {
+            param,
+            param_ltf,
+        }
+    }
 }
 
 #[repr(C)]
@@ -319,6 +355,27 @@ pub struct ARHandle {
     pub ar_image_proc_info: *mut ARImageProcInfo,
     pub patt_ratio: ARdouble,
     pub matrix_code_type: ARMatrixCodeType,
+}
+
+impl ARHandle {
+    pub fn new(param: ARParam) -> Self {
+        let mut handle = ARHandle::default();
+        handle.xsize = param.xsize;
+        handle.ysize = param.ysize;
+        // In the full port, arParamLT would be initialized here too.
+        handle
+    }
+
+    pub fn set_pixel_format(&mut self, format: ARPixelFormat) {
+        self.ar_pixel_format = format;
+        // Update pixel size based on format if needed
+        self.ar_pixel_size = match format {
+            ARPixelFormat::RGB | ARPixelFormat::BGR => 3,
+            ARPixelFormat::RGBA | ARPixelFormat::BGRA | ARPixelFormat::ABGR | ARPixelFormat::ARGB => 4,
+            ARPixelFormat::MONO => 1,
+            _ => 0,
+        };
+    }
 }
 
 impl Default for ARHandle {

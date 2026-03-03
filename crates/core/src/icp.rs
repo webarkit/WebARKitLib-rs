@@ -473,8 +473,8 @@ pub fn icp_delete_handle(handle: &mut *mut ICPHandleT) -> Result<(), &'static st
 }
 
 fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
-    let mut v1 = [rot[0][0], rot[0][1], rot[0][2]];
-    let mut v2 = [rot[1][0], rot[1][1], rot[1][2]];
+    let v1 = [rot[0][0], rot[0][1], rot[0][2]];
+    let v2 = [rot[1][0], rot[1][1], rot[1][2]];
     let mut v3 = [
         v1[1] * v2[2] - v1[2] * v2[1],
         v1[2] * v2[0] - v1[0] * v2[2],
@@ -488,30 +488,37 @@ fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     if cb < 0.0 { cb = -cb; }
     let ca = ((cb + 1.0).sqrt() + (1.0 - cb).sqrt()) * 0.5;
 
-    let rot_flag: i32;
+    let mut rot_flag: i32;
     if v3[1] * v1[0] - v1[1] * v3[0] != 0.0 {
         rot_flag = 0;
     } else {
         if v3[2] * v1[0] - v1[2] * v3[0] != 0.0 {
-            v1.swap(1, 2);
-            v3.swap(1, 2);
             rot_flag = 1;
         } else {
-            v1.swap(0, 2);
-            v3.swap(0, 2);
             rot_flag = 2;
         }
     }
 
-    let denom1 = v3[1] * v1[0] - v1[1] * v3[0];
-    if denom1 == 0.0 { return Err("check_rotation denom1 is 0"); }
-    let k1 = (v1[1]*v3[2] - v3[1]*v1[2]) / denom1;
-    let k2 = (v3[1] * ca) / denom1;
+    let mut v1_temp = v1; // Use temporary mutable copies for swapping
+    let mut v3_temp = v3;
 
-    let denom2 = v3[0] * v1[1] - v1[0] * v3[1];
+    if rot_flag == 1 {
+        v1_temp.swap(1, 2);
+        v3_temp.swap(1, 2);
+    } else if rot_flag == 2 {
+        v1_temp.swap(0, 2);
+        v3_temp.swap(0, 2);
+    }
+
+    let denom1 = v3_temp[1] * v1_temp[0] - v1_temp[1] * v3_temp[0];
+    if denom1 == 0.0 { return Err("check_rotation denom1 is 0"); }
+    let k1 = (v1_temp[1]*v3_temp[2] - v3_temp[1]*v1_temp[2]) / denom1;
+    let k2 = (v3_temp[1] * ca) / denom1;
+
+    let denom2 = v3_temp[0] * v1_temp[1] - v1_temp[0] * v3_temp[1];
     if denom2 == 0.0 { return Err("check_rotation denom2 is 0"); }
-    let k3 = (v1[0]*v3[2] - v3[0]*v1[2]) / denom2;
-    let k4 = (v3[0] * ca) / denom2;
+    let k3 = (v1_temp[0]*v3_temp[2] - v3_temp[0]*v1_temp[2]) / denom2;
+    let k4 = (v3_temp[0] * ca) / denom2;
 
     let a = k1*k1 + k3*k3 + 1.0;
     let b = k1*k2 + k3*k4;
@@ -530,38 +537,41 @@ fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     if rot_flag == 1 {
         std::mem::swap(&mut q1, &mut r1);
         std::mem::swap(&mut q2, &mut r2);
-        v1.swap(1, 2);
-        v3.swap(1, 2);
     } else if rot_flag == 2 {
         std::mem::swap(&mut p1, &mut r1);
         std::mem::swap(&mut p2, &mut r2);
-        v1.swap(0, 2);
-        v3.swap(0, 2);
     }
 
     if v3[1] * v2[0] - v2[1] * v3[0] != 0.0 {
         rot_flag = 0;
     } else {
         if v3[2] * v2[0] - v2[2] * v3[0] != 0.0 {
-            v2.swap(1, 2);
-            v3.swap(1, 2);
             rot_flag = 1;
         } else {
-            v2.swap(0, 2);
-            v3.swap(0, 2);
             rot_flag = 2;
         }
     }
 
-    let denom3 = v3[1] * v2[0] - v2[1] * v3[0];
-    if denom3 == 0.0 { return Err("check_rotation denom3 is 0"); }
-    let k1_2 = (v2[1]*v3[2] - v3[1]*v2[2]) / denom3;
-    let k2_2 = (v3[1] * ca) / denom3;
+    let mut v2_temp = v2; // Use temporary mutable copies for swapping
+    v3_temp = v3; // Re-initialize v3_temp as v3 might have been modified by previous swaps
 
-    let denom4 = v3[0] * v2[1] - v2[0] * v3[1];
+    if rot_flag == 1 {
+        v2_temp.swap(1, 2);
+        v3_temp.swap(1, 2);
+    } else if rot_flag == 2 {
+        v2_temp.swap(0, 2);
+        v3_temp.swap(0, 2);
+    }
+
+    let denom3 = v3_temp[1] * v2_temp[0] - v2_temp[1] * v3_temp[0];
+    if denom3 == 0.0 { return Err("check_rotation denom3 is 0"); }
+    let k1_2 = (v2_temp[1]*v3_temp[2] - v3_temp[1]*v2_temp[2]) / denom3;
+    let k2_2 = (v3_temp[1] * ca) / denom3;
+
+    let denom4 = v3_temp[0] * v2_temp[1] - v2_temp[0] * v3_temp[1];
     if denom4 == 0.0 { return Err("check_rotation denom4 is 0"); }
-    let k3_2 = (v2[0]*v3[2] - v3[0]*v2[2]) / denom4;
-    let k4_2 = (v3[0] * ca) / denom4;
+    let k3_2 = (v2_temp[0]*v3_temp[2] - v3_temp[0]*v2_temp[2]) / denom4;
+    let k4_2 = (v3_temp[0] * ca) / denom4;
 
     let a_2 = k1_2*k1_2 + k3_2*k3_2 + 1.0;
     let b_2 = k1_2*k2_2 + k3_2*k4_2;
@@ -580,13 +590,9 @@ fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     if rot_flag == 1 {
         std::mem::swap(&mut q3, &mut r3);
         std::mem::swap(&mut q4, &mut r4);
-        v2.swap(1, 2);
-        v3.swap(1, 2);
     } else if rot_flag == 2 {
         std::mem::swap(&mut p3, &mut r3);
         std::mem::swap(&mut p4, &mut r4);
-        v2.swap(0, 2);
-        v3.swap(0, 2);
     }
 
     let e1 = (p1*p3 + q1*q3 + r1*r3).abs();

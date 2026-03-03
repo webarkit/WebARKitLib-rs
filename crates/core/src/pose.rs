@@ -40,9 +40,6 @@ pub fn ar_get_trans_mat_square(
         marker_info.dir
     };
     
-    let screen_coord = vec![ICP2DCoordT::default(); 4];
-    let world_coord = vec![ICP3DCoordT::default(); 4];
-    
     let mut screen_coord = vec![ICP2DCoordT::default(); 4];
     screen_coord[0].x = marker_info.vertex[((4 - dir) % 4) as usize][0];
     screen_coord[0].y = marker_info.vertex[((4 - dir) % 4) as usize][1];
