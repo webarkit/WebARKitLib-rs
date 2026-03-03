@@ -2,6 +2,7 @@
 //! Translated from ARToolKit C headers (icp.h, icpCore.h)
 
 use crate::types::ARdouble;
+use log::{debug, error};
 
 /// 2D Coordinate for ICP
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -106,6 +107,10 @@ impl Default for ICPHandleT {
     }
 }
 
+pub fn icp_set_inlier_probability(handle: &mut ICPHandleT, prob: f64) {
+    handle.inlier_prob = prob;
+}
+
 /// ICP Stereo Handle
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
@@ -159,7 +164,7 @@ pub fn icp_point(
     mat_xw2xc: &mut [[ARdouble; 4]; 3],
 ) -> Result<ARdouble, &'static str> {
     if data.screen_coord.len() < 3 || data.world_coord.len() < 3 {
-        println!("ICP Point: Not enough points");
+        debug!("ICP Point: Not enough points");
         return Err("Not enough points for ICP");
     }
 
@@ -221,7 +226,7 @@ pub fn icp_point(
         }
 
         if let Err(e) = icp_get_delta_s(&mut ds, &du, &j_u_s_table, num_points * 2) {
-            println!("ICP Point: icp_get_delta_s failed: {}", e);
+            error!("ICP Point: icp_get_delta_s failed: {}", e);
             return Err(e);
         }
         icp_update_mat(mat_xw2xc, &ds);
@@ -230,6 +235,20 @@ pub fn icp_point(
     }
 
     Ok(err1)
+}
+
+pub fn icp_point_robust(
+    handle: &ICPHandleT,
+    data: &ICPDataT,
+    init_mat_xw2xc: &[[ARdouble; 4]; 3],
+    mat_xw2xc: &mut [[ARdouble; 4]; 3],
+) -> Result<ARdouble, &'static str> {
+    // Highly simplified robust estimation
+    // In a real port this would use M-estimators (Huber/Tukey)
+    // For now we just call icp_point and maybe filter outliers?
+    // ARToolkit 5 uses a specific robust point estimation.
+    // Let's at least implement the signature and a basic pass-through.
+    icp_point(handle, data, init_mat_xw2xc, mat_xw2xc)
 }
 
 pub fn icp_get_xc_from_xw_by_mat_xw2xc(xc: &mut ICP3DCoordT, mat_xw2xc: &[[ARdouble; 4]; 3], xw: &ICP3DCoordT) {
@@ -469,7 +488,7 @@ fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     if cb < 0.0 { cb = -cb; }
     let ca = ((cb + 1.0).sqrt() + (1.0 - cb).sqrt()) * 0.5;
 
-    let mut rot_flag = 0;
+    let rot_flag: i32;
     if v3[1] * v1[0] - v1[1] * v3[0] != 0.0 {
         rot_flag = 0;
     } else {
@@ -690,7 +709,7 @@ pub fn icp_get_init_xw2xc_from_planar_data(
     t[0] = (mat_c.m[2] - mat_xc2u[0][2] * t[2] - mat_xc2u[0][1] * t[1]) / mat_xc2u[0][0];
 
     let mut l1 = (v[0][0]*v[0][0] + v[0][1]*v[0][1] + v[0][2]*v[0][2]).sqrt();
-    let mut l2 = (v[1][0]*v[1][0] + v[1][1]*v[1][1] + v[1][2]*v[1][2]).sqrt();
+    let l2 = (v[1][0]*v[1][0] + v[1][1]*v[1][1] + v[1][2]*v[1][2]).sqrt();
     
     v[0][0] /= l1;
     v[0][1] /= l1;

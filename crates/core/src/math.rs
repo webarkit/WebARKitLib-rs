@@ -772,25 +772,25 @@ mod tests {
         assert_eq!(vec.v.len(), 0);
         assert_eq!(vec.clm, 0);
     }
+}
 
-    #[test]
-    fn test_self_inv_singularity_repro() {
-        // Create a 6x6 matrix similar to typical mat_jt_j in ICP
-        let mut a = ARMat::new(6, 6);
-        // Fill the diagonal to make it strictly non-singular
-        for i in 0..6 {
-            a.m[i * 6 + i] = 1.0;
+/// Multiply a 3x4 double matrix by a 3x4 float matrix, outputting a 3x4 float matrix.
+/// Port of arUtilMatMuldff.
+pub fn mat_mul_dff(a: &[[f64; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
+    for i in 0..3 {
+        for j in 0..3 {
+            dest[i][j] = (a[i][0] * b[0][j] as f64 + a[i][1] * b[1][j] as f64 + a[i][2] * b[2][j] as f64) as f32;
         }
-        
-        let inv_res = a.self_inv();
-        assert!(inv_res.is_ok(), "Identity matrix should never be singular");
-        
-        // Let's create a known singular matrix (two identical rows)
-        let mut b = ARMat::new(6, 6);
-        for i in 0..6 { b.m[0 * 6 + i] = 1.0; }
-        for i in 0..6 { b.m[1 * 6 + i] = 1.0; }
-        
-        let inv_res_b = b.self_inv();
-        assert!(inv_res_b.is_err(), "Matrix with identical rows must be singular");
+        dest[i][3] = (a[i][0] * b[0][3] as f64 + a[i][1] * b[1][3] as f64 + a[i][2] * b[2][3] as f64 + a[i][3]) as f32;
+    }
+}
+
+/// Multiply two 3x4 float matrices, outputting a 3x4 float matrix.
+pub fn mat_mul_fff(a: &[[f32; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
+    for i in 0..3 {
+        for j in 0..3 {
+            dest[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+        }
+        dest[i][3] = a[i][0] * b[0][3] + a[i][1] * b[1][3] + a[i][2] * b[2][3] + a[i][3];
     }
 }

@@ -7,3 +7,4 @@ pub mod labeling;
 pub mod marker;
 pub mod pattern;
 pub mod pose;
+pub mod ar2;
