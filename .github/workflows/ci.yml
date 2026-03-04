@@ -69,7 +69,7 @@ jobs:
       run: |
         # Download and Build C benchmark
         cd benchmarks/c_benchmark
-        python ../bootstrap.py --base-dir . --bootstrap-file libraries.json
+        python ../bootstrap.py --bootstrap-file libraries.json
         
         mkdir -p build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
