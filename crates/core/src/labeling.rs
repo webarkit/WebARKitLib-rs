@@ -85,12 +85,41 @@ pub fn ar_labeling(
     let work2 = &mut label_info.work2;
     let label_img = &mut label_info.label_image;
 
+    // Helper for Union-Find find with path compression
+    fn find(work: &mut [i32], mut i: i32) -> i32 {
+        let mut root = i;
+        while work[root as usize - 1] != root {
+            root = work[root as usize - 1];
+        }
+        // Path compression
+        let mut curr = i;
+        while work[curr as usize - 1] != root {
+            let next = work[curr as usize - 1];
+            work[curr as usize - 1] = root;
+            curr = next;
+        }
+        root
+    }
+
+    // Helper for Union-Find union
+    fn do_union(work: &mut [i32], m: i32, n: i32) -> i32 {
+        let root_m = find(work, m);
+        let root_n = find(work, n);
+        if root_m < root_n {
+            work[root_n as usize - 1] = root_m;
+            root_m
+        } else {
+            work[root_m as usize - 1] = root_n;
+            root_n
+        }
+    }
+
     // Scan the inner pixel region (skip boundaries 0, and max-1)
     for j in 1..lysize - 1 {
         for i in 1..lxsize - 1 {
             let source_idx = match proc_mode {
                 ImageProcMode::FrameImage => j * row_stride + i,
-                ImageProcMode::FieldImage => (j * 2 + 1) * xsize as usize + (i * 2), // See AR_LABELING_FIELD_IMAGE macro
+                ImageProcMode::FieldImage => (j * 2 + 1) * xsize as usize + (i * 2),
             };
             let pixel = image[source_idx];
 
@@ -104,24 +133,14 @@ pub fn ar_labeling(
 
                 if up_val > 0 {
                     label_img[p_idx] = up_val;
-                    let l = (up_val as usize - 1) * 7;
+                    let l = (find(work, up_val as i32) as usize - 1) * 7;
                     work2[l + 0] += 1;
                     work2[l + 1] += i as i32;
                     work2[l + 2] += j as i32;
                     work2[l + 6] = j as i32;
                 } else if up_right > 0 {
                     if up_left > 0 {
-                        let m = work[up_right as usize - 1];
-                        let n = work[up_left as usize - 1];
-                        let final_label = if m > n {
-                            for k in 0..wk_max { if work[k] == m { work[k] = n; } }
-                            n
-                        } else if m < n {
-                            for k in 0..wk_max { if work[k] == n { work[k] = m; } }
-                            m
-                        } else {
-                            m
-                        };
+                        let final_label = do_union(work, up_right as i32, up_left as i32);
                         label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
 
                         let l = (final_label as usize - 1) * 7;
@@ -130,17 +149,7 @@ pub fn ar_labeling(
                         work2[l + 2] += j as i32;
                         work2[l + 6] = j as i32;
                     } else if left_val > 0 {
-                        let m = work[up_right as usize - 1];
-                        let n = work[left_val as usize - 1];
-                        let final_label = if m > n {
-                            for k in 0..wk_max { if work[k] == m { work[k] = n; } }
-                            n
-                        } else if m < n {
-                            for k in 0..wk_max { if work[k] == n { work[k] = m; } }
-                            m
-                        } else {
-                            m
-                        };
+                        let final_label = do_union(work, up_right as i32, left_val as i32);
                         label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
 
                         let l = (final_label as usize - 1) * 7;
@@ -150,7 +159,7 @@ pub fn ar_labeling(
                         work2[l + 6] = j as i32;
                     } else {
                         label_img[p_idx] = up_right;
-                        let l = (up_right as usize - 1) * 7;
+                        let l = (find(work, up_right as i32) as usize - 1) * 7;
                         work2[l + 0] += 1;
                         work2[l + 1] += i as i32;
                         work2[l + 2] += j as i32;
@@ -159,7 +168,7 @@ pub fn ar_labeling(
                     }
                 } else if up_left > 0 {
                     label_img[p_idx] = up_left;
-                    let l = (up_left as usize - 1) * 7;
+                    let l = (find(work, up_left as i32) as usize - 1) * 7;
                     work2[l + 0] += 1;
                     work2[l + 1] += i as i32;
                     work2[l + 2] += j as i32;
@@ -167,14 +176,13 @@ pub fn ar_labeling(
                     work2[l + 6] = j as i32;
                 } else if left_val > 0 {
                     label_img[p_idx] = left_val;
-                    let l = (left_val as usize - 1) * 7;
+                    let l = (find(work, left_val as i32) as usize - 1) * 7;
                     work2[l + 0] += 1;
                     work2[l + 1] += i as i32;
                     work2[l + 2] += j as i32;
                     if work2[l + 4] < i as i32 { work2[l + 4] = i as i32; }
                 } else {
                     wk_max += 1;
-                    debug!("Creating new label {} at ({}, {})", wk_max, i, j);
                     if wk_max > AR_LABELING_WORK_SIZE {
                         return Err("Labeling work array overflow");
                     }
@@ -203,8 +211,18 @@ pub fn ar_labeling(
             num_labels += 1;
             work[i - 1] = num_labels;
         } else {
-            work[i - 1] = work[work[i - 1] as usize - 1];
+            work[i - 1] = work[work[i - 1] as usize - 1]; // This is fine for one level, but let's be thorough
         }
+    }
+    
+    // Thoroughly flatten the equivalence table
+    for i in 1..=wk_max {
+        let mut root = i as i32;
+        while work[root as usize - 1] > num_labels || work[work[root as usize - 1] as usize - 1] != work[root as usize - 1] {
+             // If not yet a finalized label index, follow parent
+             root = work[root as usize - 1];
+        }
+        work[i - 1] = work[root as usize - 1];
     }
     
     label_info.label_num = num_labels;
