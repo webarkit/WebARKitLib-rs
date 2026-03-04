@@ -1,25 +1,34 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: ["Rust CI"]
-    types: [completed]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
+  actions: read
+  checks: read
 
 jobs:
-  on-success:
+  release:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Wait for CI Benchmarks
+        uses: lewagon/wait-on-check-action@v1.3.1
+        with:
+          ref: ${{ github.ref }}
+          check-name: 'benchmarks'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          wait-interval: 30
+
       - name: Download benchmark reports
         uses: dawidd6/action-download-artifact@v3
         with:
           workflow: ci.yml
-          run_id: ${{ github.event.workflow_run.id }}
+          commit: ${{ github.sha }}
           name: benchmark-reports
           path: target/criterion
 
@@ -30,7 +39,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.workflow_run.head_branch }}
+          tag_name: ${{ github.ref_name }}
           files: |
             performance-reports.tar.gz
             target/criterion/c_benchmark.log
