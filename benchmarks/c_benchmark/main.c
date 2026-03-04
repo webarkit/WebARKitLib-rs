@@ -14,6 +14,14 @@ double get_time_ms() {
   QueryPerformanceFrequency(&freq);
   return (double)count.QuadPart * 1000.0 / freq.QuadPart;
 }
+#else
+#include <time.h>
+double get_time_ms() {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
+}
+#endif
 
 // Compatibility function for arPattLoad which uses cat()
 char *cat(const char *file, size_t *bufSize_p) {
@@ -47,14 +55,6 @@ char *cat(const char *file, size_t *bufSize_p) {
 // More dummy functions for ARUtil
 int test_d(const char *dir) { return 0; }
 int mkdir_p(const char *path) { return 0; }
-
-#else
-double get_time_ms() {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
-}
-#endif
 
 int main(int argc, char *argv[]) {
   if (argc < 4) {

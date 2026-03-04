@@ -103,9 +103,12 @@ set(SOURCES
 # Output executable
 add_executable(c_benchmark ${SOURCES})
 
-# Target compiles with local config.h
-target_compile_definitions(c_benchmark PRIVATE _WIN32 AR_LITTLE_ENDIAN)
+# Target compiles with appropriate definitions
+target_compile_definitions(c_benchmark PRIVATE AR_LITTLE_ENDIAN)
 
-if(MSVC)
-    target_compile_options(c_benchmark PRIVATE /W3 /Z7)
+if(WIN32)
+    target_compile_definitions(c_benchmark PRIVATE _WIN32)
+    if(MSVC)
+        target_compile_options(c_benchmark PRIVATE /W3 /Z7)
+    endif()
 endif()

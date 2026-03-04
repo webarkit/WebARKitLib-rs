@@ -67,12 +67,11 @@ jobs:
       uses: dtolnay/rust-toolchain@stable
     - name: Run benchmarks
       run: |
-        # Download C library
-        python benchmarks/bootstrap.py --bootstrap-file benchmarks/c_benchmark/libraries.json
-        
-        # Build C benchmark
+        # Download and Build C benchmark
         cd benchmarks/c_benchmark
-        mkdir build && cd build
+        python ../bootstrap.py --bootstrap-file libraries.json
+        
+        mkdir -p build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
         make
         cd ..
