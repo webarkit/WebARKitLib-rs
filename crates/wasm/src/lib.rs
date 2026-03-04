@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use core::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode};
-use core::image_proc::ARImageProcInfo;
+use core::image_proc::{ARImageProcInfo, rgba_to_gray};
 use core::marker::ar_detect_marker;
 use core::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
 use core::pattern::ar_patt_load_from_buffer;
@@ -183,14 +183,3 @@ pub struct PoseResult {
     pub icp_error: f32,
 }
 
-fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
-    let mut gray = Vec::with_capacity(rgba.len() / 4);
-    for chunk in rgba.chunks_exact(4) {
-        // Use more precise BT.601 coefficients
-        let r = chunk[0] as f32;
-        let g = chunk[1] as f32;
-        let b = chunk[2] as f32;
-        gray.push((0.2989 * r + 0.5870 * g + 0.1140 * b + 0.5) as u8);
-    }
-    gray
-}

@@ -190,12 +190,8 @@ pub fn pattern_match(
             }
             
             for j in 0..4 {
-                let mut sum_cc = 0i64;
                 let pattern_ref = &patt_handle.patt[k as usize * 4 + j];
-                
-                for i in 0..size_sqd_x3 {
-                    sum_cc += (input[i] * pattern_ref[i]) as i64;
-                }
+                let sum_cc = dot_product(&input, pattern_ref);
                 
                 let sum2 = (sum_cc as ARdouble) / patt_handle.pattpow[k as usize * 4 + j] / datapow;
                 if sum2 > max {
@@ -254,12 +250,8 @@ pub fn pattern_match(
             }
             
             for j in 0..4 {
-                let mut sum_cc = 0i64;
                 let pattern_ref = &patt_handle.patt_bw[k as usize * 4 + j];
-                
-                for i in 0..size_sqd {
-                    sum_cc += (input[i] * pattern_ref[i]) as i64;
-                }
+                let sum_cc = dot_product(&input, pattern_ref);
                 
                 let sum2 = (sum_cc as ARdouble) / patt_handle.pattpow_bw[k as usize * 4 + j] / datapow;
                 if sum2 > max {
@@ -480,4 +472,108 @@ mod tests {
         let result = pattern_match(&handle, AR_TEMPLATE_MATCHING_COLOR, &mock_data, AR_PATT_SIZE1, &mut code, &mut dir, &mut cf);
         assert!(result.is_ok());
     }
+}
+
+#[inline]
+fn dot_product(a: &[i32], b: &[i32]) -> i64 {
+    #[cfg(feature = "simd-pattern")]
+    {
+        #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+        {
+            return unsafe { dot_product_simd_wasm(a, b) };
+        }
+        #[cfg(all(target_arch = "x86_64", target_feature = "sse4.1"))]
+        {
+            if is_x86_feature_detected!("sse4.1") {
+                return unsafe { dot_product_simd_x86(a, b) };
+            }
+        }
+    }
+
+    dot_product_scalar(a, b)
+}
+
+pub fn dot_product_scalar(a: &[i32], b: &[i32]) -> i64 {
+    let mut sum = 0i64;
+    for i in 0..a.len() {
+        sum += (a[i] * b[i]) as i64;
+    }
+    sum
+}
+
+#[cfg(all(feature = "simd-pattern", target_arch = "wasm32", target_feature = "simd128"))]
+#[target_feature(enable = "simd128")]
+unsafe fn dot_product_simd_wasm(a: &[i32], b: &[i32]) -> i64 {
+    use std::arch::wasm32::*;
+    
+    let mut sum_v = i64x2_splat(0);
+    let chunks_len = a.len() / 4;
+    
+    let mut a_ptr = a.as_ptr();
+    let mut b_ptr = b.as_ptr();
+    
+    for _ in 0..chunks_len {
+        let va = v128_load(a_ptr as *const v128);
+        let vb = v128_load(b_ptr as *const v128);
+        
+        // Low parts
+        let va_low = i64x2_extend_low_i32x4(va);
+        let vb_low = i64x2_extend_low_i32x4(vb);
+        sum_v = i64x2_add(sum_v, i64x2_mul(va_low, vb_low));
+        
+        // High parts
+        let va_high = i64x2_extend_high_i32x4(va);
+        let vb_high = i64x2_extend_high_i32x4(vb);
+        sum_v = i64x2_add(sum_v, i64x2_mul(va_high, vb_high));
+        
+        a_ptr = a_ptr.add(4);
+        b_ptr = b_ptr.add(4);
+    }
+    
+    let mut res = [0i64; 2];
+    v128_store(res.as_mut_ptr() as *mut v128, sum_v);
+    let mut total = res[0] + res[1];
+    
+    let rem_start = chunks_len * 4;
+    for i in rem_start..a.len() {
+        total += (a[i] * b[i]) as i64;
+    }
+    
+    total
+}
+
+#[cfg(all(feature = "simd-pattern", target_arch = "x86_64", target_feature = "sse4.1"))]
+#[target_feature(enable = "sse4.1")]
+pub unsafe fn dot_product_simd_x86(a: &[i32], b: &[i32]) -> i64 {
+    use std::arch::x86_64::*;
+    
+    let mut sum_v = _mm_setzero_si128(); // i64x2
+    let chunks_len = a.len() / 4;
+    
+    let mut a_ptr = a.as_ptr();
+    let mut b_ptr = b.as_ptr();
+    
+    for _ in 0..chunks_len {
+        let va = _mm_loadu_si128(a_ptr as *const __m128i);
+        let vb = _mm_loadu_si128(b_ptr as *const __m128i);
+        
+        // Use 32-bit multiplication (SSE4.1). 
+        // This is safe for pattern matching where (255*255)*768 << 2^31.
+        let prod = _mm_mullo_epi32(va, vb);
+        sum_v = _mm_add_epi32(sum_v, prod);
+        
+        a_ptr = a_ptr.add(4);
+        b_ptr = b_ptr.add(4);
+    }
+    
+    let mut res = [0i32; 4];
+    _mm_storeu_si128(res.as_mut_ptr() as *mut __m128i, sum_v);
+    let mut total = (res[0] as i64) + (res[1] as i64) + (res[2] as i64) + (res[3] as i64);
+    
+    let rem_start = chunks_len * 4;
+    for i in rem_start..a.len() {
+        total += (a[i] * b[i]) as i64;
+    }
+    
+    total
 }

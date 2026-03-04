@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Rust CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  on-success:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v') }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download benchmark reports
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: ci.yml
+          run_id: ${{ github.event.workflow_run.id }}
+          name: benchmark-reports
+          path: target/criterion
+
+      - name: Package Reports
+        run: |
+          tar -czvf performance-reports.tar.gz target/criterion
+          
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.workflow_run.head_branch }}
+          files: |
+            performance-reports.tar.gz
+            target/criterion/c_benchmark.log
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

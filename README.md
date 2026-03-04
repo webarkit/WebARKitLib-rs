@@ -1,71 +1,86 @@
-# WebARKitLib.rs
-Rust version of the WebARKitLib. This is a Work in Progress!
+# WebARKitLib.rs 🦀
 
-## Benchmarking
+**WebARKitLib.rs** is a high-performance, memory-safe Rust port of the [WebARKitLib](https://github.com/webarkit/WebARKitLib) (originally C/C++). 
 
-We provide a comprehensive benchmarking suite to compare the performance of the Rust port against the original C implementation.
+This project aims to provide a pure-Rust implementation of the core ARToolKit algorithms, targeting both **native** systems and **WebAssembly (WASM)** for high-performance augmented reality in the browser.
 
-### 1. Prerequisites (C Benchmark)
-The C benchmark requires the original WebARKitLib source code. We use a bootstrapping script to automate this:
+> [!NOTE]
+> This project is currently a **Work in Progress**. While the core marker detection and pose estimation are functional, we are continuously optimizing and expanding the feature set.
 
-```bash
-cd benchmarks/c_benchmark
-python ../bootstrap.py --bootstrap-file libraries.json
-```
-This will download the C source into `benchmarks/c_benchmark/src/WebARKitLib`.
+## 🌟 Key Features
 
-### 2. Running the C Benchmark
-The C benchmark is built using CMake:
+- **Pure Rust**: Built for safety, speed, and modern concurrency.
+- **WASM Ready**: Designed from the ground up to be compiled to WebAssembly for seamless web integration.
+- **Side-Effect Free**: The core library is designed to be pure, making it easy to test and integrate into different environments.
+- **CI-Integrated Benchmarking**: Automated performance comparisons against the original C implementation.
 
-```bash
-cd benchmarks/c_benchmark
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-cd ..
-./build/Release/c_benchmark.exe ../data/camera_para.dat ../data/patt.hiro ../data/hiro.raw 429 317
-```
+## 🚀 Getting Started
 
-### 3. Running the Rust Benchmark
-The Rust implementation uses the `criterion` crate for high-precision benchmarking:
+### Native Rust Example
+
+To see the marker detection in action on your local machine, run the provided simple example:
 
 ```bash
-cargo bench -p core --bench marker_bench
+cargo run --example simple
 ```
+This example loads a camera parameter file, a hiro marker pattern, and a sample image, performing detection and outputting the 3D pose extrinsics.
 
-### 4. How Criterion Works
-The `criterion` crate stores historical benchmark data in `target/criterion/`.
-- **Storage**: Results are saved in JSON/CSV format for each benchmark function.
-- **Comparisons**: Every time you run `cargo bench`, it compares the current results with the previous run found in `target/criterion`.
-- **Reporting**: It generates beautiful HTML reports at `target/criterion/report/index.html`.
+### WebAssembly (WASM) Demo
 
-### 5. Persistent Baselines (Tracking Progress)
-Since `target/` is git-ignored, you can save specific snapshots as "baselines" to track progress over weeks or months.
+The WASM port allows you to run the AR engine directly in most modern browsers.
 
-#### Saving a Timestamped Baseline
-To save a snapshot with a date (e.g., for a new release or a major optimization), use the following command:
+1. **Build the WASM module**:
+   ```bash
+   cd crates/wasm
+   wasm-pack build --target web
+   ```
 
-**PowerShell:**
-```powershell
-$TS = Get-Date -Format "yyyyMMdd-HHmm"
-cargo bench -- --save-baseline "milestone-$TS"
-```
+2. **Run the demo**:
+   You can serve the `www` folder using any local HTTP server (e.g., `python -m http.server 8080`).
 
-**Bash:**
+## 📊 Benchmarking
+
+We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive.
+
+### Running the Comparison
+
+1.  **Bootstrap the C library**:
+    ```bash
+    cd benchmarks/c_benchmark
+    python ../bootstrap.py --bootstrap-file libraries.json
+    ```
+
+2.  **Execute the Suite**:
+    ```bash
+    # Rust Benchmark
+    cargo bench -p core --bench marker_bench
+
+    # C Benchmark (Manual build required once)
+    cd benchmarks/c_benchmark/build
+    cmake --build . --config Release
+    ../c_benchmark ../../data/camera_para.dat ../../data/patt.hiro ../../data/hiro.raw 429 317
+    ```
+
+### Tracking Performance
+
+We use `criterion` to track performance over time. You can save specific snapshots as "baselines":
+
 ```bash
-TS=$(date +%Y%m%d-%H%M)
-cargo bench -- --save-baseline "milestone-$TS"
+# Save a milestone baseline
+cargo bench -- --save-baseline milestone-20240304
 ```
 
-#### Comparing against a Baseline
-Later, you can compare your current code against that specific snapshot:
-```bash
-cargo bench -- --baseline milestone-20231027-1430
-```
+## 🏗️ Project Structure
 
-### 6. Continuous Integration (GitHub Actions)
-Every push to `main` automatically runs the benchmarks. You can download the full HTML reports:
-1. Go to the **Actions** tab on GitHub.
-2. Select the latest **Rust CI** run.
-3. Scroll down to **Artifacts** and download `benchmark-reports`.
-4. Open `report/index.html` locally to see trends and regression analysis.
+- `crates/core`: The core AR engine (pure Rust).
+- `crates/wasm`: WASM bindings and JavaScript glue code.
+- `benchmarks`: C vs Rust performance comparison suite.
+- `examples`: Usage demonstrations.
+
+## 📜 Credits
+
+This project is a port of the excellent [WebARKitLib](https://github.com/webarkit/WebARKitLib) project. Special thanks to the original ARToolKit contributors.
+
+## 📄 License
+
+This project is licensed under the LGPLv3 License - see the [LICENSE](LICENSE) file for details.

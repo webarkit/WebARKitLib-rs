@@ -11,10 +11,19 @@ byteorder = "1.5.0"
 log = "0.4.0"
 rand = "0.8.0"
 
+[features]
+simd = ["simd-image", "simd-pattern"]
+simd-image = []
+simd-pattern = []
+
 [dev-dependencies]
 env_logger = "0.10.0"
 criterion = "0.5.1"
 
 [[bench]]
 name = "marker_bench"
+harness = false
+
+[[bench]]
+name = "simd_bench"
 harness = false
