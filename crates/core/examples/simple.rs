@@ -12,14 +12,20 @@ fn main() {
     env_logger::init();
     println!("WebARKitLib Example: Simple Marker Detection");
 
+    // Use command line args or defaults
+    let args: Vec<String> = std::env::args().collect();
+    let cparam_path = if args.len() > 1 { &args[1] } else { "benchmarks/data/camera_para.dat" };
+    let patt_path = if args.len() > 2 { &args[2] } else { "benchmarks/data/patt.hiro" };
+    let img_path = if args.len() > 3 { &args[3] } else { "benchmarks/data/img.jpg" };
+
     // Load ARParam
-    println!("Loading camera parameters...");
-    let param_file = File::open("examples/Data/camera_para.dat").expect("Failed to open camera_para.dat");
+    println!("Loading camera parameters from {}...", cparam_path);
+    let param_file = File::open(cparam_path).expect("Failed to open camera_para.dat");
     let param = ARParam::load(param_file).expect("Failed to read camera_para.dat");
     
     // Load image
-    println!("Loading image `examples/Data/img.jpg`...");
-    let img = ImageReader::open("examples/Data/img.jpg").unwrap().decode().unwrap();
+    println!("Loading image {}...", img_path);
+    let img = ImageReader::open(img_path).unwrap().decode().unwrap();
     let width = img.width() as i32;
     let height = img.height() as i32;
     println!("Image dimensions: {}x{}", width, height);
@@ -27,6 +33,14 @@ fn main() {
     let luma_img = img.to_luma8();
     let color_img = img.to_rgba8(); 
     
+    // SAVE RAW LUMA FOR C BENCHMARK
+    {
+        use std::io::Write;
+        let mut f = File::create("../../benchmarks/data/hiro.raw").expect("Failed to create hiro.raw");
+        f.write_all(luma_img.as_raw()).expect("Failed to write hiro.raw");
+        println!("Exported benchmarks/data/hiro.raw for C benchmark.");
+    }
+
     // Calculate Otsu threshold
     let mut ipi = ARImageProcInfo::new(width, height);
     let otsu_thresh = ipi.luma_hist_and_otsu(luma_img.as_raw()).expect("Failed to calculate Otsu threshold");
@@ -41,7 +55,7 @@ fn main() {
             p[0] = 255; // White region
         }
     }
-    thresh_img.save("examples/Data/thresh.png").unwrap();
+    thresh_img.save("../../benchmarks/data/thresh.png").unwrap();
     
     // We mock an identity lookup table for the image size to avoid distortion failure
     let mut param_ltf = ARParamLTf::default();
@@ -90,8 +104,8 @@ fn main() {
     patt_handle.patt_bw = vec![vec![0; 16 * 16 * 4]; 50];
     patt_handle.pattpow_bw = vec![0.0; 50 * 4];
     
-    println!("Loading hiro pattern...");
-    match ar_patt_load(&mut patt_handle, "examples/Data/patt.hiro") {
+    println!("Loading hiro pattern from {}...", patt_path);
+    match ar_patt_load(&mut patt_handle, patt_path) {
         Ok(idx) => println!("Pattern loaded successfully at index {}.", idx),
         Err(e) => {
             eprintln!("Failed to load pattern: {}", e);
