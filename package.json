@@ -1,0 +1,21 @@
+{
+  "name": "webarkitlib-rs",
+  "version": "0.1.0",
+  "description": "Port of WebARKitLib (ARToolKit) to Rust and WASM",
+  "private": true,
+  "scripts": {
+    "build:core": "cargo build -p webarkitlib-rs",
+    "build:wasm": "wasm-pack build crates/wasm --scope webarkit",
+    "build": "npm run build:core && npm run build:wasm",
+    "test": "cargo test",
+    "bench": "cargo bench",
+    "publish:core": "cargo publish -p webarkitlib-rs",
+    "publish:wasm": "wasm-pack publish crates/wasm"
+  },
+  "author": "kalwalt <github@kalwaltart.it>",
+  "license": "LGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kalwalt/WebARKitLib.rs.git"
+  }
+}
