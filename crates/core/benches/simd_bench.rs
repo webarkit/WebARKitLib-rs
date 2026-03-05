@@ -35,8 +35,13 @@
  */
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use webarkitlib_rs::pattern::{dot_product_scalar, dot_product_simd_x86};
-use webarkitlib_rs::image_proc::{rgba_to_gray_scalar, rgba_to_gray_simd_x86, box_filter_h_scalar, box_filter_v_scalar, box_filter_h_simd_x86, box_filter_v_simd_x86};
+use webarkitlib_rs::pattern::dot_product_scalar;
+#[cfg(all(feature = "simd-pattern", target_arch = "x86_64", target_feature = "sse4.1"))]
+use webarkitlib_rs::pattern::dot_product_simd_x86;
+
+use webarkitlib_rs::image_proc::{rgba_to_gray_scalar, box_filter_h_scalar, box_filter_v_scalar};
+#[cfg(all(feature = "simd-image", target_arch = "x86_64", target_feature = "sse4.1"))]
+use webarkitlib_rs::image_proc::{rgba_to_gray_simd_x86, box_filter_h_simd_x86, box_filter_v_simd_x86};
 
 fn bench_dot_product(c: &mut Criterion) {
     let size = 16 * 16 * 3;

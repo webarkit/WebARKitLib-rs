@@ -72,7 +72,7 @@ fn marker_detection_benchmark(c: &mut Criterion) {
     ar_handle.ar_labeling_thresh = 100; // Standard threshold
     ar_handle.ar_param_lt = &mut *param_lt;
 
-    let mut patt_handle = core::types::ARPattHandle::new(16, 50);
+    let mut patt_handle = webarkitlib_rs::types::ARPattHandle::new(16, 50);
     ar_patt_load(&mut patt_handle, patt_path).expect("Failed to load pattern");
     let mut boxed_patt_handle = Box::new(patt_handle);
     ar_handle.patt_handle = &mut *boxed_patt_handle;
