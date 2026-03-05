@@ -77,6 +77,18 @@ cargo bench -- --save-baseline milestone-20240304
 - `benchmarks`: C vs Rust performance comparison suite.
 - `examples`: Usage demonstrations.
 
+## 🗺️ Roadmap
+
+### 🎯 Near-term Goals (v1.0.0+)
+- **Dual WASM Builds**: Provide automated builds for both SIMD-enabled and non-SIMD environments to maximize compatibility.
+- **Barcode Marker Support**: Implement support for matrix-based barcode markers.
+- **Enhanced Documentation**: Expand API documentation, integration guides, and advanced examples.
+
+### 🔭 Long-term Vision
+- **Multi-Marker Tracking**: Support for simultaneous tracking of multiple independent markers.
+- **NFT (Natural Feature Tracking)**: Support for KPM/NFT algorithms to track arbitrary images.
+- **Integrated Video Pipeline**: Develop advanced video processing handlers (inspired by ARToolkitX) to provide a unified AR experience across platforms.
+
 ## 📜 Credits
 
 This project is a port of the excellent [WebARKitLib](https://github.com/webarkit/WebARKitLib) project. Special thanks to the original ARToolKit contributors.
