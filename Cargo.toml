@@ -12,3 +12,7 @@ resolver = "2"
 version = "0.1.0"
 authors = ["kalwalt <github@kalwaltart.it>"]
 edition = "2021"
+description = "A high-performance, memory-safe Rust port of WebARKitLib (ARToolKit) for native and WASM."
+license = "LGPL-3.0-or-later"
+repository = "https://github.com/kalwalt/WebARKitLib-rs"
+homepage = "https://github.com/kalwalt/WebARKitLib-rs"
