@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-03-05
+
+### Fixed
+- **NPM Publication Recovery**: Version bump to clear "shadow" states from previous failed attempts and ensure public access visibility.
+
 ## [0.1.1] - 2026-03-05
 
 ### Fixed
