@@ -18,3 +18,4 @@ repository = "https://github.com/kalwalt/WebARKitLib-rs"
 homepage = "https://github.com/kalwalt/WebARKitLib-rs"
 keywords = ["augmented-reality", "computer-vision", "wasm", "artoolkit", "webarkit"]
 categories = ["computer-vision", "wasm"]
+readme = "README.md"
