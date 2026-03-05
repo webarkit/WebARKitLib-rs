@@ -9,10 +9,10 @@ This project aims to provide a pure-Rust implementation of the core ARToolKit al
 
 ## 🌟 Key Features
 
-- **Pure Rust**: Built for safety, speed, and modern concurrency.
-- **WASM Ready**: Designed from the ground up to be compiled to WebAssembly for seamless web integration.
-- **Side-Effect Free**: The core library is designed to be pure, making it easy to test and integrate into different environments.
-- **CI-Integrated Benchmarking**: Automated performance comparisons against the original C implementation.
+- **Pure Rust**: Built for safety, speed, and modern concurrency. ([crates.io](https://crates.io/crates/webarkitlib-rs))
+- **WASM Ready**: High-performance tracking in the browser via WebAssembly. ([@webarkit/webarkitlib-wasm](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm))
+- **Side-Effect Free**: Pure mathematical engine, easy to test and integrate.
+- **CI-Integrated Benchmarking**: Performance parity with original C implementation.
 
 ## 🚀 Getting Started
 
@@ -80,14 +80,14 @@ cargo bench -- --save-baseline milestone-20240304
 ## 🗺️ Roadmap
 
 ### 🎯 Near-term Goals (v1.0.0+)
-- **Dual WASM Builds**: Provide automated builds for both SIMD-enabled and non-SIMD environments to maximize compatibility.
-- **Barcode Marker Support**: Implement support for matrix-based barcode markers.
-- **Enhanced Documentation**: Expand API documentation, integration guides, and advanced examples.
+- **Dual WASM Strategy**: Automate the release of both **non-SIMD** (current) and **SIMD-enabled** binaries to maximize compatibility across different browser environments.
+- **Barcode Marker Support**: Port matrix-code detection logic to support barcode markers.
+- **Enhanced Documentation**: Expand API reference, integration walkthroughs for JS/TS, and provide detailed usage examples.
 
 ### 🔭 Long-term Vision
-- **Multi-Marker Tracking**: Support for simultaneous tracking of multiple independent markers.
-- **NFT (Natural Feature Tracking)**: Support for KPM/NFT algorithms to track arbitrary images.
-- **Integrated Video Pipeline**: Develop advanced video processing handlers (inspired by ARToolkitX) to provide a unified AR experience across platforms.
+- **Multi-Marker Support**: Port `arMulti` logic to enable tracking of multiple markers simultaneously.
+- **KPM/NFT (Natural Feature Tracking)**: Implement robust tracking of arbitrary images and surfaces.
+- **Advanced Video Abstraction**: Develop a cross-platform video handling layer (inspired by ARWrapper/ARToolkitX) to simplify integration with various input sources.
 
 ## 📜 Credits
 

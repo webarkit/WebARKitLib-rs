@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-05
+
+### Fixed
+- **Crates.io Publication**: Resolved missing metadata (description, license, readme) and corrected category slugs/keyword limits.
+- **NPM Scoped Access**: Fixed E402/E403 errors by configuring public access for the `@webarkit` scope.
+
 ## [0.1.0] - 2026-03-05
 
 ### Added
