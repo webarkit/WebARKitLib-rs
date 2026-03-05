@@ -88,7 +88,7 @@ jobs:
         
         # Run Rust benchmarks
         cd ../..
-        cargo bench -p core --bench marker_bench
+        cargo bench -p webarkitlib-rs --bench marker_bench
     - name: Upload benchmark reports
       uses: actions/upload-artifact@v4
       with:
