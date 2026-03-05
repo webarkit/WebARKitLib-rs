@@ -131,7 +131,7 @@ fn main() {
     ar_handle.ar_param_lt = &mut *param_lt;
 
     // Allocate pattern handle and load real pattern
-    let mut patt_handle = core::types::ARPattHandle::default();
+    let mut patt_handle = webarkitlib_rs::types::ARPattHandle::default();
     patt_handle.patt_num_max = 50;
     patt_handle.patt_size = 16;
     patt_handle.pattf = vec![0; 50];
