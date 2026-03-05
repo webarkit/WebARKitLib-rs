@@ -16,5 +16,5 @@ description = "A high-performance, memory-safe Rust port of WebARKitLib (ARToolK
 license = "LGPL-3.0-or-later"
 repository = "https://github.com/kalwalt/WebARKitLib-rs"
 homepage = "https://github.com/kalwalt/WebARKitLib-rs"
-keywords = ["augmented-reality", "computer-vision", "marker-tracking", "wasm", "artoolkit", "webarkit", "webarkitlib"]
+keywords = ["augmented-reality", "computer-vision", "wasm", "artoolkit", "webarkit"]
 categories = ["multimedia::vision", "wasm"]
