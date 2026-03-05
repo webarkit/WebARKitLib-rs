@@ -17,5 +17,15 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/kalwalt/WebARKitLib-rs.git"
-  }
+  },
+  "keywords": [
+    "augmented-reality",
+    "computer-vision",
+    "marker-tracking",
+    "wasm",
+    "artoolkit",
+    "rust",
+    "webarkit",
+    "webarkitlib"
+  ]
 }
