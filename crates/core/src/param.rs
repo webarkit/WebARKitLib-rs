@@ -82,6 +82,7 @@ impl crate::types::ARParamLTf {
         let py = (oy + 0.5) as i32 + self.y_off;
         
         if px < 0 || px >= self.xsize || py < 0 || py >= self.ysize {
+            println!("param.rs observ2ideal bounds fail: ox={}, oy={}, px={}, py={}, xsize={}, ysize={}", ox, oy, px, py, self.xsize, self.ysize);
             return Err("Coordinates out of bounds in lookup table");
         }
         

@@ -40,9 +40,15 @@
 pub type ARdouble = f64;
 
 pub const AR_DIST_FACTOR_NUM_MAX: usize = 9;
-pub const AR_CHAIN_MAX: usize = 10000;
+pub const AR_CHAIN_MAX: usize = 40000;
 pub const AR_SQUARE_MAX: usize = 30;
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
+
+pub const AR_TEMPLATE_MATCHING_COLOR: i32 = 0;
+pub const AR_TEMPLATE_MATCHING_MONO: i32 = 1;
+pub const AR_MATRIX_CODE_DETECTION: i32 = 2;
+pub const AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION: i32 = 3;
+pub const AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION: i32 = 4;
 
 /// A structure to hold a timestamp in seconds and microseconds, with arbitrary epoch.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -93,8 +99,8 @@ pub struct ARMarkerInfo2 {
     pub area: i32,
     pub pos: [ARdouble; 2],
     pub coord_num: i32,
-    pub x_coord: [i32; AR_CHAIN_MAX],
-    pub y_coord: [i32; AR_CHAIN_MAX],
+    pub x_coord: Vec<i32>,
+    pub y_coord: Vec<i32>,
     pub vertex: [i32; 5],
 }
 
@@ -104,8 +110,8 @@ impl Default for ARMarkerInfo2 {
             area: 0,
             pos: [0.0; 2],
             coord_num: 0,
-            x_coord: [0; AR_CHAIN_MAX],
-            y_coord: [0; AR_CHAIN_MAX],
+            x_coord: vec![0i32; AR_CHAIN_MAX],
+            y_coord: vec![0i32; AR_CHAIN_MAX],
             vertex: [0; 5],
         }
     }
@@ -351,7 +357,26 @@ impl Default for ARLabelingThreshMode {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ARMatrixCodeType {
+    /// 3x3 Matrix Code (Default)
     Code3x3 = 0x03,
+    /// 3x3 Matrix Code with Parity (6,5)
+    Code3x3Parity65 = 0x03 | 0x100,
+    /// 3x3 Matrix Code with Hamming (6,3)
+    Code3x3Hamming63 = 0x03 | 0x200,
+    /// 4x4 Matrix Code
+    Code4x4 = 0x04,
+    /// 4x4 Matrix Code with BCH (13,9,3)
+    Code4x4BCH1393 = 0x04 | 0x300,
+    /// 4x4 Matrix Code with BCH (13,5,5)
+    Code4x4BCH1355 = 0x04 | 0x400,
+    /// 5x5 Matrix Code
+    Code5x5 = 0x05,
+    /// 5x5 Matrix Code with BCH (22,12,5)
+    Code5x5BCH22125 = 0x05 | 0x500,
+    /// 5x5 Matrix Code with BCH (22,7,7)
+    Code5x5BCH2277 = 0x05 | 0x600,
+    /// 6x6 Matrix Code
+    Code6x6 = 0x06,
 }
 
 impl Default for ARMatrixCodeType {
@@ -411,6 +436,18 @@ impl ARHandle {
             ARPixelFormat::MONO => 1,
             _ => 0,
         };
+    }
+
+    pub fn set_matrix_code_type(&mut self, code_type: ARMatrixCodeType) {
+        self.matrix_code_type = code_type;
+    }
+
+    pub fn set_pattern_detection_mode(&mut self, mode: i32) {
+        self.ar_pattern_detection_mode = mode;
+    }
+
+    pub fn get_matrix_code_type(&self) -> ARMatrixCodeType {
+        self.matrix_code_type
     }
 }
 

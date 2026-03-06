@@ -72,7 +72,7 @@ fn main() {
     // SAVE RAW LUMA FOR C BENCHMARK
     {
         use std::io::Write;
-        let mut f = File::create("../../benchmarks/data/hiro.raw").expect("Failed to create hiro.raw");
+        let mut f = File::create("benchmarks/data/hiro.raw").expect("Failed to create hiro.raw");
         f.write_all(luma_img.as_raw()).expect("Failed to write hiro.raw");
         println!("Exported benchmarks/data/hiro.raw for C benchmark.");
     }
@@ -91,7 +91,7 @@ fn main() {
             p[0] = 255; // White region
         }
     }
-    thresh_img.save("../../benchmarks/data/thresh.png").unwrap();
+    thresh_img.save("benchmarks/data/thresh.png").unwrap();
     
     // We mock an identity lookup table for the image size to avoid distortion failure
     let mut param_ltf = ARParamLTf::default();
@@ -204,7 +204,7 @@ fn main() {
 
             println!("Saving found.jpg...");
             let rgb_img = image::DynamicImage::ImageRgba8(out_img).into_rgb8();
-            rgb_img.save("examples/Data/found.jpg").unwrap();
+            rgb_img.save("benchmarks/data/found.jpg").unwrap();
         },
         Err(e) => eprintln!("Error during marker detection: {}", e)
     }
@@ -235,5 +235,5 @@ fn main() {
             }
         }
     }
-    label_img.save("examples/Data/label.png").unwrap();
+    label_img.save("benchmarks/data/label.png").unwrap();
 }
