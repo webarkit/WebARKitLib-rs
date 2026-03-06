@@ -39,7 +39,47 @@ pub struct MatrixCodeResult {
     pub error_corrected: i32,
 }
 
-/// Decodes a matrix code from a sampled grid of intensities.
+/// Decodes a matrix (barcode) marker code from the raw frame.
+///
+/// This is the main entry point for barcode marker decoding. Given the four
+/// corner vertices of a detected square candidate, it:
+/// 1. Calls `sample_grid` to project `grid_size × grid_size` cells from the
+///    image onto a regular grid using a homography (`get_cpara`).
+/// 2. Computes the adaptive binarisation threshold from the sampled min/max
+///    intensity. Returns `Err("Low contrast…")` if the range < 30.
+/// 3. Scans the four corners of the inner `dim × dim` core to detect the
+///    L-shaped locator pattern (two adjacent `1`-bits and one `0`-bit), which
+///    determines the orientation (`matched_dir ∈ 0..3`).
+/// 4. Reads the data bits from the core in the correct rotation order and
+///    passes them to `decode_matrix_raw`.
+///
+/// # Parameters
+/// - `vertex` — four `[x, y]` corner coordinates in ideal (undistorted) space,
+///   as produced by [`crate::marker::ar_get_line`].
+/// - `code_type` — selects the square dimension (`3..=6`) and ECC scheme.
+/// - `id` / `dir` / `cf` / `error_corrected` — output values.
+///
+/// # Returns
+/// `Ok(())` on successful decode. `Err` on low contrast, missing locator pattern,
+/// or unsupported `code_type`.
+///
+/// # Example
+/// ```rust,no_run
+/// use webarkitlib_rs::matrix::ar_matrix_code_get_id;
+/// use webarkitlib_rs::types::ARMatrixCodeType;
+///
+/// let image = vec![0u8; 640 * 480 * 3];
+/// let vertex = [[100.0, 100.0], [200.0, 100.0], [200.0, 200.0], [100.0, 200.0]];
+/// let mut id = -1i32;
+/// let mut dir = -1i32;
+/// let mut cf = 0.0f64;
+/// let mut err = 0i32;
+/// if ar_matrix_code_get_id(&image, 640, 480, &vertex, ARMatrixCodeType::default(),
+///         webarkitlib_rs::types::ARPixelFormat::RGB, 0.5,
+///         &mut id, &mut dir, &mut cf, &mut err).is_ok() {
+///     println!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
+/// }
+/// ```
 pub fn ar_matrix_code_get_id(
     image: &[u8],
     xsize: i32,
@@ -191,6 +231,18 @@ pub fn ar_matrix_code_get_id(
     }
 }
 
+
+/// Higher-level helper: trace contour lines then decode a barcode marker.
+///
+/// Alternative path for barcode detection not yet wired into [`crate::marker::ar_get_marker_info`].
+/// Given a raw `ARMarkerInfo2` candidate, this function:
+/// 1. Calls [`crate::marker::ar_get_line`] via the `ARHandle`'s lens-distortion
+///    table to undistort the square edge lines and compute corner vertices.
+/// 2. Calls [`ar_matrix_code_get_id`] to decode the barcode.
+/// 3. Builds and returns a populated [`crate::types::ARMarkerInfo`] struct.
+///
+/// Returns `Err` if `ar_handle.ar_param_lt` is null, if line fitting fails,
+/// or if the barcode decode fails.
 pub fn ar_get_barcode_marker(
     image: &[u8],
     ar_handle: &mut ARHandle, 
@@ -249,6 +301,23 @@ pub fn ar_get_barcode_marker(
     Ok(marker_info)
 }
 
+
+/// Project image pixels onto a regular grid using a homography.
+///
+/// Samples `grid_size × grid_size` evenly-spaced points inside the square
+/// defined by `vertex`. Uses the same world-coordinate system as `arPattGetImage2`
+/// (i.e. nominal corners at (100,100)…(110,110)) so that `patt_ratio` correctly
+/// controls what fraction of the square area is sampled.
+///
+/// For each grid cell `(x, y)` the homography (`para`) maps world coordinates to
+/// image pixel `(xc, yc)` and reads into `bits` the intensity (G channel for
+/// multi-channel formats, first byte for luma).
+///
+/// # Parameters
+/// - `grid_size` — total grid side length including the one-cell border ring;
+///   equal to `dim + 2` where `dim = code_type & 0xFF`.
+/// - `patt_ratio` — fraction of the square covered by data cells (0.5–0.9).
+/// - `bits` — output: `grid_size * grid_size` raw intensity values.
 fn sample_grid(
     image: &[u8],
     xsize: i32,
@@ -314,6 +383,15 @@ fn sample_grid(
     Ok(())
 }
 
+
+/// Rotates a `dim × dim` bit-grid by `dir * 90°` counter-clockwise.
+///
+/// Used to bring a barcode into a canonical orientation before extracting the
+/// data-bit sequence. Directions follow the ARToolKit convention:
+/// - `0` — no rotation (identity)
+/// - `1` — 90° CCW
+/// - `2` — 180°
+/// - `3` — 270° CCW
 fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
     let mut rotated = vec![0u8; bits.len()];
     for y in 0..dim {
@@ -330,6 +408,20 @@ fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
     }
     rotated
 }
+/// Decodes a raw bit-word into a marker ID, applying ECC if the `code_type` supports it.
+///
+/// Maps `code_raw` (a `u64` bit-field extracted from the core grid) to a marker
+/// ID using the appropriate lookup table for the given `code_type`:
+///
+/// | `code_type`                  | ECC scheme                              |
+/// |------------------------------|-----------------------------------------|
+/// | `Code3x3`                    | None — raw 6-bit value                  |
+/// | `Code3x3Parity65`            | Single-bit parity (table lookup, TODO)  |
+/// | `Code3x3Hamming63`           | Hamming (6,3) (table lookup, TODO)      |
+/// | `Code4x4` / `Code5x5`       | BCH (39,12) / BCH (51,12) (TODO)        |
+///
+/// > **Note** ECC table lookups are not yet implemented; all variants currently
+/// > return `(code_raw as i32, 0)` as a placeholder.
 fn decode_matrix_raw(code_raw: u64, code_type: ARMatrixCodeType) -> Result<(i32, i32), &'static str> {
     match code_type {
         ARMatrixCodeType::Code3x3 => {

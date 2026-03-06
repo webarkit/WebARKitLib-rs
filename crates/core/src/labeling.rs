@@ -38,7 +38,7 @@
 //! Translated from ARToolKit C headers (arLabeling.c, arLabelingSub.h)
 
 use crate::types::{ARLabelInfo, ARdouble};
-use log::{debug, trace};
+use log::trace;
 
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
@@ -54,10 +54,45 @@ pub enum ImageProcMode {
     FieldImage, // Handles interlaced half-resolution fields
 }
 
-/// Perform connected-component analysis and labeling on an 8-bit luma image.
+/// Perform connected-component labeling on a grayscale (luma) image.
 ///
-/// This collapses the ~14 macro variations of `arLabelingSub*` into one generic safe Rust function,
-/// parameterizing the behavior using enums and generic pixel-checking closures.
+/// Ported from the family of `arLabelingSub*` C macros in ARToolKit.
+/// All ~14 macro instantiations (black/white × frame/field × pixel-depth) are
+/// collapsed into a single generic Rust function parameterised by `mode` and
+/// `proc_mode`.
+///
+/// ## Algorithm
+/// Single-pass raster scan with union-find equivalence table:
+/// 1. Each pixel that satisfies the threshold test (`≤ thresh` for
+///    [`LabelingMode::BlackRegion`], `> thresh` for [`LabelingMode::WhiteRegion`])
+///    is provisionally assigned the label of its already-scanned neighbour, or a new
+///    label if none exist.
+/// 2. Conflicting neighbour labels are merged via a union-find structure stored in
+///    `label_info.work`.
+/// 3. A second pass resolves equivalences and accumulates per-label statistics
+///    (area, centroid, bounding clip) into `label_info`.
+///
+/// ## Parameters
+/// - `image` — row-major 8-bit luma buffer of length `xsize * ysize`.
+/// - `mode` — whether dark or bright regions are treated as foreground.
+/// - `thresh` — binarisation threshold (0–255).
+/// - `proc_mode` — `FrameImage` (full resolution) or `FieldImage`
+///   (half-resolution interlaced; dimensions are halved internally).
+/// - `label_info` — output struct; resized automatically if needed.
+///
+/// # Example
+/// ```rust,no_run
+/// use webarkitlib_rs::labeling::{ar_labeling, LabelingMode, ImageProcMode};
+/// use webarkitlib_rs::types::ARLabelInfo;
+///
+/// let width = 320i32;
+/// let height = 240i32;
+/// let luma = vec![0u8; (width * height) as usize];
+/// let mut label_info = ARLabelInfo::default();
+/// ar_labeling(&luma, width, height, LabelingMode::BlackRegion, 100,
+///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
+/// println!("{} regions found", label_info.label_num);
+/// ```
 pub fn ar_labeling(
     image: &[u8],
     xsize: i32,
@@ -129,7 +164,7 @@ pub fn ar_labeling(
     let label_img = &mut label_info.label_image;
 
     // Helper for Union-Find find with path compression
-    fn find(work: &mut [i32], mut i: i32) -> i32 {
+    fn find(work: &mut [i32], i: i32) -> i32 {
         let mut root = i;
         while work[root as usize - 1] != root {
             root = work[root as usize - 1];

@@ -52,8 +52,37 @@ pub enum ImageProcMode {
     FieldImage = 1,
 }
 
-/// High-level marker detection pipeline ported from arDetectMarker.
-/// This method handles thresholding, region extraction, subpixel refinement, and template matching.
+/// High-level AR marker detection pipeline.
+///
+/// This is the main entry point for detecting markers in a video frame.
+/// It orchestrates the full pipeline in order:
+/// 1. **Thresholding** — luma image binarised against `ar_handle.ar_labeling_thresh`.
+/// 2. **Labeling** — [`ar_labeling`](crate::labeling::ar_labeling) extracts connected
+///    dark (or bright) regions and assigns each a unique integer label.
+/// 3. **Candidate selection** - `ar_detect_marker2` filters regions by area and
+///    fits a quadrilateral contour using `ar_get_contour` and `check_square`.
+/// 4. **Identity resolution** — [`ar_get_marker_info`] decodes each candidate:
+///    template matching (via `ar_patt_get_image` + `pattern_match`) **or**
+///    matrix-code reading (via [`crate::matrix::ar_matrix_code_get_id`]),
+///    depending on `ar_handle.ar_pattern_detection_mode`.
+///
+/// Results are written into `ar_handle.marker_info` (up to `AR_SQUARE_MAX` markers).
+///
+/// # Example
+/// ```rust,no_run
+/// use webarkitlib_rs::marker::ar_detect_marker;
+/// use webarkitlib_rs::types::{ARHandle, AR2VideoBufferT};
+///
+/// let mut handle = ARHandle::default();
+/// // ... configure handle, load pattern, set param_lt ...
+/// let frame = AR2VideoBufferT::default();
+/// if ar_detect_marker(&mut handle, &frame).is_ok() {
+///     for i in 0..handle.marker_num as usize {
+///         let m = &handle.marker_info[i];
+///         println!("Marker id={}, cf={:.2}", m.id, m.cf);
+///     }
+/// }
+/// ```
 pub fn ar_detect_marker(
     ar_handle: &mut crate::types::ARHandle,
     frame: &crate::types::AR2VideoBufferT,
@@ -162,7 +191,24 @@ pub fn ar_detect_marker(
     Ok(())
 }
 
-/// Ported from arDetectMarker2 in arDetectMarker2.c
+/// Refine labeled regions into square (marker) candidates.
+///
+/// Ported from `arDetectMarker2.c`. Operates on the output of [`crate::labeling::ar_labeling`].
+/// For each surviving region it:
+/// - Skips labels outside the `[area_min, area_max]` pixel-count range.
+/// - Skips labels touching the image boundary (prevents partial squares).
+/// - Calls `ar_get_contour` to trace the region boundary.
+/// - Calls `check_square` to verify the contour is a plausible square
+///   (four well-separated vertices, low fit error against `square_fit_thresh`).
+/// - Deduplicates overlapping candidates by area proximity.
+///
+/// In `FieldImage` mode areas and coordinates are scaled by ½ for processing
+/// and scaled back to full resolution before returning.
+///
+/// # Parameters
+/// - `label_info` — labeling output produced by [`crate::labeling::ar_labeling`].
+/// - `marker_info2` — output slice (length ≥ `AR_SQUARE_MAX`) to write candidates into.
+/// - `marker2_num` — number of candidates written on return.
 pub fn ar_detect_marker2(
     xsize: i32,
     ysize: i32,
@@ -286,6 +332,17 @@ pub fn ar_detect_marker2(
     Ok(())
 }
 
+/// Trace the boundary contour of a labeled region using 8-connected chain-code walking.
+///
+/// Starting from the top-left pixel of the region's bounding clip, walks the
+/// outer boundary and records (x, y) coordinates into `marker_info2.x_coord` /
+/// `y_coord`. After tracing, rotates the chain so the farthest point from the
+/// start is first - this provides a canonical start for `check_square`.
+///
+/// Returns `Err` if:
+/// - No starting pixel is found in the clip region.
+/// - The contour is broken (no neighbour found in 8 directions).
+/// - The contour exceeds `AR_CHAIN_MAX - 1` pixels.
 fn ar_get_contour(
     limage: &[crate::types::ARLabelingLabelType],
     xsize: i32,
@@ -395,6 +452,25 @@ fn ar_get_contour(
     Ok(())
 }
 
+/// Validates that a traced contour is a plausible planar square.
+///
+/// Uses a recursive vertex-splitting algorithm (similar to the Ramer–Douglas–Peucker
+/// approach) to find exactly **four** corner points from the contour stored in
+/// `marker_info2.{x,y}_coord`.
+///
+/// The fit threshold `factor` is combined with the region `area` to produce an
+/// adaptive pixel-distance tolerance:
+/// ```text
+/// thresh = (area / 0.75) * 0.01 * factor
+/// ```
+/// Values used in production: `area ∈ [AR_AREA_MIN, AR_AREA_MAX]`,
+/// `factor = AR_SQUARE_FIT_THRESH` (0.05).
+///
+/// On success the four vertex indices are written into `marker_info2.vertex`
+/// in counter-clockwise order (indices 0–4, where index 4 wraps back to 0).
+///
+/// Returns `Err` if the split process cannot isolate exactly four corners,
+/// indicating the region is not a valid square marker candidate.
 fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -> Result<(), &'static str> {
     let mut dmax = 0;
     let mut v1 = 0;
@@ -476,6 +552,16 @@ fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -
     Ok(())
 }
 
+/// Recursively find sub-vertices between two contour indices using perpendicular distance.
+///
+/// For the chord from contour point `st` to contour point `ed`, this function
+/// finds the contour point with the maximum perpendicular distance from the chord.
+/// If that distance exceeds `thresh`, the segment is split at that point and the
+/// function recurses on both halves.
+///
+/// The result is appended into `vertex` (up to 5 entries), and `vnum` is
+/// incremented for each found vertex. Returns `Err` if more than 5 vertices are
+/// found (which indicates a non-convex / non-square shape).
 fn get_vertex(
     x_coord: &[i32],
     y_coord: &[i32],
@@ -522,7 +608,26 @@ fn get_vertex(
 use crate::math::{ARMat, ARVec};
 use crate::types::{ARParamLTf, ARMarkerInfo};
 
-/// Ports arGetLine from arGetLine.c
+/// Fits undistorted straight lines to each of the four sides of a detected square.
+///
+/// Ported from `arGetLine.c`. For each side of the candidate square (defined by
+/// consecutive vertex index pairs) it:
+/// 1. Trims 5 % of the edge from each end to avoid corner artefacts.
+/// 2. Calls `param_ltf.observ2ideal` to correct lens-distortion on every pixel
+///    along the edge.
+/// 3. Runs PCA on the corrected pixel positions to find the dominant axis, from
+///    which the line equation `(a, b, c)` is derived such that `ax + by + c = 0`.
+/// 4. Computes the four corner coordinates as intersections of adjacent lines.
+///
+/// # Parameters
+/// - `x_coord`, `y_coord` — full pixel contour from `ar_get_contour`.
+/// - `vertex` — five vertex indices into the contour (4 corners + wrap-around).
+/// - `param_ltf` — lens-distortion look-up table for `observ2ideal` mapping.
+/// - `line` — output: four `[a, b, c]` line coefficients.
+/// - `v` — output: four `[x, y]` corner coordinates in ideal (undistorted) space.
+///
+/// Returns `Err` if any edge has fewer than two pixels, PCA fails, or adjacent
+/// lines are nearly parallel (determinant < 0.0001).
 pub fn ar_get_line(
     x_coord: &[i32],
     y_coord: &[i32],
@@ -568,7 +673,30 @@ pub fn ar_get_line(
     Ok(())
 }
 
-/// Ports arGetMarkerInfo from arGetMarkerInfo.c
+/// Resolves each square candidate into a fully identified marker.
+///
+/// Ported from `arGetMarkerInfo.c`. For every entry in `marker_info2[0..marker2_num]`:
+/// 1. Calls `param_ltf.observ2ideal` on the region centroid to get the
+///    undistorted position.
+/// 2. Calls [`ar_get_line`] to fit four edges and compute corner vertices in
+///    ideal coordinates.
+/// 3. Branches on `patt_detect_mode`:
+///    - **`AR_MATRIX_CODE_DETECTION`** (mode 2): calls
+///      [`crate::matrix::ar_matrix_code_get_id`] to decode the barcode id,
+///      writing results into `marker_info[j].{id_matrix, dir_matrix, cf_matrix}`.
+///    - **template matching modes** (mode 0 or 1): calls `ar_patt_get_image` +
+///      `pattern_match` to match against a loaded pattern set, writing into
+///      `marker_info[j].{id, dir, cf}`.
+///    - **combined mode** (mode 3): performs both branches.
+///
+/// Failures in `ar_get_line` or `observ2ideal` for a particular candidate skip
+/// that candidate silently. `*marker_num` is set to the number of valid markers.
+///
+/// # Parameters
+/// - `image` — raw pixel buffer (any supported `pixel_format`).
+/// - `patt_handle_opt` — loaded pattern database (required for template modes;
+///   pass `None` for pure matrix-code mode).
+/// - `matrix_code_type` — dimension/ECC variant used by [`crate::matrix::ar_matrix_code_get_id`].
 pub fn ar_get_marker_info(
     image: &[u8],
     xsize: i32,
