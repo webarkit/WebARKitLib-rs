@@ -93,14 +93,25 @@ pub struct ARParam {
 }
 
 /// Captures detail of a trapezoidal region which is a candidate for marker detection.
+///
+/// This structure holds the raw 2D pixel-space information for a candidate region
+/// found by connected-component labeling and contour extraction before it is fully
+/// identified as a specific marker.
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct ARMarkerInfo2 {
+    /// Area in pixels of the largest connected region
     pub area: i32,
+    /// Center of the marker candidate (2D coordinate)
     pub pos: [ARdouble; 2],
+    /// Number of coordinates corresponding to the candidate's contour
     pub coord_num: i32,
+    /// X coordinates of the contour's perimeter pixels.
     pub x_coord: Vec<i32>,
+    /// Y coordinates of the contour's perimeter pixels.
     pub y_coord: Vec<i32>,
+    /// Indices into `x_coord` and `y_coord` arrays pointing to the four corners of the candidate.
+    /// The fifth element wraps around to the first corner (`vertex[4] == vertex[0]`).
     pub vertex: [i32; 5],
 }
 
@@ -140,28 +151,38 @@ impl Default for ARMarkerInfoCutoffPhase {
 }
 
 /// Describes a detected trapezoidal area (a candidate for a marker match).
+///
+/// This serves as the primary output of marker detection. It contains both raw properties
+/// of the shape (area, pos) and, if successfully matched, the identified marker ID and
+/// viewing direction.
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct ARMarkerInfo {
-    /// Area in pixels of the largest connected region
+    /// Area in pixels of the largest connected region.
     pub area: i32,
-    /// Marker ID if valid, or -1 if invalid
+    /// Marker ID if valid, or -1 if invalid (global ID regardless of matching type).
     pub id: i32,
+    /// Template marker ID if matched via template matching, -1 otherwise.
     pub id_patt: i32,
+    /// Matrix (barcode) marker ID if matched via matrix code, -1 otherwise.
     pub id_matrix: i32,
-    /// Marker direction (0 to 3)
+    /// Orientation of the marker (0, 1, 2, or 3) representing rotation in 90° increments.
     pub dir: i32,
+    /// Orientation if matched via template matching.
     pub dir_patt: i32,
+    /// Orientation if matched via matrix code.
     pub dir_matrix: i32,
-    /// Marker matching confidence (0.0 to 1.0)
+    /// Confidence value of the match (0.0 to 1.0).
     pub cf: ARdouble,
+    /// Confidence value from template matching.
     pub cf_patt: ARdouble,
+    /// Confidence value from matrix code decoding.
     pub cf_matrix: ARdouble,
-    /// 2D position of the centre of the marker
+    /// Center of the marker (2D coordinate).
     pub pos: [ARdouble; 2],
-    /// Line equations for the 4 sides of the marker
+    /// Line equations of the four sides of the marker in 2D space `[a, b, c]`.
     pub line: [[ARdouble; 3]; 4],
-    /// 2D positions of the corners of the marker
+    /// 2D coordinates of the four corners in ideal (undistorted) camera space.
     pub vertex: [[ARdouble; 2]; 4],
     /// Pointer to source region info for this marker.
     pub marker_info2_ptr: *mut ARMarkerInfo2,
