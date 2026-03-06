@@ -209,7 +209,6 @@ pub fn ar_detect_marker2(
             &label_info.label_image,
             xsize_local,
             ysize_local,
-            &label_info.work,
             (i + 1) as i32,
             &label_info.clip[i],
             &mut current_marker,
@@ -291,7 +290,6 @@ fn ar_get_contour(
     limage: &[crate::types::ARLabelingLabelType],
     xsize: i32,
     _ysize: i32,
-    label_ref: &[i32],
     label: i32,
     clip: &[i32; 4],
     marker_info2: &mut ARMarkerInfo2,
@@ -302,11 +300,12 @@ fn ar_get_contour(
     let mut sx = -1;
     let sy = clip[2];
     
+    // After labeling Pass 3, limage contains dense sequential IDs.
+    // Compare the pixel value directly against `label`.
     let mut p_idx = (sy * xsize + clip[0]) as usize;
     for i in clip[0]..=clip[1] {
         if p_idx < limage.len() {
-            let val = limage[p_idx];
-            if val > 0 && label_ref[(val - 1) as usize] == label {
+            if limage[p_idx] == label as crate::types::ARLabelingLabelType {
                 sx = i;
                 break;
             }
@@ -315,18 +314,7 @@ fn ar_get_contour(
     }
     
     if sx == -1 {
-        let mut row_dump = String::new();
-        let mut p_idx_d = (sy * xsize + clip[0]) as usize;
-        for _ in clip[0]..=clip[1] {
-            if p_idx_d < limage.len() {
-                let v = limage[p_idx_d];
-                if v > 0 {
-                    row_dump.push_str(&format!("{}({}),", v, label_ref[(v - 1) as usize]));
-                }
-            }
-            p_idx_d += 1;
-        }
-        debug!("ar_get_contour failed. label={}. clip={:?}. Found on row: {}", label, clip, row_dump);
+        debug!("ar_get_contour failed. label={}. clip={:?}.", label, clip);
         return Err("Contour start point not found");
     }
 
@@ -595,7 +583,7 @@ pub fn ar_get_marker_info(
     patt_handle_opt: Option<&crate::types::ARPattHandle>,
     marker_info: &mut [ARMarkerInfo],
     marker_num: &mut i32,
-    _matrix_code_type: crate::types::ARMatrixCodeType,
+    matrix_code_type: crate::types::ARMatrixCodeType,
 ) -> Result<(), &'static str> {
     let mut j = 0;
     
@@ -621,67 +609,109 @@ pub fn ar_get_marker_info(
             continue;
         }
 
-        if let Some(patt_handle) = patt_handle_opt {
-            if patt_handle.patt_num > 0 {
-                let patt_size = patt_handle.patt_size;
-            let ext_patt_len = if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR {
-                (patt_size * patt_size * 3) as usize
-            } else {
-                (patt_size * patt_size) as usize
-            };
-            let mut ext_patt = vec![0u8; ext_patt_len];
-            
-            let res = crate::pattern::ar_patt_get_image(
-                image_proc_mode as i32,
-                patt_detect_mode,
-                patt_size,
-                patt_size * 2, // Sample size factor (e.g. AR_PATT_SAMPLE_FACTOR1)
+        // Branch on detection mode
+        let is_matrix_mode = patt_detect_mode == crate::types::AR_MATRIX_CODE_DETECTION
+            || patt_detect_mode == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION;
+
+        if is_matrix_mode {
+            // Decode the matrix (barcode) code
+            let mut mc_id = -1i32;
+            let mut mc_dir = -1i32;
+            let mut mc_cf = 0.0f64;
+            let mut mc_err = 0i32;
+            match crate::matrix::ar_matrix_code_get_id(
                 image,
                 xsize,
                 ysize,
-                pixel_format,
                 &marker_info[j].vertex,
+                matrix_code_type,
+                pixel_format,
                 patt_ratio,
-                &mut ext_patt,
-            );
-            
-            if res.is_ok() {
-                let mut p_code = -1;
-                let mut p_dir = 0;
-                let mut p_cf = -1.0;
-                let match_res = crate::pattern::pattern_match(
-                    patt_handle,
-                    patt_detect_mode,
-                    &ext_patt,
-                    patt_size,
-                    &mut p_code,
-                    &mut p_dir,
-                    &mut p_cf,
-                );
-                
-                if match_res.is_ok() && p_code >= 0 {
-                    marker_info[j].id = p_code;
-                    marker_info[j].dir = p_dir;
-                    marker_info[j].cf = p_cf;
+                &mut mc_id,
+                &mut mc_dir,
+                &mut mc_cf,
+                &mut mc_err,
+            ) {
+                Ok(()) => {
+                    marker_info[j].id_matrix = mc_id;
+                    marker_info[j].dir_matrix = mc_dir;
+                    marker_info[j].cf_matrix = mc_cf;
+                    marker_info[j].error_corrected = mc_err;
+                    debug!("ar_get_marker_info: barcode id={}, dir={}, cf={:.4}", mc_id, mc_dir, mc_cf);
+                }
+                Err(e) => {
+                    debug!("ar_get_marker_info: barcode decode failed: {}", e);
+                    marker_info[j].id_matrix = -1;
+                    marker_info[j].dir_matrix = -1;
+                    marker_info[j].cf_matrix = 0.0;
+                }
+            }
+        }
+
+        if !is_matrix_mode || patt_detect_mode == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION {
+            // Template matching branch
+            if let Some(patt_handle) = patt_handle_opt {
+                if patt_handle.patt_num > 0 {
+                    let patt_size = patt_handle.patt_size;
+                    let ext_patt_len = if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR {
+                        (patt_size * patt_size * 3) as usize
+                    } else {
+                        (patt_size * patt_size) as usize
+                    };
+                    let mut ext_patt = vec![0u8; ext_patt_len];
+                    
+                    let res = crate::pattern::ar_patt_get_image(
+                        image_proc_mode as i32,
+                        patt_detect_mode,
+                        patt_size,
+                        patt_size * 2,
+                        image,
+                        xsize,
+                        ysize,
+                        pixel_format,
+                        &marker_info[j].vertex,
+                        patt_ratio,
+                        &mut ext_patt,
+                    );
+                    
+                    if res.is_ok() {
+                        let mut p_code = -1;
+                        let mut p_dir = 0;
+                        let mut p_cf = -1.0;
+                        let match_res = crate::pattern::pattern_match(
+                            patt_handle,
+                            patt_detect_mode,
+                            &ext_patt,
+                            patt_size,
+                            &mut p_code,
+                            &mut p_dir,
+                            &mut p_cf,
+                        );
+                        
+                        if match_res.is_ok() && p_code >= 0 {
+                            marker_info[j].id = p_code;
+                            marker_info[j].dir = p_dir;
+                            marker_info[j].cf = p_cf;
+                        } else {
+                            marker_info[j].id = -1;
+                            marker_info[j].dir = 0;
+                            marker_info[j].cf = p_cf;
+                        }
+                    } else {
+                        marker_info[j].id = -1;
+                        marker_info[j].dir = 0;
+                        marker_info[j].cf = -1.0;
+                    }
                 } else {
                     marker_info[j].id = -1;
                     marker_info[j].dir = 0;
-                    marker_info[j].cf = p_cf;
+                    marker_info[j].cf = 0.0;
                 }
             } else {
                 marker_info[j].id = -1;
                 marker_info[j].dir = 0;
-                marker_info[j].cf = -1.0;
+                marker_info[j].cf = 0.0;
             }
-        } else {
-            marker_info[j].id = -1;
-            marker_info[j].dir = 0;
-            marker_info[j].cf = 0.0;
-        }
-        } else {
-            marker_info[j].id = -1;
-            marker_info[j].dir = 0;
-            marker_info[j].cf = 0.0;
         }
 
         j += 1;

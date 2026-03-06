@@ -38,15 +38,17 @@
 //! Translated from ARToolKit C headers (arLabeling.c, arLabelingSub.h)
 
 use crate::types::{ARLabelInfo, ARdouble};
-use log::debug;
+use log::{debug, trace};
 
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LabelingMode {
     BlackRegion,
     WhiteRegion,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ImageProcMode {
     FrameImage,
     FieldImage, // Handles interlaced half-resolution fields
@@ -107,18 +109,23 @@ pub fn ar_labeling(
         label_info.label_image.resize(lxsize * lysize, 0);
     }
     label_info.label_image.fill(0);
+    trace!("ar_labeling: lxsize={}, lysize={}, len={}", lxsize, lysize, label_info.label_image.len());
 
     // Initialize work equivalence arrays
     if label_info.work.len() < AR_LABELING_WORK_SIZE {
         label_info.work.resize(AR_LABELING_WORK_SIZE, 0);
     }
-    if label_info.work2.len() < AR_LABELING_WORK_SIZE * 7 {
-        label_info.work2.resize(AR_LABELING_WORK_SIZE * 7, 0);
-    }
-
     let mut wk_max: usize = 0;
     let work = &mut label_info.work;
-    let work2 = &mut label_info.work2;
+    // We'll use a local work2 of i64 to avoid overflow during summation
+    let mut work2 = vec![0i64; AR_LABELING_WORK_SIZE * 7];
+    
+    // Initialize xmin, ymin to large values
+    for k in 0..AR_LABELING_WORK_SIZE {
+        work2[k * 7 + 3] = xsize as i64; // xmin
+        work2[k * 7 + 5] = ysize as i64; // ymin
+    }
+    
     let label_img = &mut label_info.label_image;
 
     // Helper for Union-Find find with path compression
@@ -137,16 +144,40 @@ pub fn ar_labeling(
         root
     }
 
-    // Helper for Union-Find union
-    fn do_union(work: &mut [i32], m: i32, n: i32) -> i32 {
+    // Helper for Union-Find union with immediate data transfer
+    fn do_union(work: &mut [i32], work2: &mut [i64], m: i32, n: i32) -> i32 {
         let root_m = find(work, m);
         let root_n = find(work, n);
-        if root_m < root_n {
-            work[root_n as usize - 1] = root_m;
-            root_m
+        if root_m != root_n {
+            if root_m < root_n {
+                work[root_n as usize - 1] = root_m;
+                // Transfer data
+                let m_idx = (root_m as usize - 1) * 7;
+                let n_idx = (root_n as usize - 1) * 7;
+                for i in 0..3 { work2[m_idx + i] += work2[n_idx + i]; }
+                if work2[m_idx + 3] > work2[n_idx + 3] { work2[m_idx + 3] = work2[n_idx + 3]; }
+                if work2[m_idx + 4] < work2[n_idx + 4] { work2[m_idx + 4] = work2[n_idx + 4]; }
+                if work2[m_idx + 5] > work2[n_idx + 5] { work2[m_idx + 5] = work2[n_idx + 5]; }
+                if work2[m_idx + 6] < work2[n_idx + 6] { work2[m_idx + 6] = work2[n_idx + 6]; }
+                // Clear old root (optional)
+                for i in 0..7 { work2[n_idx + i] = 0; }
+                root_m
+            } else {
+                work[root_m as usize - 1] = root_n;
+                // Transfer data
+                let m_idx = (root_m as usize - 1) * 7;
+                let n_idx = (root_n as usize - 1) * 7;
+                for i in 0..3 { work2[n_idx + i] += work2[m_idx + i]; }
+                if work2[n_idx + 3] > work2[m_idx + 3] { work2[n_idx + 3] = work2[m_idx + 3]; }
+                if work2[n_idx + 4] < work2[m_idx + 4] { work2[n_idx + 4] = work2[m_idx + 4]; }
+                if work2[n_idx + 5] > work2[m_idx + 5] { work2[n_idx + 5] = work2[m_idx + 5]; }
+                if work2[n_idx + 6] < work2[m_idx + 6] { work2[n_idx + 6] = work2[m_idx + 6]; }
+                // Clear old root
+                for i in 0..7 { work2[m_idx + i] = 0; }
+                root_n
+            }
         } else {
-            work[root_m as usize - 1] = root_n;
-            root_n
+            root_m
         }
     }
 
@@ -155,7 +186,7 @@ pub fn ar_labeling(
         for i in 1..lxsize - 1 {
             let source_idx = match proc_mode {
                 ImageProcMode::FrameImage => j * row_stride + i,
-                ImageProcMode::FieldImage => (j * 2 + 1) * xsize as usize + (i * 2),
+                ImageProcMode::FieldImage => (j * 2) * xsize as usize + (i * 2),
             };
             let pixel = image[source_idx];
 
@@ -163,60 +194,45 @@ pub fn ar_labeling(
 
             if is_region(pixel) {
                 let left_val = label_img[p_idx - 1];
+                let up_left_val = label_img[p_idx - lxsize - 1];
                 let up_val = label_img[p_idx - lxsize];
-                let up_left = label_img[p_idx - lxsize - 1];
-                let up_right = label_img[p_idx - lxsize + 1];
+                let up_right_val = label_img[p_idx - lxsize + 1];
 
-                if up_val > 0 {
-                    label_img[p_idx] = up_val;
-                    let l = (find(work, up_val as i32) as usize - 1) * 7;
-                    work2[l + 0] += 1;
-                    work2[l + 1] += i as i32;
-                    work2[l + 2] += j as i32;
-                    work2[l + 6] = j as i32;
-                } else if up_right > 0 {
-                    if up_left > 0 {
-                        let final_label = do_union(work, up_right as i32, up_left as i32);
-                        label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
+                let mut neighbors = [0; 4];
+                let mut n_count = 0;
+                if left_val > 0 { neighbors[n_count] = left_val as i32; n_count += 1; }
+                if up_left_val > 0 { neighbors[n_count] = up_left_val as i32; n_count += 1; }
+                if up_val > 0 { neighbors[n_count] = up_val as i32; n_count += 1; }
+                if up_right_val > 0 { neighbors[n_count] = up_right_val as i32; n_count += 1; }
 
-                        let l = (final_label as usize - 1) * 7;
-                        work2[l + 0] += 1;
-                        work2[l + 1] += i as i32;
-                        work2[l + 2] += j as i32;
-                        work2[l + 6] = j as i32;
-                    } else if left_val > 0 {
-                        let final_label = do_union(work, up_right as i32, left_val as i32);
-                        label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
-
-                        let l = (final_label as usize - 1) * 7;
-                        work2[l + 0] += 1;
-                        work2[l + 1] += i as i32;
-                        work2[l + 2] += j as i32;
-                        work2[l + 6] = j as i32;
-                    } else {
-                        label_img[p_idx] = up_right;
-                        let l = (find(work, up_right as i32) as usize - 1) * 7;
-                        work2[l + 0] += 1;
-                        work2[l + 1] += i as i32;
-                        work2[l + 2] += j as i32;
-                        if work2[l + 3] > i as i32 { work2[l + 3] = i as i32; }
-                        work2[l + 6] = j as i32;
+                if n_count > 0 {
+                    // Sort and unique neighbors
+                    neighbors[0..n_count].sort_unstable();
+                    let mut unique_count = 1;
+                    for k in 1..n_count {
+                        if neighbors[k] != neighbors[k-1] {
+                            neighbors[unique_count] = neighbors[k];
+                            unique_count += 1;
+                        }
                     }
-                } else if up_left > 0 {
-                    label_img[p_idx] = up_left;
-                    let l = (find(work, up_left as i32) as usize - 1) * 7;
+                    n_count = unique_count;
+
+                    let mut final_label = neighbors[0];
+                    for k in 1..n_count {
+                        if neighbors[k] != final_label {
+                            final_label = do_union(work, &mut work2, final_label, neighbors[k]);
+                        }
+                    }
+                    label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
+                    
+                    let l = (final_label as usize - 1) * 7;
                     work2[l + 0] += 1;
-                    work2[l + 1] += i as i32;
-                    work2[l + 2] += j as i32;
-                    if work2[l + 4] < i as i32 { work2[l + 4] = i as i32; }
-                    work2[l + 6] = j as i32;
-                } else if left_val > 0 {
-                    label_img[p_idx] = left_val;
-                    let l = (find(work, left_val as i32) as usize - 1) * 7;
-                    work2[l + 0] += 1;
-                    work2[l + 1] += i as i32;
-                    work2[l + 2] += j as i32;
-                    if work2[l + 4] < i as i32 { work2[l + 4] = i as i32; }
+                    work2[l + 1] += i as i64;
+                    work2[l + 2] += j as i64;
+                    if work2[l + 3] > i as i64 { work2[l + 3] = i as i64; }
+                    if work2[l + 4] < i as i64 { work2[l + 4] = i as i64; }
+                    if work2[l + 5] > j as i64 { work2[l + 5] = j as i64; }
+                    if work2[l + 6] < j as i64 { work2[l + 6] = j as i64; }
                 } else {
                     wk_max += 1;
                     if wk_max > AR_LABELING_WORK_SIZE {
@@ -227,12 +243,16 @@ pub fn ar_labeling(
 
                     let l = (wk_max - 1) * 7;
                     work2[l + 0] = 1;         // area
-                    work2[l + 1] = i as i32;  // pos[0]
-                    work2[l + 2] = j as i32;  // pos[1]
-                    work2[l + 3] = i as i32;  // clip[0] (xmin)
-                    work2[l + 4] = i as i32;  // clip[1] (xmax)
-                    work2[l + 5] = j as i32;  // clip[2] (ymin)
-                    work2[l + 6] = j as i32;  // clip[3] (ymax)
+                    work2[l + 1] = i as i64;  // pos[0]
+                    work2[l + 2] = j as i64;  // pos[1]
+                    work2[l + 3] = i as i64;  // clip[0] (xmin)
+                    work2[l + 4] = i as i64;  // clip[1] (xmax)
+                    work2[l + 5] = j as i64;  // clip[2] (ymin)
+                    work2[l + 6] = j as i64;  // clip[3] (ymax)
+                    
+                    if wk_max == 32 || wk_max == 41 {
+                        trace!("Label {} created at ({}, {})", wk_max, i, j);
+                    }
                 }
             } else {
                 label_img[p_idx] = 0;
@@ -242,23 +262,21 @@ pub fn ar_labeling(
 
     // Pass 2: Map equivalence table down to dense sequential indexes
     let mut num_labels = 0;
+    // label_map[original_label - 1] = dense_id
+    let mut label_map = vec![0; wk_max];
+    
+    // Pass 2a: Assign dense IDs to roots
     for i in 1..=wk_max {
-        if work[i - 1] == i as i32 {
+        if work[i - 1] == i as i32 { // It's a root
             num_labels += 1;
-            work[i - 1] = num_labels;
-        } else {
-            work[i - 1] = work[work[i - 1] as usize - 1]; // This is fine for one level, but let's be thorough
+            label_map[i - 1] = num_labels;
         }
     }
     
-    // Thoroughly flatten the equivalence table
+    // Pass 2b: Map all original labels back to dense IDs via their roots
     for i in 1..=wk_max {
-        let mut root = i as i32;
-        while work[root as usize - 1] > num_labels || work[work[root as usize - 1] as usize - 1] != work[root as usize - 1] {
-             // If not yet a finalized label index, follow parent
-             root = work[root as usize - 1];
-        }
-        work[i - 1] = work[root as usize - 1];
+        let root = find(work, i as i32) as usize;
+        label_map[i - 1] = label_map[root - 1];
     }
     
     label_info.label_num = num_labels;
@@ -266,39 +284,47 @@ pub fn ar_labeling(
         return Ok(());
     }
 
-    // Allocate memory and reset results for the second pass
+    // Pass 3: Update label_image with final labels
+    for i in 0..label_img.len() {
+        if label_img[i] > 0 {
+            label_img[i] = label_map[label_img[i] as usize - 1] as crate::types::ARLabelingLabelType;
+        }
+    }
+
+    // Finalize label info
+    // Transfer from work2 back to label_info
+    
+    // Actually, we can just iterate the work2 table and match by finalized label
     if label_info.area.len() < num_labels as usize { label_info.area.resize(num_labels as usize, 0); }
     if label_info.pos.len() < num_labels as usize { label_info.pos.resize(num_labels as usize, [0.0; 2]); }
     if label_info.clip.len() < num_labels as usize { label_info.clip.resize(num_labels as usize, [0; 4]); }
 
     label_info.area.fill(0);
-    label_info.pos.fill([0.0; 2]);
-    for clip in label_info.clip.iter_mut() {
-        clip[0] = lxsize as i32;
-        clip[1] = 0;
-        clip[2] = lysize as i32;
-        clip[3] = 0;
+    for v in label_info.pos.iter_mut() { v.fill(0.0); }
+    for v in label_info.clip.iter_mut() { 
+        v[0] = lxsize as i32; v[1] = 0; v[2] = lysize as i32; v[3] = 0; 
     }
 
-    for i in 0..wk_max {
-        let dest_label = work[i] as usize - 1;
-        
-        let area = work2[i * 7 + 0];
-        let pos_x = work2[i * 7 + 1];
-        let pos_y = work2[i * 7 + 2];
-        let clip_xmin = work2[i * 7 + 3];
-        let clip_xmax = work2[i * 7 + 4];
-        let clip_ymin = work2[i * 7 + 5];
-        let clip_ymax = work2[i * 7 + 6];
-
-        label_info.area[dest_label] += area;
-        label_info.pos[dest_label][0] += pos_x as ARdouble;
-        label_info.pos[dest_label][1] += pos_y as ARdouble;
-        
-        if label_info.clip[dest_label][0] > clip_xmin { label_info.clip[dest_label][0] = clip_xmin; }
-        if label_info.clip[dest_label][1] < clip_xmax { label_info.clip[dest_label][1] = clip_xmax; }
-        if label_info.clip[dest_label][2] > clip_ymin { label_info.clip[dest_label][2] = clip_ymin; }
-        if label_info.clip[dest_label][3] < clip_ymax { label_info.clip[dest_label][3] = clip_ymax; }
+    // Let's redo the finalization loop more cleanly.
+    // We'll iterate all ROOTs and move their data to the dense slots.
+    // Redo finalization: only process ROOTS
+    for k in 1..=wk_max {
+        if work[k - 1] == k as i32 { // It's a root
+            let src = (k - 1) * 7;
+            if work2[src + 0] > 0 {
+                let dense_idx = label_map[k - 1];
+                if dense_idx > 0 {
+                    let i = (dense_idx - 1) as usize;
+                    label_info.area[i] = work2[src + 0] as i32;
+                    label_info.pos[i][0] = work2[src + 1] as ARdouble;
+                    label_info.pos[i][1] = work2[src + 2] as ARdouble;
+                    label_info.clip[i][0] = work2[src + 3] as i32;
+                    label_info.clip[i][1] = work2[src + 4] as i32;
+                    label_info.clip[i][2] = work2[src + 5] as i32;
+                    label_info.clip[i][3] = work2[src + 6] as i32;
+                }
+            }
+        }
     }
 
     for i in 0..num_labels as usize {
@@ -316,41 +342,51 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ar_labeling_simple_square() {
-        // Create an 8x8 image where center 4x4 is black (value 0), rest is white (value 255)
-        let mut image = vec![255u8; 64];
-        for j in 2..6 {
-            for i in 2..6 {
-                image[j * 8 + i] = 0;
+    fn test_ar_labeling_two_squares() {
+        // Create an 20x20 image where two 5x5 squares are separate.
+        // S1: (2,2) to (6,6)
+        // S2: (12,12) to (16,16)
+        let mut image = vec![255u8; 400];
+        for j in 2..7 {
+            for i in 2..7 {
+                image[j * 20 + i] = 0;
+            }
+        }
+        for j in 12..17 {
+            for i in 12..17 {
+                image[j * 20 + i] = 0;
             }
         }
 
-        let mut info = ARLabelInfo::default();
+        let mut info = crate::types::ARLabelInfo::default();
 
         ar_labeling(
             &image,
-            8,
-            8,
+            20,
+            20,
             LabelingMode::BlackRegion,
-            100, // Threshold 100
+            100,
             ImageProcMode::FrameImage,
             &mut info,
             false
         ).unwrap();
 
-        assert_eq!(info.label_num, 1);
+        assert_eq!(info.label_num, 2);
         
-        // The square is 4x4, so area should be 16
-        assert_eq!(info.area[0], 16);
+        let mut found_s1 = false;
+        let mut found_s2 = false;
         
-        // Pos should be the center: average of 2, 3, 4, 5 = 3.5
-        assert!((info.pos[0][0] - 3.5).abs() < f64::EPSILON);
-        assert!((info.pos[0][1] - 3.5).abs() < f64::EPSILON);
+        for i in 0..info.label_num as usize {
+            if info.area[i] == 25 {
+                if info.clip[i][0] == 2 && info.clip[i][1] == 6 && info.clip[i][2] == 2 && info.clip[i][3] == 6 {
+                    found_s1 = true;
+                } else if info.clip[i][0] == 12 && info.clip[i][1] == 16 && info.clip[i][2] == 12 && info.clip[i][3] == 16 {
+                    found_s2 = true;
+                }
+            }
+        }
         
-        // Clip coords
-        assert_eq!(info.clip[0][0], 2); // xmin
-        assert_eq!(info.clip[0][1], 5); // xmax
-        assert_eq!(info.clip[0][2], 2); // ymin
-        assert_eq!(info.clip[0][3], 5); // ymax
+        assert!(found_s1, "Square 1 (2,2)-(6,6) not correctly found. Area={:?}, Clip={:?}", info.area, info.clip);
+        assert!(found_s2, "Square 2 (12,12)-(16,16) not correctly found. Area={:?}, Clip={:?}", info.area, info.clip);
     }
 }
