@@ -24,8 +24,17 @@
         <div class="status" id="status">Status: Loading WASM...</div>
         
         <div class="controls">
+            <label for="wasm-version">WASM Engine:</label>
+            <select id="wasm-version">
+                <option value="dist-std">Standard (Portable)</option>
+                <option value="dist-simd">SIMD (High Performance)</option>
+            </select>
             <button id="btn-init" disabled>Initialize AR</button>
             <button id="btn-detect" disabled>Detect Markers</button>
+        </div>
+
+        <div id="refresh-notice" style="display: none; background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 20px; border: 1px solid #ffeeba; text-align: center;">
+            <strong>Note:</strong> Engine changed. For best results, please <strong>refresh the page</strong> after switching engines.
         </div>
 
         <div id="canvas-container">

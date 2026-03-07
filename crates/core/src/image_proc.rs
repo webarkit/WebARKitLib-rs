@@ -366,8 +366,10 @@ unsafe fn rgba_to_gray_simd_wasm(rgba: &[u8]) -> Vec<u8> {
         let sum_low = i32x4_add(dot_low, i32x4_shuffle::<1, 1, 3, 3>(dot_low, dot_low));
         let sum_high = i32x4_add(dot_high, i32x4_shuffle::<1, 1, 3, 3>(dot_high, dot_high));
         
-        let res_low = u32x4_shr(sum_low, 8);
-        let res_high = u32x4_shr(sum_high, 8);
+        // Add 128 for rounding: (sum + 128) >> 8
+        let round_v = i32x4_splat(128);
+        let res_low = u32x4_shr(i32x4_add(sum_low, round_v), 8);
+        let res_high = u32x4_shr(i32x4_add(sum_high, round_v), 8);
         
         // Pack [L0, L1, L2, L3]
         let res = i32x4_shuffle::<0, 2, 4, 6>(res_low, res_high);

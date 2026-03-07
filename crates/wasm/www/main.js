@@ -1,24 +1,31 @@
-import init, { WasmARHandle, init_panic_hook } from '../pkg/wasm.js';
+// Engine state container
+let currentEngine = {
+    WasmARHandle: null,
+    version: null
+};
 
 const statusEl = document.getElementById('status');
 const btnInit = document.getElementById('btn-init');
 const btnDetect = document.getElementById('btn-detect');
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
+const wasmVersionSelect = document.getElementById('wasm-version');
 const resultsEl = document.getElementById('results');
+const refreshNotice = document.getElementById('refresh-notice');
 
 let arHandle = null;
+let currentLoadedVersion = null;
 let testImage = new Image();
 
 async function run() {
     try {
-        // Initialize WASM module
-        await init();
-        init_panic_hook();
+        statusEl.innerText = 'Status: Selecting WASM Engine...';
+        
+        // Setup initial UI state
+        btnInit.disabled = true;
+        btnDetect.disabled = true;
 
-        statusEl.innerText = 'Status: WASM Loaded. Downloading assets...';
-
-        // Load test image
+        // Load test image early
         testImage.src = 'assets/img.jpg';
         await new Promise(resolve => testImage.onload = resolve);
 
@@ -27,7 +34,7 @@ async function run() {
         canvas.height = testImage.height;
         ctx.drawImage(testImage, 0, 0);
 
-        statusEl.innerText = 'Status: Ready to Initialize AR';
+        statusEl.innerText = 'Status: Assets loaded. Ready to load WASM.';
         btnInit.disabled = false;
 
     } catch (err) {
@@ -36,8 +43,64 @@ async function run() {
     }
 }
 
+wasmVersionSelect.onchange = () => {
+    if (arHandle) {
+        console.log("Freeing previous AR Handle memory...");
+        arHandle.free();
+        arHandle = null;
+    }
+    btnInit.disabled = false;
+    btnDetect.disabled = true;
+    refreshNotice.style.display = 'block';
+    statusEl.innerText = 'Status: Engine changed. Click Initialize to load.';
+    console.log(`Engine changed to ${wasmVersionSelect.value}. Ready for re-initialization.`);
+};
+
+async function loadWasm() {
+    const version = wasmVersionSelect.value;
+    
+    if (currentEngine.version === version) {
+        console.log(`[WebARKit] Engine ${version} is already the active one.`);
+        return;
+    }
+
+    statusEl.innerText = `Status: Loading ${version} WASM Engine...`;
+    console.log(`[WebARKit] Switching to Engine: ${version === 'dist-simd' ? 'SIMD (High Performance)' : 'Standard (Portable)'}`);
+    
+    // Add cache-breaker to ensure fresh module evaluation on switch
+    const cacheBreaker = `?t=${Date.now()}`;
+    const modulePath = `../pkg/${version}/webarkitlib_wasm.js${cacheBreaker}`;
+    
+    try {
+        const module = await import(modulePath);
+        const init = module.default;
+        
+        // Initialize the wasm instance
+        await init();
+        
+        // Store the class constructor and other exports
+        currentEngine.WasmARHandle = module.WasmARHandle;
+        currentEngine.version = version;
+
+        try {
+            module.init_panic_hook();
+        } catch (e) {
+            // Already initialized or not available
+        }
+        
+        console.log(`[WebARKit] Engine ${version} initialized. Memory isolated.`);
+    } catch (e) {
+        console.error(`[WebARKit] CRITICAL: Failed to load WASM module from ${modulePath}:`, e);
+        statusEl.innerText = `Status Error: Failed to load ${version}`;
+        throw e;
+    }
+}
+
 btnInit.onclick = async () => {
     try {
+        // Load WASM if not already loaded or if version changed
+        await loadWasm();
+
         statusEl.innerText = 'Status: Initializing AR Handle...';
 
         // Fetch Camera Parameters
@@ -45,18 +108,26 @@ btnInit.onclick = async () => {
         const paramData = new Uint8Array(await paramRes.arrayBuffer());
 
         // Initialize Handle
-        arHandle = new WasmARHandle(paramData);
+        if (arHandle) {
+            console.log("[WebARKit] Freeing existing AR Handle...");
+            arHandle.free();
+        }
+        
+        arHandle = new currentEngine.WasmARHandle(paramData);
+        console.log(`[WebARKit] New WasmARHandle created using ${currentEngine.version} engine constructor.`);
 
         // Enable AutoOtsu thresholding (mode 2) and Debug mode
         arHandle.set_threshold_mode(2);
         arHandle.set_debug_mode(true);
 
         // Load Pattern (Hiro)
+        console.log("[WebARKit] Loading Hiro pattern...");
         const pattRes = await fetch('assets/patt.hiro');
         const pattContent = await pattRes.text();
         const pattId = arHandle.load_pattern(pattContent);
+        console.log(`[WebARKit] Hiro pattern loaded. Assigned ID: ${pattId}`);
 
-        statusEl.innerText = `Status: AR Initialized. Pattern ID Hiro: ${pattId}`;
+        statusEl.innerText = `Status: AR Initialized. Engine: ${currentEngine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Pattern ID: ${pattId}`;
         btnDetect.disabled = false;
         btnInit.disabled = true;
     } catch (err) {
@@ -74,10 +145,13 @@ btnDetect.onclick = () => {
 
     const startTime = performance.now();
     const markers = arHandle.detect_markers(rgba, canvas.width, canvas.height);
+    const threshold = arHandle.get_threshold();
     const endTime = performance.now();
 
+    console.log(`[WebARKit] Detection complete. Engine: ${currentEngine.version}, Markers: ${markers.length}, Threshold: ${threshold}, Time: ${(endTime - startTime).toFixed(2)}ms`);
+
     resultsEl.innerText = `Detection took ${(endTime - startTime).toFixed(2)}ms\n`;
-    resultsEl.innerText += `Markers found: ${markers.length}\n\n`;
+    resultsEl.innerText += `Markers found: ${markers.length} | Threshold: ${threshold}\n\n`;
 
     // Draw detection results
     ctx.drawImage(testImage, 0, 0);
