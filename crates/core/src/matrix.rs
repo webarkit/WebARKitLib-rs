@@ -98,7 +98,7 @@ pub fn ar_matrix_code_get_id(
         return Err("Unsupported matrix dimension");
     }
 
-    let grid_size = dim + 2;
+    let grid_size = dim;
     let mut bits = vec![0u8; (grid_size * grid_size) as usize];
 
     sample_grid(image, xsize, ysize, vertex, grid_size, pixel_format, patt_ratio, &mut bits)?;
@@ -122,22 +122,12 @@ pub fn ar_matrix_code_get_id(
         return Err("Low contrast in matrix grid");
     }
 
-    let mut binary_grid = vec![0u8; (grid_size * grid_size) as usize];
+    let mut core_bits = vec![0u8; (grid_size * grid_size) as usize];
     for i in 0..bits.len() {
-        binary_grid[i] = if bits[i] < mid_thresh { 1 } else { 0 };
+        core_bits[i] = if bits[i] < mid_thresh { 1 } else { 0 };
     }
     
-    trace!("ar_matrix_code_get_id: grid_size={}, binary_grid={:?}", grid_size, binary_grid);
-
-    // Extract core bits (dim x dim) - the inner data cells without the border
-    let mut core_bits = vec![0u8; (dim * dim) as usize];
-    for y in 0..dim {
-        for x in 0..dim {
-            core_bits[(y * dim + x) as usize] = binary_grid[((y + 1) * grid_size + (x + 1)) as usize];
-        }
-    }
-    
-    debug!("ar_matrix_code_get_id: binary_grid={:?}", binary_grid);
+    trace!("ar_matrix_code_get_id: grid_size={}, core_bits={:?}", grid_size, core_bits);
     debug!("ar_matrix_code_get_id: core_bits={:?}", core_bits);
 
     // The C reference `get_matrix_code` receives only the dim×dim inner data.
@@ -384,6 +374,7 @@ fn sample_grid(
 }
 
 
+
 /// Rotates a `dim × dim` bit-grid by `dir * 90°` counter-clockwise.
 ///
 /// Used to bring a barcode into a canonical orientation before extracting the
@@ -392,6 +383,7 @@ fn sample_grid(
 /// - `1` — 90° CCW
 /// - `2` — 180°
 /// - `3` — 270° CCW
+#[allow(dead_code)]
 fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
     let mut rotated = vec![0u8; bits.len()];
     for y in 0..dim {
@@ -408,6 +400,7 @@ fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
     }
     rotated
 }
+
 /// Decodes a raw bit-word into a marker ID, applying ECC if the `code_type` supports it.
 ///
 /// Maps `code_raw` (a `u64` bit-field extracted from the core grid) to a marker
@@ -416,12 +409,9 @@ fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
 /// | `code_type`                  | ECC scheme                              |
 /// |------------------------------|-----------------------------------------|
 /// | `Code3x3`                    | None — raw 6-bit value                  |
-/// | `Code3x3Parity65`            | Single-bit parity (table lookup, TODO)  |
-/// | `Code3x3Hamming63`           | Hamming (6,3) (table lookup, TODO)      |
-/// | `Code4x4` / `Code5x5`       | BCH (39,12) / BCH (51,12) (TODO)        |
-///
-/// > **Note** ECC table lookups are not yet implemented; all variants currently
-/// > return `(code_raw as i32, 0)` as a placeholder.
+/// | `Code3x3Parity65`            | Single-bit parity (table lookup)        |
+/// | `Code3x3Hamming63`           | Hamming (6,3) (table lookup)            |
+/// | `Code4x4` / `Code5x5`       | BCH (39,12) / BCH (51,12)               |
 fn decode_matrix_raw(code_raw: u64, code_type: ARMatrixCodeType) -> Result<(i32, i32), &'static str> {
     match code_type {
         ARMatrixCodeType::Code3x3 => {
@@ -430,15 +420,20 @@ fn decode_matrix_raw(code_raw: u64, code_type: ARMatrixCodeType) -> Result<(i32,
             Ok((code_raw as i32, 0))
         },
         ARMatrixCodeType::Code3x3Parity65 => {
-            // Note: C implementation uses look-up tables (parity65DecoderTable). For now, fallback to exact code.
-            Ok((code_raw as i32, 0))
+            let code = crate::bch::decode_parity65(code_raw)?;
+            Ok((code as i32, 0))
         },
         ARMatrixCodeType::Code3x3Hamming63 => {
-            // Note: C implementation uses look-up tables (hamming63DecoderTable). For now, fallback to exact code.
-            Ok((code_raw as i32, 0))
+            let (code, err) = crate::bch::decode_hamming63(code_raw)?;
+            Ok((code as i32, err))
+        },
+        ARMatrixCodeType::Code4x4BCH1393 | ARMatrixCodeType::Code4x4BCH1355 |
+        ARMatrixCodeType::Code5x5BCH22125 | ARMatrixCodeType::Code5x5BCH2277 => {
+            let (code, err) = crate::bch::decode_bch(code_type, code_raw)?;
+            Ok((code as i32, err))
         },
         _ => {
-            // The unhandled types include BCH 4x4, 5x5, etc.
+            // The unhandled types include GLOBAL_ID, etc.
             Ok((code_raw as i32, 0))
         }
     }
