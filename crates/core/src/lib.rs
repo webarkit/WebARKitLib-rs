@@ -36,7 +36,7 @@
 
 //! # WebARKitLib-rs Core
 //!
-//! `webarkit-core` is the foundational library for the Rust port of WebARKitLib.
+//! `webarkitlib-rs` is the foundational library for the Rust port of WebARKitLib.
 //! It provides core computer vision algorithms for Augmented Reality, including:
 //! - Image processing and filtering
 //! - Thresholding and labeling
@@ -45,8 +45,8 @@
 //!
 //! ## Example
 //!
-//! ```rust
-//! use webarkit_core::marker::Detector;
+//! ```rust,no_run
+//! use webarkitlib_rs::marker::ar_detect_marker;
 //! // ... detection logic here
 //! ```
 
