@@ -69,6 +69,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - name: Build and Publish to NPM
         run: |
+          chmod +x crates/wasm/scripts/build-dual.sh
           cd crates/wasm
           ./scripts/build-dual.sh
           cd pkg
