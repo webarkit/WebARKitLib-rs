@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-03-07
+
+### Added
+- **Matrix Code (Barcode) Support**:
+  - Implemented `ar_matrix_code_get_id` for decoding barcode markers (3x3 to 6x6).
+  - Added BCH and Hamming ECC error correction for robust barcode reading.
+  - New diagnostic tool `debug_labeling.rs` for visualizing image segmentation.
+  - Dedicated barcode examples (`barcode.rs`, `barcode_4x4.rs`).
+- **Dual WASM Build Pipeline**:
+  - Added `build-dual.ps1` and `build-dual.sh` scripts to automate generating both Standard and SIMD-optimized WASM modules.
+  - Unified `package.json` exports for dual-loading support.
+- **Enhanced Web Demo**:
+  - Real-time engine switching (Standard vs. SIMD).
+  - Added "Adaptive Threshold" visualization and `get_threshold()` diagnostic.
+  - Implemented WASM module cache-busting for reliable development updates.
+
+### Fixed
+- **SIMD Luma Rounding**: Corrected a rounding discrepancy in the WASM SIMD `grayscale` implementation to match the standard scalar version exactly.
+- **Matrix Grid Sampling**: Improved homography-based grid sampling to handle different pixel formats correctly.
+
+### Changed
+- **Infrastructure**: Updated root `README.md` with instructions for the new dual-build system and barcode support.
+
 ## [0.1.2] - 2026-03-05
 
 ### Fixed
