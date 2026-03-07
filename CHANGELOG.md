@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-03-07
+
+### Fixed
+- **CI/CD Build Permissions**: Resolved `Permission denied` error in the NPM publication step by explicitly setting the execute bit for the dual-build script.
+
 ## [0.1.3] - 2026-03-07
 
 ### Added
