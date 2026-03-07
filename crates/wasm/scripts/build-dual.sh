@@ -13,6 +13,9 @@ rm -rf "$PKGDIR"
 mkdir -p "$PKGDIR"
 
 # 1. Build Standard Version
+# Copy LICENSE to wasm crate root so wasm-pack finds it
+cp "$ROOT/LICENSE" "$WASMDIR/"
+
 echo "Building Standard Version..."
 wasm-pack build --target web --out-dir pkg/dist-std --scope webarkit
 
@@ -58,5 +61,7 @@ if [ -f "$WASMIDIR/README.md" ]; then
 else
     cp "$ROOT/README.md" "$PKGDIR/"
 fi
+
+cp "$ROOT/LICENSE" "$PKGDIR/"
 
 echo "Dual build complete! Package ready in crates/wasm/pkg"

@@ -526,6 +526,10 @@ fn dot_product(a: &[i32], b: &[i32]) -> i64 {
         }
     }
 
+    #[cfg(not(any(
+        all(target_arch = "wasm32", target_feature = "simd128"),
+        all(target_arch = "x86_64", target_feature = "sse4.1")
+    )))]
     dot_product_scalar(a, b)
 }
 

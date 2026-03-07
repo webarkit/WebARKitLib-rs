@@ -299,6 +299,10 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
         }
     }
     
+    #[cfg(not(any(
+        all(target_arch = "wasm32", target_feature = "simd128"),
+        all(target_arch = "x86_64", target_feature = "sse4.1")
+    )))]
     rgba_to_gray_scalar(rgba)
 }
 
