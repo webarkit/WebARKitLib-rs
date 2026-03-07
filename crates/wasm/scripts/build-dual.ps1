@@ -3,8 +3,10 @@
 
 $ErrorActionPreference = "Stop"
 
-$root = Get-Location
-$wasmDir = Join-Path $root "crates/wasm"
+# Get the directory where the script is located
+$scriptDir = $PSScriptRoot
+$wasmDir = Join-Path $scriptDir ".." | Resolve-Path
+$root = Join-Path $wasmDir "../.." | Resolve-Path
 $pkgDir = Join-Path $wasmDir "pkg"
 
 Write-Host "Cleaning up pkg directory..."

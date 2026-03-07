@@ -4,9 +4,11 @@
 
 set -e
 
-WASMIDIR=$(pwd)
-PKGDIR="$WASMIDIR/pkg"
-ROOT=$(cd ../.. && pwd)
+# Get the directory where the script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WASMDIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$WASMDIR/../.." && pwd)"
+PKGDIR="$WASMDIR/pkg"
 
 echo "Cleaning up pkg directory..."
 rm -rf "$PKGDIR"
@@ -56,8 +58,8 @@ fs.writeFileSync(finalPkgJsonPath, JSON.stringify(pkgJson, null, 2));
 EOF
 
 # Copy Readme to pkg root
-if [ -f "$WASMIDIR/README.md" ]; then
-    cp "$WASMIDIR/README.md" "$PKGDIR/"
+if [ -f "$WASMDIR/README.md" ]; then
+    cp "$WASMDIR/README.md" "$PKGDIR/"
 else
     cp "$ROOT/README.md" "$PKGDIR/"
 fi
