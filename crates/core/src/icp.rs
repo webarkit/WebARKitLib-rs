@@ -508,6 +508,7 @@ pub fn icp_delete_handle(handle: &mut *mut ICPHandleT) -> Result<(), &'static st
     Ok(())
 }
 
+#[allow(dead_code)]
 fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     let v1 = [rot[0][0], rot[0][1], rot[0][2]];
     let v2 = [rot[1][0], rot[1][1], rot[1][2]];

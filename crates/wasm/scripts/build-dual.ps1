@@ -12,6 +12,9 @@ if (Test-Path $pkgDir) { Remove-Item -Recurse -Force $pkgDir }
 New-Item -ItemType Directory -Path $pkgDir | Out-Null
 
 # 1. Build Standard Version
+# Copy LICENSE to wasm crate root so wasm-pack finds it
+Copy-Item (Join-Path $root "LICENSE") -Destination $wasmDir
+
 Write-Host "Building Standard Version..."
 Set-Location $wasmDir
 wasm-pack build --target web --out-dir pkg/dist-std --scope webarkit
@@ -55,6 +58,8 @@ if (-not (Test-Path $readmePath)) {
 if (Test-Path $readmePath) {
     Copy-Item $readmePath $pkgDir
 }
+
+Copy-Item (Join-Path $root "LICENSE") -Destination $pkgDir
 
 Write-Host "Dual build complete! Package ready in crates/wasm/pkg"
 Set-Location $root
