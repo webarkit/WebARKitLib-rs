@@ -16,6 +16,9 @@ Cargo.lock
 # Google Antigravity local agent state (optional, but usually good to keep out of repos)
 .agents/
 
+# VSCode files
+.vscode/
+
 # Benchmarking and Example Artifacts
 benchmarks/c_benchmark/src/
 benchmarks/c_benchmark/build/

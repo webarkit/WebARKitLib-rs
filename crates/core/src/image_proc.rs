@@ -344,7 +344,7 @@ unsafe fn rgba_to_gray_simd_wasm(rgba: &[u8]) -> Vec<u8> {
     let chunks_len = rgba.len() / 16;
     
     // Fixed point coefficients for (77R + 151G + 28B) >> 8
-    let coeffs = i16x8_make(77, 151, 28, 0, 77, 151, 28, 0);
+    let coeffs = i16x8(77, 151, 28, 0, 77, 151, 28, 0);
     
     let mut rgba_ptr = rgba.as_ptr();
     
