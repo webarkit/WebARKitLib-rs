@@ -13,18 +13,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("WebARKitLib-rs Barcode Detection Example (Ultra-Low Threshold)");
 
     // 2. Load Camera Parameters
-    let camera_para_path = "benchmarks/data/camera_para.dat";
-    let param_file = File::open(camera_para_path).expect("Failed to open camera_para.dat");
-    let mut param = ARParam::load(param_file).expect("Failed to read camera_para.dat");
-    println!("Loaded camera_para.dat: xsize={}, ysize={}", param.xsize, param.ysize);
+    let camera_para_path_raw = "benchmarks/data/camera_para.dat";
+    let camera_para_path = if !std::path::Path::new(camera_para_path_raw).exists() {
+        let alt = "../../benchmarks/data/camera_para.dat";
+        if std::path::Path::new(alt).exists() { alt } else { camera_para_path_raw }
+    } else {
+        camera_para_path_raw
+    };
+
+    let param_file = File::open(camera_para_path).expect(&format!("Failed to open camera parameters at {}", camera_para_path));
+    let mut param = ARParam::load(param_file).expect("Failed to read camera parameters");
+    println!("Loaded camera parameters from {}: xsize={}, ysize={}", camera_para_path, param.xsize, param.ysize);
     
     // 3. Load Image
-    let image_path = "crates/core/examples/Data/marker_05_3x3.jpg";
+    let image_path_raw = "crates/core/examples/Data/marker_05_3x3.jpg";
+    let image_path = if !std::path::Path::new(image_path_raw).exists() {
+        let alt = "examples/Data/marker_05_3x3.jpg";
+        if std::path::Path::new(alt).exists() { alt } else { image_path_raw }
+    } else {
+        image_path_raw
+    };
+
     println!("Loading image {}...", image_path);
-    let full_img = ImageReader::open(image_path).unwrap().decode().unwrap();
+    let full_img = ImageReader::open(image_path).expect(&format!("Failed to open image at {}", image_path)).decode().expect("Failed to decode image");
     let width = full_img.width() as i32;
     let height = full_img.height() as i32;
     println!("Image dimensions: {}x{}", width, height);
+
+    // Derive output directory
+    let data_dir = std::path::Path::new(image_path).parent().unwrap_or(std::path::Path::new("."));
 
     // Override the camera parameters with the actual image dimensions
     param.xsize = width;
@@ -33,8 +50,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let luma_img = full_img.to_luma8();
     let color_img = full_img.to_rgb8();
     
-    luma_img.save("target/rust_luma.png").unwrap();
-    color_img.save("target/rust_color.png").unwrap();
+    let rust_luma_path = data_dir.join("rust_luma.png");
+    let rust_color_path = data_dir.join("rust_color.png");
+    luma_img.save(&rust_luma_path).expect("Failed to save luma image");
+    color_img.save(&rust_color_path).expect("Failed to save color image");
 
     for thresh in (60..=180).step_by(20) {
         println!("\n--- Testing BlackRegion, Threshold: {} ---", thresh);
