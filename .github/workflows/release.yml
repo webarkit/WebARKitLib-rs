@@ -37,6 +37,7 @@ jobs:
           tar -czvf performance-reports.tar.gz target/criterion
           
       - name: Create Release
+        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -46,3 +47,30 @@ jobs:
           body_path: CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Publish to Crates.io
+        run: cargo publish --token ${{ secrets.CRATES_TOKEN }} -p webarkitlib-rs
+
+  publish-npm:
+    needs: [release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - name: Build and Publish to NPM
+        run: |
+          cd crates/wasm
+          ./scripts/build-dual.sh
+          cd pkg
+          npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+          npm publish --access public

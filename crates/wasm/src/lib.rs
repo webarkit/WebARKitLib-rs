@@ -34,6 +34,16 @@
  *
  */
 
+//! # WebARKitLib-rs WASM
+//!
+//! This crate provides the WebAssembly bindings for `webarkitlib-rs`.
+//! It allows using the core AR detection and pose estimation algorithms in the browser.
+//!
+//! ## Key Components
+//!
+//! - `WasmARHandle`: The main interface for marker detection and pose estimation.
+//! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
+
 use wasm_bindgen::prelude::*;
 use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode};
 use webarkitlib_rs::image_proc::{ARImageProcInfo, rgba_to_gray};
@@ -157,6 +167,11 @@ impl WasmARHandle {
         
         Ok(serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?)
+    }
+
+    /// Get the current threshold used for binarization.
+    pub fn get_threshold(&self) -> i32 {
+        self.handle.ar_labeling_thresh
     }
 
     pub fn get_trans_mat(&self, marker_idx: usize, width: f64) -> Result<JsValue, JsValue> {
