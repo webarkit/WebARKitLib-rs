@@ -16,8 +16,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
 
     let image_path = "crates/core/examples/Data/gem_05_3x3.png";
-    println!("Loading image {}...", image_path);
-    let full_img = ImageReader::open(image_path).unwrap().decode().unwrap();
+    let image_path_buf = std::path::PathBuf::from(image_path);
+    
+    // Attempt rescue if file not found (for CI run from crates/core)
+    let final_image_path = if !image_path_buf.exists() {
+        let alt_path = std::path::Path::new("examples/Data/gem_05_3x3.png");
+        if alt_path.exists() { alt_path.to_path_buf() } else { image_path_buf }
+    } else {
+        image_path_buf
+    };
+
+    println!("Loading image {}...", final_image_path.display());
+    let full_img = ImageReader::open(&final_image_path).expect(&format!("Failed to open {}", final_image_path.display())).decode().expect("Failed to decode image");
     let luma_img = full_img.to_luma8();
     let (width, height) = luma_img.dimensions();
 

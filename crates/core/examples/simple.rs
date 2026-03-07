@@ -50,18 +50,54 @@ fn main() {
 
     // Use command line args or defaults
     let args: Vec<String> = std::env::args().collect();
-    let cparam_path = if args.len() > 1 { &args[1] } else { "benchmarks/data/camera_para.dat" };
-    let patt_path = if args.len() > 2 { &args[2] } else { "benchmarks/data/patt.hiro" };
-    let img_path = if args.len() > 3 { &args[3] } else { "benchmarks/data/img.jpg" };
+    
+    let cparam_path_default = "benchmarks/data/camera_para.dat";
+    let cparam_path = if args.len() > 1 { 
+        &args[1] 
+    } else { 
+        if !std::path::Path::new(cparam_path_default).exists() && std::path::Path::new("../../benchmarks/data/camera_para.dat").exists() {
+            "../../benchmarks/data/camera_para.dat"
+        } else {
+            cparam_path_default
+        }
+    };
+    
+    let patt_path_default = "benchmarks/data/patt.hiro";
+    let patt_path = if args.len() > 2 { 
+        &args[2] 
+    } else { 
+        if !std::path::Path::new(patt_path_default).exists() && std::path::Path::new("../../benchmarks/data/patt.hiro").exists() {
+            "../../benchmarks/data/patt.hiro"
+        } else {
+            patt_path_default
+        }
+    };
+    
+    let img_path_default = "benchmarks/data/img.jpg";
+    let img_path = if args.len() > 3 { 
+        &args[3] 
+    } else { 
+        if !std::path::Path::new(img_path_default).exists() && std::path::Path::new("../../benchmarks/data/img.jpg").exists() {
+            "../../benchmarks/data/img.jpg"
+        } else {
+            img_path_default
+        }
+    };
+
+    // Derive output paths from input image path for robustness
+    let img_path_buf = std::path::PathBuf::from(img_path);
+    let data_dir = img_path_buf.parent().unwrap_or(std::path::Path::new("."));
+    let hiro_raw_path = data_dir.join("hiro.raw");
+    let found_jpg_path = data_dir.join("found.jpg");
 
     // Load ARParam
     println!("Loading camera parameters from {}...", cparam_path);
-    let param_file = File::open(cparam_path).expect("Failed to open camera_para.dat");
-    let param = ARParam::load(param_file).expect("Failed to read camera_para.dat");
+    let param_file = File::open(cparam_path).expect(&format!("Failed to open camera parameters: {}", cparam_path));
+    let param = ARParam::load(param_file).expect("Failed to read camera parameters");
     
     // Load image
     println!("Loading image {}...", img_path);
-    let img = ImageReader::open(img_path).unwrap().decode().unwrap();
+    let img = ImageReader::open(img_path).expect(&format!("Failed to open image: {}", img_path)).decode().expect("Failed to decode image");
     let width = img.width() as i32;
     let height = img.height() as i32;
     println!("Image dimensions: {}x{}", width, height);
@@ -72,9 +108,9 @@ fn main() {
     // SAVE RAW LUMA FOR C BENCHMARK
     {
         use std::io::Write;
-        let mut f = File::create("benchmarks/data/hiro.raw").expect("Failed to create hiro.raw");
-        f.write_all(luma_img.as_raw()).expect("Failed to write hiro.raw");
-        println!("Exported benchmarks/data/hiro.raw for C benchmark.");
+        println!("Exporting {} for C benchmark...", hiro_raw_path.display());
+        let mut f = File::create(&hiro_raw_path).expect(&format!("Failed to create {}", hiro_raw_path.display()));
+        f.write_all(luma_img.as_raw()).expect("Failed to write luma raw data");
     }
 
     // Calculate Otsu threshold
@@ -83,6 +119,7 @@ fn main() {
     println!("Calculated Otsu threshold: {}", otsu_thresh);
     
     // Debug: Save thresholded image to disk so we can see what the AR tracker sees
+    let thresh_path = data_dir.join("thresh.png");
     let mut thresh_img = image::GrayImage::from_vec(width as u32, height as u32, luma_img.as_raw().clone()).unwrap();
     for p in thresh_img.pixels_mut() {
         if p[0] <= otsu_thresh as u8 {
@@ -91,7 +128,8 @@ fn main() {
             p[0] = 255; // White region
         }
     }
-    thresh_img.save("benchmarks/data/thresh.png").unwrap();
+    thresh_img.save(&thresh_path).expect("Failed to save thresholded image");
+    println!("Saved thresholded image to {}", thresh_path.display());
     
     // We mock an identity lookup table for the image size to avoid distortion failure
     let mut param_ltf = ARParamLTf::default();
@@ -202,9 +240,9 @@ fn main() {
                 }
             }
 
-            println!("Saving found.jpg...");
+            println!("Saving results to {}...", found_jpg_path.display());
             let rgb_img = image::DynamicImage::ImageRgba8(out_img).into_rgb8();
-            rgb_img.save("benchmarks/data/found.jpg").unwrap();
+            rgb_img.save(&found_jpg_path).expect("Failed to save found.jpg");
         },
         Err(e) => eprintln!("Error during marker detection: {}", e)
     }
@@ -235,5 +273,7 @@ fn main() {
             }
         }
     }
-    label_img.save("benchmarks/data/label.png").unwrap();
+    let label_path = data_dir.join("label.png");
+    label_img.save(&label_path).expect("Failed to save label.png");
+    println!("Saved label debug image to {}", label_path.display());
 }

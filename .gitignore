@@ -16,9 +16,11 @@ Cargo.lock
 # Google Antigravity local agent state (optional, but usually good to keep out of repos)
 .agents/
 
-# Benchmarking
+# Benchmarking and Example Artifacts
 benchmarks/c_benchmark/src/
 benchmarks/c_benchmark/build/
 benchmarks/data/hiro.raw
 benchmarks/data/*.png
+crates/core/examples/Data/found.jpg
+crates/core/examples/Data/rust_*.png
 **/.libraries.json
