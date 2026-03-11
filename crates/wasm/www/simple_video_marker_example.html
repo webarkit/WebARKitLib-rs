@@ -280,6 +280,18 @@ btnInit.addEventListener('click', async () => {
 
         arHandle = new engine.WasmARHandle(paramData);
 
+        // Verify the WASM build includes the detection-mode API (added in fb9be58).
+        // Older artifacts lack these methods; give the user an actionable message.
+        if (typeof arHandle.set_pattern_detection_mode !== 'function' ||
+            typeof arHandle.set_matrix_code_type !== 'function') {
+            arHandle.free(); arHandle = null;
+            throw new Error(
+                'Outdated WASM build: set_pattern_detection_mode / set_matrix_code_type are missing. ' +
+                'Please download the latest "wasm-package" artifact from CI and place its ' +
+                'dist-std/ and dist-simd/ folders under crates/wasm/pkg/.'
+            );
+        }
+
         // Apply threshold – use manual mode based on slider
         arHandle.set_threshold_mode(0);
         arHandle.set_threshold(manualThreshold);
@@ -308,7 +320,7 @@ btnInit.addEventListener('click', async () => {
         notice.style.display = 'none';
         btnStart.disabled = false;
     } catch (err) {
-        statusEl.textContent = `Status Error: ${err}`;
+        statusEl.textContent = `Status Error: ${err.message || err}`;
         console.error(err);
         btnInit.disabled = false;
     }
