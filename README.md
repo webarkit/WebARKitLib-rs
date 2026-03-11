@@ -24,10 +24,35 @@ To see the marker detection in action on your local machine, run the provided si
 
 ```bash
 cargo run --example simple
-# or for barcode markers
-cargo run --example barcode_4x4
 ```
+
 This example loads a camera parameter file, a marker (pattern or barcode), and a sample image, performing detection and outputting the 3D pose extrinsics.
+
+#### Barcode Detection Example
+
+A unified, parameterized barcode example is available for testing all supported matrix code types:
+
+```bash
+# Default: 3x3 matrix code type, auto-sweeps threshold 60–180
+cargo run --example barcode
+
+# Specify a matrix code type (e.g. 4x4) and supply the matching marker image
+cargo run --example barcode -- -m 4x4 -i crates/core/examples/Data/marker_07_4x4.jpg
+
+# Use a fixed threshold instead of auto-sweeping
+cargo run --example barcode -- -m 3x3 -t 100
+
+# Full example: type, threshold, and custom image path
+cargo run --example barcode -- -m 5x5 -t 120 -i path/to/marker.jpg
+```
+
+**Options:**
+
+| Flag | Long form | Description | Default |
+|------|-----------|-------------|---------|
+| `-m` | `--matrix-code-type` | Matrix code type (`3x3`, `3x3parity65`, `3x3hamming63`, `4x4`, `4x4bch1393`, `4x4bch1355`, `5x5`, `5x5bch22125`, `5x5bch2277`, `6x6`) | `3x3` |
+| `-t` | `--threshold` | Fixed labeling threshold (0–255). When omitted, sweeps 60–180 in steps of 20 | *(auto-sweep)* |
+| `-i` | `--image` | Path to the input image | bundled 3x3 marker image |
 
 ### WebAssembly (WASM) Demo
 
