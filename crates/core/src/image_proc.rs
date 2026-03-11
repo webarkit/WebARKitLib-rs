@@ -299,10 +299,6 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
         }
     }
     
-    #[cfg(not(any(
-        all(target_arch = "wasm32", target_feature = "simd128"),
-        all(target_arch = "x86_64", target_feature = "sse4.1")
-    )))]
     rgba_to_gray_scalar(rgba)
 }
 
@@ -395,6 +391,13 @@ unsafe fn rgba_to_gray_simd_wasm(rgba: &[u8]) -> Vec<u8> {
     gray
 }
 
+/// Converts an RGBA image buffer to a grayscale (Luminance) buffer using SSE4.1 intrinsics.
+///
+/// This function processes 16 bytes (4 pixels) at a time.
+/// 
+/// # Safety
+/// This function is unsafe because it uses SIMD intrinsics and raw pointer arithmetic.
+/// The caller must ensure that the target CPU supports SSE4.1.
 #[cfg(all(feature = "simd-image", target_arch = "x86_64", target_feature = "sse4.1"))]
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn rgba_to_gray_simd_x86(rgba: &[u8]) -> Vec<u8> {
@@ -457,6 +460,12 @@ pub unsafe fn rgba_to_gray_simd_x86(rgba: &[u8]) -> Vec<u8> {
     gray
 }
 
+/// Horizontal box filter implementation using SSE4.1 intrinsics.
+///
+/// Currently falls back to scalar implementation but is reserved for future SIMD optimization.
+///
+/// # Safety
+/// This function is unsafe because it is intended to use SIMD intrinsics.
 #[cfg(all(feature = "simd-image", target_arch = "x86_64", target_feature = "sse4.1"))]
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn box_filter_h_simd_x86(data: &[u8], image_temp_u16: &mut [u16], width: i32, height: i32, half: i32) {
@@ -464,6 +473,13 @@ pub unsafe fn box_filter_h_simd_x86(data: &[u8], image_temp_u16: &mut [u16], wid
     box_filter_h_scalar(data, image_temp_u16, width, height, half);
 }
 
+/// Vertical box filter implementation using SSE4.1 intrinsics.
+///
+/// Processes 8 columns at a time using 128-bit registers.
+///
+/// # Safety
+/// This function is unsafe because it uses SIMD intrinsics and raw pointer arithmetic.
+/// The caller must ensure that the target CPU supports SSE4.1.
 #[cfg(all(feature = "simd-image", target_arch = "x86_64", target_feature = "sse4.1"))]
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn box_filter_v_simd_x86(image_temp_u16: &[u16], image2: &mut [u8], width: i32, height: i32, half: i32, bias: i32) {

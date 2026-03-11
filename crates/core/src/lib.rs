@@ -43,6 +43,19 @@
 //! - Marker detection and identification
 //! - Pose estimation and matrix calculations
 //!
+//! ## Performance and SIMD
+//!
+//! This crate includes high-performance SIMD optimizations for critical image processing
+//! paths (grayscale conversion, filtering, and pattern matching).
+//! - **SSE4.1** is supported for x86_64 targets.
+//! - **WASM SIMD** is supported for web targets.
+//!
+//! To enable these optimizations, compile with the `simd` feature:
+//! ```bash
+//! cargo build --release --features simd
+//! ```
+//! Detailed benchmark results can be found in `crates/core/benches/BENCHMARKS.md`.
+//!
 //! ## Example
 //!
 //! ```rust,no_run
