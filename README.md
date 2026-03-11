@@ -76,6 +76,7 @@ The WASM port allows you to run the AR engine directly in most modern browsers.
    cd crates/wasm
    ./scripts/build-dual.sh
    ```
+   > **Alternatively**, download the pre-built `wasm-package` artifact from the latest [CI run](https://github.com/webarkit/WebARKitLib-rs/actions) and extract its contents into `crates/wasm/pkg/`.
 
 2. **Run the demo**:
    The `www` folder contains two web demos. Serve it with any local HTTP server:
