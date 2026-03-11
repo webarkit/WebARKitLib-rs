@@ -45,7 +45,7 @@
 //! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
 
 use wasm_bindgen::prelude::*;
-use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode};
+use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode, ARMatrixCodeType};
 use webarkitlib_rs::image_proc::{ARImageProcInfo, rgba_to_gray};
 use webarkitlib_rs::marker::ar_detect_marker;
 use webarkitlib_rs::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
@@ -114,6 +114,43 @@ impl WasmARHandle {
 
     pub fn set_debug_mode(&mut self, debug: bool) {
         self.handle.ar_debug = if debug { 1 } else { 0 };
+    }
+
+    /// Set the pattern detection mode.
+    /// 0 = template matching colour (pattern markers),
+    /// 1 = template matching mono,
+    /// 2 = matrix code detection (barcode markers),
+    /// 3 = colour + matrix code,
+    /// 4 = mono + matrix code.
+    pub fn set_pattern_detection_mode(&mut self, mode: i32) {
+        self.handle.set_pattern_detection_mode(mode);
+    }
+
+    /// Set the matrix code type used for barcode detection.
+    /// Maps integer values to `ARMatrixCodeType` variants:
+    /// 3=3x3, 259=3x3Parity65, 515=3x3Hamming63,
+    /// 4=4x4, 772=4x4BCH1393, 1028=4x4BCH1355,
+    /// 5=5x5, 1285=5x5BCH22125, 1541=5x5BCH2277, 6=6x6.
+    pub fn set_matrix_code_type(&mut self, code_type: i32) {
+        let ct = match code_type {
+            3   => ARMatrixCodeType::Code3x3,
+            259 => ARMatrixCodeType::Code3x3Parity65,
+            515 => ARMatrixCodeType::Code3x3Hamming63,
+            4   => ARMatrixCodeType::Code4x4,
+            772 => ARMatrixCodeType::Code4x4BCH1393,
+            1028 => ARMatrixCodeType::Code4x4BCH1355,
+            5   => ARMatrixCodeType::Code5x5,
+            1285 => ARMatrixCodeType::Code5x5BCH22125,
+            1541 => ARMatrixCodeType::Code5x5BCH2277,
+            6   => ARMatrixCodeType::Code6x6,
+            _   => {
+                web_sys::console::warn_1(&JsValue::from_str(&format!(
+                    "[WebARKit] Unknown matrix code type {code_type}, falling back to Code3x3"
+                )));
+                ARMatrixCodeType::Code3x3
+            }
+        };
+        self.handle.set_matrix_code_type(ct);
     }
 
     pub fn detect_markers(&mut self, frame: &[u8], width: i32, height: i32) -> Result<JsValue, JsValue> {
