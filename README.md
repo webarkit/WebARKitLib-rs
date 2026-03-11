@@ -66,12 +66,14 @@ The WASM port allows you to run the AR engine directly in most modern browsers.
    ```
 
 2. **Run the demo**:
-   The `www` folder contains a diagnostic demo with an engine selector and threshold visualization.
+   The `www` folder contains two web demos. Serve it with any local HTTP server:
    ```bash
    cd www
    # Serve using any local HTTP server, e.g.:
    npx serve .
    ```
+   - **`simple.html`** – static image demo with engine selector and threshold visualization.
+   - **`simple_video_marker_example.html`** – live webcam demo with engine selector, marker type (pattern/barcode) selector, and threshold slider.
 
 ## 📊 Benchmarking
 
