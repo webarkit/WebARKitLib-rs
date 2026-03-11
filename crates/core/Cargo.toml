@@ -19,9 +19,11 @@ log = "0.4.0"
 rand = "0.8.0"
 
 [features]
-simd = ["simd-image", "simd-pattern"]
+simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41"]
 simd-image = []
 simd-pattern = []
+simd-wasm32 = []
+simd-x86-sse41 = []
 
 [dev-dependencies]
 env_logger = "0.10.0"

@@ -319,9 +319,9 @@ pub struct ARPattHandle {
     pub patt_num: i32,
     pub patt_num_max: i32,
     pub pattf: Vec<i32>,
-    pub patt: Vec<Vec<i32>>,
+    pub patt: Vec<Vec<i16>>,
     pub pattpow: Vec<ARdouble>,
-    pub patt_bw: Vec<Vec<i32>>,
+    pub patt_bw: Vec<Vec<i16>>,
     pub pattpow_bw: Vec<ARdouble>,
     pub patt_size: i32,
 }
