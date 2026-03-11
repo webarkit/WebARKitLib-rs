@@ -135,6 +135,27 @@
             </select>
         </div>
 
+        <!-- Matrix code type – only shown when barcode is selected.
+             Values map to ARMatrixCodeType enum (repr i32):
+             3=Code3x3, 259=Code3x3Parity65, 515=Code3x3Hamming63,
+             4=Code4x4, 772=Code4x4BCH1393, 1028=Code4x4BCH1355,
+             5=Code5x5, 1285=Code5x5BCH22125, 1541=Code5x5BCH2277, 6=Code6x6 -->
+        <div class="control-group" id="matrix-type-group" style="display:none;">
+            <label for="matrix-type">Matrix Code Type</label>
+            <select id="matrix-type">
+                <option value="3">3×3</option>
+                <option value="259">3×3 Parity (6,5)</option>
+                <option value="515">3×3 Hamming (6,3)</option>
+                <option value="4">4×4</option>
+                <option value="772">4×4 BCH (13,9,3)</option>
+                <option value="1028">4×4 BCH (13,5,5)</option>
+                <option value="5">5×5</option>
+                <option value="1285">5×5 BCH (22,12,5)</option>
+                <option value="1541">5×5 BCH (22,7,7)</option>
+                <option value="6">6×6</option>
+            </select>
+        </div>
+
         <!-- Threshold slider -->
         <div class="control-group" style="min-width:200px;">
             <label for="threshold-slider">
@@ -176,6 +197,8 @@ const video          = document.getElementById('video');
 const canvas         = document.getElementById('canvas');
 const ctx            = canvas.getContext('2d');
 const resultsEl      = document.getElementById('results');
+const matrixTypeGroup = document.getElementById('matrix-type-group');
+const matrixTypeSel  = document.getElementById('matrix-type');
 
 // ──────────────────────────────────────────────────────────────────────────────
 // State
@@ -185,6 +208,13 @@ let arHandle = null;
 let cameraStream = null;
 let animFrameId = null;
 let manualThreshold = parseInt(thresholdSlider.value, 10);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Show/hide matrix code type selector based on marker type
+// ──────────────────────────────────────────────────────────────────────────────
+markerTypeSel.addEventListener('change', () => {
+    matrixTypeGroup.style.display = markerTypeSel.value === 'barcode' ? '' : 'none';
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Threshold slider
@@ -258,14 +288,21 @@ btnInit.addEventListener('click', async () => {
         const markerType = markerTypeSel.value;
 
         if (markerType === 'pattern') {
+            // Template matching colour mode (mode 0)
+            arHandle.set_pattern_detection_mode(0);
             const pattResp = await fetch('assets/patt.hiro');
             const pattContent = await pattResp.text();
             const pattId = arHandle.load_pattern(pattContent);
             console.log(`[WebARKit] Hiro pattern loaded, id=${pattId}`);
             statusEl.textContent = `Status: AR ready (${engine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Pattern/Hiro, id=${pattId}). Click Start Camera.`;
         } else {
-            // Barcode mode – no extra file needed, just rely on matrix detection
-            statusEl.textContent = `Status: AR ready (${engine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Barcode). Click Start Camera.`;
+            // Matrix code detection mode (mode 2)
+            arHandle.set_pattern_detection_mode(2);
+            const codeType = parseInt(matrixTypeSel.value, 10);
+            arHandle.set_matrix_code_type(codeType);
+            const codeLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
+            console.log(`[WebARKit] Barcode mode, matrix code type: ${codeLabel} (${codeType})`);
+            statusEl.textContent = `Status: AR ready (${engine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Barcode/${codeLabel}). Click Start Camera.`;
         }
 
         notice.style.display = 'none';
@@ -290,6 +327,7 @@ btnStart.addEventListener('click', async () => {
     btnInit.disabled = true;
     wasmVersionSel.disabled = true;
     markerTypeSel.disabled = true;
+    matrixTypeSel.disabled = true;
 
     try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
@@ -313,6 +351,7 @@ btnStart.addEventListener('click', async () => {
         btnInit.disabled = false;
         wasmVersionSel.disabled = false;
         markerTypeSel.disabled = false;
+        matrixTypeSel.disabled = false;
     }
 });
 
@@ -337,6 +376,7 @@ function stopCamera() {
     btnInit.disabled = false;
     wasmVersionSel.disabled = false;
     markerTypeSel.disabled = false;
+    matrixTypeSel.disabled = false;
 }
 
 function resetAR() {
@@ -376,11 +416,12 @@ function detectionLoop() {
 
     // Update results panel
     const markerType = markerTypeSel.value;
+    const matrixLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
     let text = `Detection: ${elapsed} ms | Threshold: ${currentThreshold} | Markers: ${markers.length}\n\n`;
     markers.forEach((m, i) => {
         const label = markerType === 'pattern'
             ? `Pattern: hiro (id=${m.id})`
-            : `Barcode id=${m.id}`;
+            : `Barcode id=${m.id} [${matrixLabel}]`;
         text += `[${i}] ${label}\n`;
         text += `    Confidence: ${m.cf.toFixed(4)}\n`;
         text += `    Center: (${m.pos[0].toFixed(1)}, ${m.pos[1].toFixed(1)})\n`;
@@ -395,6 +436,7 @@ function drawOverlay(markers) {
     if (!markers || markers.length === 0) return;
 
     const markerType = markerTypeSel.value;
+    const matrixLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
 
     ctx.lineWidth   = 3;
     ctx.font        = 'bold 16px monospace';
@@ -404,7 +446,7 @@ function drawOverlay(markers) {
         const corners = m.corners; // array of 4 {x,y} points (corner vertices)
         const label   = markerType === 'pattern'
             ? `hiro (${m.id})`
-            : `id=${m.id}`;
+            : `id=${m.id} [${matrixLabel}]`;
 
         if (corners && corners.length === 4) {
             // Draw quadrilateral around the marker
