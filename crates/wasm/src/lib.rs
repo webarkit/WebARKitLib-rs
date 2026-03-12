@@ -66,12 +66,10 @@ pub fn print_version() {
     web_sys::console::log_1(&msg.into());
 }
 
-/// Initializes the panic hook for better Rust panic messages in the browser
-/// console and prints the library version.
+/// Initializes the panic hook for better Rust panic messages in the browser console.
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
-    print_version();
 }
 
 #[wasm_bindgen]
