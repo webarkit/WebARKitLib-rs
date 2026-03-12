@@ -79,12 +79,25 @@ mod tests {
 
     #[test]
     fn test_version_format() {
-        // Version should be a valid semver-like string, e.g. "0.1.4"
+        // Version should be a valid semver-like string, e.g. "0.1.4" or "0.1.4-alpha.1"
         let v = get_version();
-        let parts: Vec<&str> = v.split('.').collect();
-        assert!(parts.len() >= 2, "Version should have at least major.minor parts");
+
+        // Only validate the numeric core (major.minor[.patch]) before any pre-release/build suffix.
+        let core = v
+            .split(|c| c == '-' || c == '+')
+            .next()
+            .unwrap_or(v);
+
+        let parts: Vec<&str> = core.split('.').collect();
+        assert!(
+            parts.len() >= 2,
+            "Version should have at least major.minor parts in the numeric core"
+        );
         for part in &parts {
-            assert!(part.parse::<u64>().is_ok(), "Each version part should be numeric");
+            assert!(
+                part.parse::<u64>().is_ok(),
+                "Each numeric core version part should be purely numeric"
+            );
         }
     }
 }
