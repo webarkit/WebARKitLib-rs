@@ -47,10 +47,7 @@ jobs:
         curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
     - name: Build WASM module (Dual Mode)
-      working-directory: crates/wasm
-      run: |
-        chmod +x scripts/build-dual.sh
-        ./scripts/build-dual.sh
+      run: npm run build:wasm
 
     - name: Upload WASM Package
       uses: actions/upload-artifact@v4
