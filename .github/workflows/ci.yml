@@ -29,6 +29,9 @@ jobs:
     - name: Run cargo test
       run: cargo test --workspace
 
+    - name: Run cargo test with SIMD
+      run: cargo test --workspace --features simd
+
   wasm-build:
     runs-on: ubuntu-latest
     steps:

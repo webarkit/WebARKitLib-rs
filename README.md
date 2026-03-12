@@ -1,5 +1,10 @@
 # WebARKitLib-rs 🦀
 
+[![CI](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/webarkitlib-rs.svg)](https://crates.io/crates/webarkitlib-rs)
+[![npm](https://img.shields.io/npm/v/@webarkit/webarkitlib-wasm.svg)](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm)
+[![GitHub stars](https://img.shields.io/github/stars/webarkit/WebARKitLib-rs.svg?style=social)](https://github.com/webarkit/WebARKitLib-rs/stargazers)
+
 **WebARKitLib-rs** is a high-performance, memory-safe Rust port of the [WebARKitLib](https://github.com/webarkit/WebARKitLib) (originally C/C++). 
 
 This project aims to provide a pure-Rust implementation of the core ARToolKit algorithms, targeting both **native** systems and **WebAssembly (WASM)** for high-performance augmented reality in the browser.
@@ -11,10 +16,17 @@ This project aims to provide a pure-Rust implementation of the core ARToolKit al
 
 - **Pure Rust**: Built for safety, speed, and modern concurrency. ([crates.io](https://crates.io/crates/webarkitlib-rs))
 - **Dual WASM Strategy**: Automated release of both **Standard** and **SIMD** binaries to maximize performance and compatibility.
+- **SIMD-Accelerated Pattern Matching**: Uses `i16` fixed-point arithmetic and WASM `i32x4_dot_i16x8` instructions for ultra-fast correlation matching.
 - **Barcode Marker Support**: Robust decoding for square matrix markers (3x3 to 6x6) with ECC.
 - **WASM Ready**: High-performance tracking in the browser via WebAssembly. ([@webarkit/webarkitlib-wasm](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm))
 - **Side-Effect Free**: Pure mathematical engine, easy to test and integrate.
 - **CI-Integrated Benchmarking**: Performance parity with original C implementation.
+
+## ⚡ Performance & Accuracy
+
+- **SIMD-Accelerated Pattern Matching**: Uses `i16` fixed-point arithmetic for the core correlation loops, leveraging WASM `i32x4_dot_i16x8` instructions for significant speedups.
+- **Numerical Parity**: Our SIMD and Scalar paths are calibrated to produce bit-identical results (including rounding logic in grayscale and thresholding), ensuring deterministic behavior across all devices.
+- **Sub-millisecond Tracking**: Core detection loop is optimized for sub-millisecond execution on standard ARM/x86 hardware.
 
 ## 🚀 Getting Started
 
@@ -63,25 +75,23 @@ The WASM port allows you to run the AR engine directly in most modern browsers.
    ```bash
    npm run build:wasm
    ```
-   This automatically selects `build-dual.sh` on Linux/macOS or `build-dual.ps1` on Windows and compiles both a portable Standard build and a high-performance SIMD build into `crates/wasm/pkg/`.
-
-   > **Alternative** (Linux/macOS only): you can invoke the shell script directly:
-   > ```bash
-   > bash crates/wasm/scripts/build-dual.sh
-   > ```
+   > **Alternatively**, download the pre-built `wasm-package` artifact from the latest [CI run](https://github.com/webarkit/WebARKitLib-rs/actions) and extract its contents into `crates/wasm/pkg/`.
 
 2. **Run the demo**:
-   The `crates/wasm/www` folder contains a diagnostic demo with an engine selector and threshold visualization.
+   The `www` folder contains two web demos. Serve it with any local HTTP server:
    ```bash
    cd crates/wasm/www
    # Serve using any local HTTP server, e.g.:
    npx serve .
    ```
-   Open the served URL in a browser and use the **WASM Engine** selector to switch between **Standard (Portable)** and **SIMD (High Performance)** builds.
+   - **`simple.html`** – static image demo with engine selector and threshold visualization.
+   - **`simple_video_marker_example.html`** – live webcam demo with engine selector, marker type (pattern/barcode) selector, and threshold slider.
 
 ## 📊 Benchmarking
 
-We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive.
+We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive. 
+
+Detailed SIMD performance results and reproduction steps can be found in the [BENCHMARKS.md](crates/core/benches/BENCHMARKS.md) file.
 
 ### Running the Comparison
 
@@ -117,6 +127,7 @@ cargo bench -- --save-baseline milestone-20260307
 - `crates/wasm`: WASM bindings, dual-build scripts, and diagnostic web demo.
 - `benchmarks`: C vs Rust performance comparison suite.
 - `examples`: Usage demonstrations for patterns and barcodes.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md): Detailed technical overview of the library's design and SIMD optimizations.
 
 ## 🗺️ Roadmap
 

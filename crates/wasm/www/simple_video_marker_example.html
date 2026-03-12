@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebARKitLib.rs – Video Marker Example</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 16px;
+        }
+
+        .status {
+            font-weight: bold;
+            margin-bottom: 14px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            background: #e8f0fe;
+            color: #1a73e8;
+            border-left: 4px solid #1a73e8;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            align-items: flex-end;
+            margin-bottom: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 160px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: #444;
+            font-weight: 600;
+        }
+
+        select,
+        input[type="range"] {
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            background: #fafafa;
+        }
+
+        input[type="range"] {
+            padding: 4px 0;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background: #1a73e8;
+            color: white;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+            align-self: flex-end;
+        }
+
+        button:hover {
+            background: #1557b0;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        button.stop {
+            background: #d93025;
+        }
+
+        button.stop:hover {
+            background: #a50e0e;
+        }
+
+        #canvas-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+        }
+
+        video {
+            display: none;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #results {
+            margin-top: 16px;
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 14px;
+            border-radius: 4px;
+            border-left: 4px solid #1a73e8;
+            font-size: 0.88rem;
+            min-height: 60px;
+            width: 100%;
+        }
+
+        #threshold-val {
+            font-size: 0.85rem;
+            color: #555;
+        }
+
+        #notice {
+            display: none;
+            background: #fff3cd;
+            color: #856404;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 14px;
+            border: 1px solid #ffeeba;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>WebARKitLib.rs – Video Marker Example</h1>
+        <div class="status" id="status">Status: Ready. Configure and click <em>Initialize AR</em>.</div>
+
+        <div id="notice">
+            <strong>Note:</strong> Engine changed. For best results please <strong>refresh</strong> after switching
+            engines.
+        </div>
+
+        <div class="controls">
+            <!-- WASM version -->
+            <div class="control-group">
+                <label for="wasm-version">WASM Engine</label>
+                <select id="wasm-version">
+                    <option value="dist-std">Standard (Portable)</option>
+                    <option value="dist-simd">SIMD (High Performance)</option>
+                </select>
+            </div>
+
+            <!-- Marker type -->
+            <div class="control-group">
+                <label for="marker-type">Marker Type</label>
+                <select id="marker-type">
+                    <option value="pattern">Pattern (Hiro)</option>
+                    <option value="barcode">Barcode (Matrix)</option>
+                </select>
+            </div>
+
+            <!-- Matrix code type – only shown when barcode is selected.
+             Values map to ARMatrixCodeType enum (repr i32):
+             3=Code3x3, 259=Code3x3Parity65, 515=Code3x3Hamming63,
+             4=Code4x4, 772=Code4x4BCH1393, 1028=Code4x4BCH1355,
+             5=Code5x5, 1285=Code5x5BCH22125, 1541=Code5x5BCH2277, 6=Code6x6 -->
+            <div class="control-group" id="matrix-type-group" style="display:none;">
+                <label for="matrix-type">Matrix Code Type</label>
+                <select id="matrix-type">
+                    <option value="3">3×3</option>
+                    <option value="259">3×3 Parity (6,5)</option>
+                    <option value="515">3×3 Hamming (6,3)</option>
+                    <option value="4">4×4</option>
+                    <option value="772">4×4 BCH (13,9,3)</option>
+                    <option value="1028">4×4 BCH (13,5,5)</option>
+                    <option value="5">5×5</option>
+                    <option value="1285">5×5 BCH (22,12,5)</option>
+                    <option value="1541">5×5 BCH (22,7,7)</option>
+                    <option value="6">6×6</option>
+                </select>
+            </div>
+
+            <!-- Threshold slider -->
+            <div class="control-group" style="min-width:200px;">
+                <label for="threshold-slider">
+                    Threshold: <span id="threshold-val">100</span>
+                </label>
+                <input type="range" id="threshold-slider" min="0" max="255" value="100" step="1">
+            </div>
+
+            <!-- Action buttons -->
+            <button id="btn-init">Initialize AR</button>
+            <button id="btn-start" disabled>Start Camera</button>
+            <button id="btn-stop" class="stop" disabled>Stop</button>
+        </div>
+
+        <!-- Hidden video element used as camera source -->
+        <video id="video" autoplay playsinline muted></video>
+
+        <div id="canvas-wrapper">
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div id="results">Detection results will appear here…</div>
+    </div>
+
+    <script type="module">
+        // ──────────────────────────────────────────────────────────────────────────────
+        // DOM references
+        // ──────────────────────────────────────────────────────────────────────────────
+        const statusEl = document.getElementById('status');
+        const notice = document.getElementById('notice');
+        const wasmVersionSel = document.getElementById('wasm-version');
+        const markerTypeSel = document.getElementById('marker-type');
+        const thresholdSlider = document.getElementById('threshold-slider');
+        const thresholdVal = document.getElementById('threshold-val');
+        const btnInit = document.getElementById('btn-init');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const resultsEl = document.getElementById('results');
+        const matrixTypeGroup = document.getElementById('matrix-type-group');
+        const matrixTypeSel = document.getElementById('matrix-type');
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // State
+        // ──────────────────────────────────────────────────────────────────────────────
+        let engine = { WasmARHandle: null, version: null };
+        let arHandle = null;
+        let cameraStream = null;
+        let animFrameId = null;
+        let manualThreshold = parseInt(thresholdSlider.value, 10);
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Show/hide matrix code type selector based on marker type
+        // ──────────────────────────────────────────────────────────────────────────────
+        markerTypeSel.addEventListener('change', () => {
+            matrixTypeGroup.style.display = markerTypeSel.value === 'barcode' ? '' : 'none';
+        });
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Threshold slider
+        // ──────────────────────────────────────────────────────────────────────────────
+        thresholdSlider.addEventListener('input', () => {
+            manualThreshold = parseInt(thresholdSlider.value, 10);
+            thresholdVal.textContent = manualThreshold;
+            if (arHandle) {
+                // mode 0 = manual threshold
+                arHandle.set_threshold_mode(0);
+                arHandle.set_threshold(manualThreshold);
+            }
+        });
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Engine change notice
+        // ──────────────────────────────────────────────────────────────────────────────
+        wasmVersionSel.addEventListener('change', () => {
+            notice.style.display = 'block';
+            btnInit.disabled = false;
+            btnStart.disabled = true;
+            statusEl.textContent = 'Status: Engine changed. Click Initialize AR to reload.';
+            resetAR();
+        });
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Load WASM module
+        // ──────────────────────────────────────────────────────────────────────────────
+        async function loadWasm() {
+            const version = wasmVersionSel.value;
+            if (engine.version === version) return; // already loaded
+
+            statusEl.textContent = `Status: Loading ${version} WASM engine…`;
+            const cacheBust = `?t=${Date.now()}`;
+            const modulePath = `../pkg/${version}/webarkitlib_wasm.js${cacheBust}`;
+
+            const mod = await import(modulePath);
+            await mod.default();
+
+            engine.WasmARHandle = mod.WasmARHandle;
+            engine.version = version;
+
+            try { mod.init_panic_hook(); } catch (_) { /* already set or unavailable */ }
+            console.log(`[WebARKit] Engine ${version} loaded.`);
+        }
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Initialize AR handle (load WASM + camera params + pattern if needed)
+        // ──────────────────────────────────────────────────────────────────────────────
+        btnInit.addEventListener('click', async () => {
+            btnInit.disabled = true;
+            try {
+                await loadWasm();
+
+                statusEl.textContent = 'Status: Initializing AR handle…';
+
+                // Free existing handle
+                if (arHandle) { arHandle.free(); arHandle = null; }
+
+                // Camera parameters
+                const paramResp = await fetch('assets/camera_para.dat');
+                const paramData = new Uint8Array(await paramResp.arrayBuffer());
+
+                arHandle = new engine.WasmARHandle(paramData);
+
+                // Verify the WASM build includes the detection-mode API (added in fb9be58).
+                // Older artifacts lack these methods; give the user an actionable message.
+                if (typeof arHandle.set_pattern_detection_mode !== 'function' ||
+                    typeof arHandle.set_matrix_code_type !== 'function') {
+                    arHandle.free(); arHandle = null;
+                    throw new Error(
+                        'Outdated WASM build: set_pattern_detection_mode / set_matrix_code_type are missing. ' +
+                        'Please download the latest "wasm-package" artifact from CI and place its ' +
+                        'dist-std/ and dist-simd/ folders under crates/wasm/pkg/.'
+                    );
+                }
+
+                // Apply threshold – use manual mode based on slider
+                arHandle.set_threshold_mode(0);
+                arHandle.set_threshold(manualThreshold);
+                arHandle.set_debug_mode(false);
+
+                const markerType = markerTypeSel.value;
+
+                if (markerType === 'pattern') {
+                    // Template matching colour mode (mode 0)
+                    arHandle.set_pattern_detection_mode(0);
+                    const pattResp = await fetch('assets/patt.hiro');
+                    const pattContent = await pattResp.text();
+                    const pattId = arHandle.load_pattern(pattContent);
+                    console.log(`[WebARKit] Hiro pattern loaded, id=${pattId}`);
+                    statusEl.textContent = `Status: AR ready (${engine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Pattern/Hiro, id=${pattId}). Click Start Camera.`;
+                } else {
+                    // Matrix code detection mode (mode 2)
+                    arHandle.set_pattern_detection_mode(2);
+                    const codeType = parseInt(matrixTypeSel.value, 10);
+                    arHandle.set_matrix_code_type(codeType);
+                    const codeLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
+                    console.log(`[WebARKit] Barcode mode, matrix code type: ${codeLabel} (${codeType})`);
+                    statusEl.textContent = `Status: AR ready (${engine.version === 'dist-simd' ? 'SIMD' : 'Standard'}, Barcode/${codeLabel}). Click Start Camera.`;
+                }
+
+                notice.style.display = 'none';
+                btnStart.disabled = false;
+            } catch (err) {
+                statusEl.textContent = `Status Error: ${err.message || err}`;
+                console.error(err);
+                btnInit.disabled = false;
+            }
+        });
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Start camera
+        // ──────────────────────────────────────────────────────────────────────────────
+        btnStart.addEventListener('click', async () => {
+            if (!arHandle) {
+                statusEl.textContent = 'Status: Please initialize AR first.';
+                return;
+            }
+            btnStart.disabled = true;
+            btnStop.disabled = false;
+            btnInit.disabled = true;
+            wasmVersionSel.disabled = true;
+            markerTypeSel.disabled = true;
+            matrixTypeSel.disabled = true;
+
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+                    audio: false
+                });
+                video.srcObject = cameraStream;
+                await new Promise(resolve => video.onloadedmetadata = resolve);
+                video.play();
+
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+
+                statusEl.textContent = 'Status: Camera running – detecting markers…';
+                requestAnimationFrame(detectionLoop);
+            } catch (err) {
+                statusEl.textContent = `Status Error (camera): ${err}`;
+                console.error(err);
+                btnStart.disabled = false;
+                btnStop.disabled = true;
+                btnInit.disabled = false;
+                wasmVersionSel.disabled = false;
+                markerTypeSel.disabled = false;
+                matrixTypeSel.disabled = false;
+            }
+        });
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Stop camera / reset
+        // ──────────────────────────────────────────────────────────────────────────────
+        btnStop.addEventListener('click', stopCamera);
+
+        function stopCamera() {
+            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            video.srcObject = null;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            resultsEl.textContent = 'Camera stopped.';
+            statusEl.textContent = 'Status: Camera stopped.';
+
+            btnStop.disabled = true;
+            btnStart.disabled = false;
+            btnInit.disabled = false;
+            wasmVersionSel.disabled = false;
+            markerTypeSel.disabled = false;
+            matrixTypeSel.disabled = false;
+        }
+
+        function resetAR() {
+            stopCamera();
+            if (arHandle) { arHandle.free(); arHandle = null; }
+            engine = { WasmARHandle: null, version: null };
+            btnStart.disabled = true;
+        }
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Per-frame detection loop
+        // ──────────────────────────────────────────────────────────────────────────────
+        function detectionLoop() {
+            if (!cameraStream || !arHandle) return;
+            animFrameId = requestAnimationFrame(detectionLoop);
+
+            // Draw current video frame to canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Extract RGBA pixels
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const rgba = new Uint8Array(imageData.data.buffer);
+
+            const t0 = performance.now();
+            let markers;
+            try {
+                markers = arHandle.detect_markers(rgba, canvas.width, canvas.height);
+            } catch (e) {
+                console.error('[WebARKit] detect_markers error:', e);
+                return;
+            }
+            const elapsed = (performance.now() - t0).toFixed(2);
+            const currentThreshold = arHandle.get_threshold();
+
+            // Overlay results
+            drawOverlay(markers);
+
+            // Update results panel
+            const markerType = markerTypeSel.value;
+            const matrixLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
+            let text = `Detection: ${elapsed} ms | Threshold: ${currentThreshold} | Markers: ${markers.length}\n\n`;
+            markers.forEach((m, i) => {
+                const label = markerType === 'pattern'
+                    ? `Pattern: hiro (id=${m.id})`
+                    : `Barcode id=${m.id} [${matrixLabel}]`;
+                text += `[${i}] ${label}\n`;
+                text += `    Confidence: ${m.cf.toFixed(4)}\n`;
+                text += `    Center: (${m.pos[0].toFixed(1)}, ${m.pos[1].toFixed(1)})\n`;
+            });
+            resultsEl.textContent = text || `Detection: ${elapsed} ms | Threshold: ${currentThreshold} | No markers found.\n`;
+        }
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Draw bounding rect + label for each detected marker
+        // ──────────────────────────────────────────────────────────────────────────────
+        function drawOverlay(markers) {
+            if (!markers || markers.length === 0) return;
+
+            const markerType = markerTypeSel.value;
+            const matrixLabel = matrixTypeSel.options[matrixTypeSel.selectedIndex].text;
+
+            ctx.lineWidth = 3;
+            ctx.font = 'bold 16px monospace';
+            ctx.textBaseline = 'top';
+
+            markers.forEach(m => {
+                console.log("marker:", m);
+
+                const corners = m.corners; // array of 4 {x,y} points (corner vertices)
+                const vertex = m.vertex;
+
+                const label = markerType === 'pattern'
+                    ? `hiro (${m.id})`
+                    : `id matrix=${m.id_matrix} [${matrixLabel}]`;
+
+                if (vertex && vertex.length == 4) {
+
+                    ctx.lineWidth = 5;
+                    ctx.strokeStyle = 'red';
+
+                    ctx.beginPath()
+                    ctx.moveTo(vertex[0][0], vertex[0][1])
+                    ctx.lineTo(vertex[1][0], vertex[1][1])
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.beginPath()
+                    ctx.moveTo(vertex[2][0], vertex[2][1])
+                    ctx.lineTo(vertex[3][0], vertex[3][1])
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke()
+
+                    ctx.strokeStyle = 'green';
+
+                    ctx.beginPath()
+                    ctx.lineTo(vertex[1][0], vertex[1][1])
+                    ctx.lineTo(vertex[2][0], vertex[2][1])
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.beginPath()
+                    ctx.moveTo(vertex[3][0], vertex[3][1])
+                    ctx.lineTo(vertex[0][0], vertex[0][1])
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Label above the top-left corner
+                    const tx = Math.min(...vertex.map(c => c[0]));
+                    const ty = Math.min(...vertex.map(c => c[1])) - 22;
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillText(label, tx, ty < 0 ? 2 : ty);
+                } else {
+                    // Fallback: draw crosshair + rect at centre position
+                    const cx = m.pos[0];
+                    const cy = m.pos[1];
+                    const half = 40;
+
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.strokeRect(cx - half, cy - half, half * 2, half * 2);
+
+                    ctx.fillStyle = '#00ff00';
+                    ctx.beginPath();
+                    ctx.moveTo(cx - 10, cy);
+                    ctx.lineTo(cx + 10, cy);
+                    ctx.moveTo(cx, cy - 10);
+                    ctx.lineTo(cx, cy + 10);
+                    ctx.stroke();
+
+                    ctx.fillText(label, cx - half, cy - half - 20 < 0 ? 2 : cy - half - 20);
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
