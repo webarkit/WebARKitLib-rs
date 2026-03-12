@@ -42,6 +42,7 @@
 //! ## Key Components
 //!
 //! - `WasmARHandle`: The main interface for marker detection and pose estimation.
+//! - `init_wasm`: Combined initializer — installs the panic hook and logs the library version.
 //! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
 
 use wasm_bindgen::prelude::*;
@@ -70,6 +71,13 @@ pub fn print_version() {
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
+}
+
+/// Initializes the WASM module: installs the panic hook and logs the library version.
+#[wasm_bindgen]
+pub fn init_wasm() {
+    console_error_panic_hook::set_once();
+    print_version();
 }
 
 #[wasm_bindgen]
