@@ -197,8 +197,10 @@ impl WasmARHandle {
             let marker = &self.handle.marker_info[i];
             results.push(MarkerResult {
                 id: marker.id,
+                id_matrix: marker.id_matrix,
                 cf: marker.cf as f32,
                 pos: [marker.pos[0] as f32, marker.pos[1] as f32],
+                vertex: marker.vertex,
             });
         }
         
@@ -261,8 +263,10 @@ impl Drop for WasmARHandle {
 #[derive(serde::Serialize)]
 pub struct MarkerResult {
     pub id: i32,
+    pub id_matrix: i32,
     pub cf: f32,
     pub pos: [f32; 2],
+    pub vertex: [[f64; 2]; 4],
 }
 
 #[derive(serde::Serialize)]
