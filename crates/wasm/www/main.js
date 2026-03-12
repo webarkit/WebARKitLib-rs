@@ -77,6 +77,7 @@ async function loadWasm() {
         
         // Initialize the wasm instance
         await init();
+        module.init_wasm();
         
         // Store the class constructor and other exports
         currentEngine.WasmARHandle = module.WasmARHandle;

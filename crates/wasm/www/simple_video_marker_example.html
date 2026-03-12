@@ -307,6 +307,7 @@
 
             const mod = await import(modulePath);
             await mod.default();
+            mod.init_wasm();
 
             engine.WasmARHandle = mod.WasmARHandle;
             engine.version = version;
