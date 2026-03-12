@@ -196,11 +196,22 @@ impl WasmARHandle {
         for i in 0..self.handle.marker_num as usize {
             let marker = &self.handle.marker_info[i];
             results.push(MarkerResult {
+                area: marker.area,
                 id: marker.id,
+                id_patt: marker.id_patt,
                 id_matrix: marker.id_matrix,
-                cf: marker.cf as f32,
-                pos: [marker.pos[0] as f32, marker.pos[1] as f32],
+                dir: marker.dir,
+                dir_patt: marker.dir_patt,
+                dir_matrix: marker.dir_matrix,
+                cf: marker.cf,
+                cf_patt: marker.cf_patt,
+                cf_matrix: marker.cf_matrix,
+                pos: marker.pos,
+                line: marker.line,
                 vertex: marker.vertex,
+                cutoff_phase: marker.cutoff_phase as i32,
+                error_corrected: marker.error_corrected,
+                global_id: marker.global_id,
             });
         }
         
@@ -260,13 +271,44 @@ impl Drop for WasmARHandle {
     }
 }
 
+/// Full mapping of `ARMarkerInfo` for consumption by JavaScript.
+///
+/// All fields mirror `ARMarkerInfo` in `crates/core/src/types.rs`.
+/// The raw pointer (`marker_info2_ptr`) is intentionally omitted.
 #[derive(serde::Serialize)]
 pub struct MarkerResult {
+    /// Area in pixels of the largest connected region.
+    pub area: i32,
+    /// Global marker ID (-1 if unmatched).
     pub id: i32,
+    /// Template (pattern) marker ID (-1 if not matched by template).
+    pub id_patt: i32,
+    /// Matrix (barcode) marker ID (-1 if not matched by barcode).
     pub id_matrix: i32,
-    pub cf: f32,
-    pub pos: [f32; 2],
+    /// Marker orientation (0–3, 90° increments).
+    pub dir: i32,
+    /// Orientation from template matching.
+    pub dir_patt: i32,
+    /// Orientation from matrix code decoding.
+    pub dir_matrix: i32,
+    /// Confidence of the best match (0.0–1.0).
+    pub cf: f64,
+    /// Confidence from template matching.
+    pub cf_patt: f64,
+    /// Confidence from matrix code decoding.
+    pub cf_matrix: f64,
+    /// Centre of the marker in 2D pixel space.
+    pub pos: [f64; 2],
+    /// Line equations `[a, b, c]` for each of the four sides.
+    pub line: [[f64; 3]; 4],
+    /// 2D coordinates of the four corners in undistorted camera space.
     pub vertex: [[f64; 2]; 4],
+    /// Tracking phase at which this candidate was cut off (maps to `ARMarkerInfoCutoffPhase` as i32).
+    pub cutoff_phase: i32,
+    /// Number of errors detected and corrected (ECC).
+    pub error_corrected: i32,
+    /// Global ID for matrix codes.
+    pub global_id: u64,
 }
 
 #[derive(serde::Serialize)]
