@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-03-12
+
+### Added
+- **Version Printing System**: Added a new version module with `get_version()` and `print_version()` functions. The version is now printed at startup to aid in debugging (#13).
+- **Webcam AR Example for WASM**: Introduced a real-time webcam demonstration for WASM, transitioning the demo site from static image detection to live tracking. Renamed the original image detection example for clarity (#9).
+- **Comprehensive SIMD Enhancements**: Expanded SIMD support across the library with major performance optimizations and updated technical documentation explaining the architecture (#6).
+
+### Changed
+- **Unified Barcode Examples**: Consolidated `barcode.rs` and `barcode_4x4.rs` into a single, parameterized example using `clap` for command-line arguments. This improves example maintainability and developer UX (#7).
+- **WASM Build Infrastructure**: Unified the WASM build process with a new OS-detecting Node.js script. This ensures the `npm run build:wasm` command correctly generates both standard and SIMD modules across different operating systems (#11).
+- **Improved WASM Bindings**: Enhanced `WasmARHandle` and `MarkerResult` with more granular methods and full mapping of `ARMarkerInfo` to support complex AR interactions (#9).
+
 ## [0.1.4] - 2026-03-07
 
 ### Fixed

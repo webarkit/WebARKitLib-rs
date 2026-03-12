@@ -36,6 +36,14 @@ jobs:
         run: |
           tar -czvf performance-reports.tar.gz target/criterion
           
+      - name: Extract Changelog
+        id: extract_changelog
+        run: |
+          VERSION="${{ github.ref_name }}"
+          V_NUMBER="${VERSION#v}"
+          echo "Extracting notes for version $V_NUMBER"
+          awk -v ver="$V_NUMBER" '$0 ~ "## \\[" ver "\\]" {p=1; next} p && /^## \[/{p=0} p' CHANGELOG.md > release_notes.md
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -44,7 +52,7 @@ jobs:
           files: |
             performance-reports.tar.gz
             target/criterion/c_benchmark.log
-          body_path: CHANGELOG.md
+          body_path: release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
