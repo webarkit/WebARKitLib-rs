@@ -127,7 +127,7 @@ cargo bench -- --save-baseline milestone-20260307
 - `crates/wasm`: WASM bindings, dual-build scripts, and diagnostic web demo.
 - `benchmarks`: C vs Rust performance comparison suite.
 - `examples`: Usage demonstrations for patterns and barcodes.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): Detailed technical overview of the library's design and SIMD optimizations.
+- [`ARCHITECTURE.md`](https://github.com/webarkit/WebARKitLib-rs/blob/main/ARCHITECTURE.md): Detailed technical overview of the library's design and SIMD optimizations.
 
 ## 🗺️ Roadmap
 
