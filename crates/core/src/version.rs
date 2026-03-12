@@ -1,5 +1,5 @@
 /*
- *  lib.rs
+ *  version.rs
  *  WebARKitLib-rs
  *
  *  This file is part of WebARKitLib-rs - WebARKit.
@@ -34,32 +34,57 @@
  *
  */
 
-//! # WebARKitLib-rs Core
+//! # Version
 //!
-//! `webarkitlib-rs` is the foundational library for the Rust port of WebARKitLib.
-//! It provides core computer vision algorithms for Augmented Reality, including:
-//! - Image processing and filtering
-//! - Thresholding and labeling
-//! - Marker detection and identification
-//! - Pose estimation and matrix calculations
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use webarkitlib_rs::marker::ar_detect_marker;
-//! // ... detection logic here
-//! ```
+//! Provides the library version string sourced directly from `Cargo.toml` at
+//! compile time, along with helper functions to retrieve and display it.
 
-pub mod version;
-pub mod types;
-pub mod math;
-pub mod param;
-pub mod icp;
-pub mod image_proc;
-pub mod labeling;
-pub mod marker;
-pub mod matrix;
-pub mod pattern;
-pub mod pose;
-pub mod ar2;
-pub mod bch;
+/// The current version of `webarkitlib-rs`, sourced from `Cargo.toml` at compile time.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Returns the current version string of the library.
+///
+/// # Example
+///
+/// ```rust
+/// use webarkitlib_rs::version::get_version;
+/// let v = get_version();
+/// assert!(!v.is_empty());
+/// ```
+pub fn get_version() -> &'static str {
+    VERSION
+}
+
+/// Logs the library name and version using the [`log`] crate at `info` level.
+///
+/// Call this early in your application (e.g. during initialization) so the
+/// version appears in the console / log output.
+pub fn print_version() {
+    log::info!("WebARKitLib-rs v{}", VERSION);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_version_is_not_empty() {
+        assert!(!get_version().is_empty());
+    }
+
+    #[test]
+    fn test_version_constant_matches_getter() {
+        assert_eq!(VERSION, get_version());
+    }
+
+    #[test]
+    fn test_version_format() {
+        // Version should be a valid semver-like string, e.g. "0.1.4"
+        let v = get_version();
+        let parts: Vec<&str> = v.split('.').collect();
+        assert!(parts.len() >= 2, "Version should have at least major.minor parts");
+        for part in &parts {
+            assert!(part.parse::<u64>().is_ok(), "Each version part should be numeric");
+        }
+    }
+}
