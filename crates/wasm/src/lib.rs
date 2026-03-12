@@ -42,6 +42,7 @@
 //! ## Key Components
 //!
 //! - `WasmARHandle`: The main interface for marker detection and pose estimation.
+//! - `init_wasm`: Combined initializer — installs the panic hook and logs the library version.
 //! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
 
 use wasm_bindgen::prelude::*;
@@ -50,11 +51,33 @@ use webarkitlib_rs::image_proc::{ARImageProcInfo, rgba_to_gray};
 use webarkitlib_rs::marker::ar_detect_marker;
 use webarkitlib_rs::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
 use webarkitlib_rs::pattern::ar_patt_load_from_buffer;
+use webarkitlib_rs::version;
 use std::io::Cursor;
 
+/// Returns the current version string of the library.
+#[wasm_bindgen]
+pub fn get_version() -> String {
+    version::get_version().to_string()
+}
+
+/// Logs the library name and version to the browser console.
+#[wasm_bindgen]
+pub fn print_version() {
+    let msg = format!("WebARKitLib-rs v{}", version::get_version());
+    web_sys::console::log_1(&msg.into());
+}
+
+/// Initializes the panic hook for better Rust panic messages in the browser console.
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
+}
+
+/// Initializes the WASM module: installs the panic hook and logs the library version.
+#[wasm_bindgen]
+pub fn init_wasm() {
+    console_error_panic_hook::set_once();
+    print_version();
 }
 
 #[wasm_bindgen]

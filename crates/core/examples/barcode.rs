@@ -1,5 +1,6 @@
 use clap::Parser;
 use webarkitlib_rs::marker::ar_detect_marker;
+use webarkitlib_rs::version;
 use webarkitlib_rs::types::{
     ARHandle, ARPixelFormat, ARMatrixCodeType, AR_MATRIX_CODE_DETECTION,
     ARParam, ARParamLT, ARParamLTf, AR2VideoBufferT, AR2VideoTimestampT,
@@ -60,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let code_type = parse_matrix_code_type(&args.matrix_code_type)?;
-
+    println!("WebARKitLib-rs v{}", version::get_version());
     println!(
         "WebARKitLib-rs Barcode Detection Example (matrix_code_type={:?})",
         code_type

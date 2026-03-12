@@ -63,6 +63,7 @@
 //! // ... detection logic here
 //! ```
 
+pub mod version;
 pub mod types;
 pub mod math;
 pub mod param;
