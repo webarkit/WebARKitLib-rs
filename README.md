@@ -59,19 +59,25 @@ cargo run --example barcode -- -m 5x5 -t 120 -i path/to/marker.jpg
 The WASM port allows you to run the AR engine directly in most modern browsers.
 
 1. **Build the modules**:
-   Use the dual-build script to generate both Standard and SIMD bundles:
+   Use the npm script to generate both Standard and SIMD bundles (works on all platforms):
    ```bash
-   cd crates/wasm
-   ./scripts/build-dual.sh
+   npm run build:wasm
    ```
+   This automatically selects `build-dual.sh` on Linux/macOS or `build-dual.ps1` on Windows and compiles both a portable Standard build and a high-performance SIMD build into `crates/wasm/pkg/`.
+
+   > **Alternative** (Linux/macOS only): you can invoke the shell script directly:
+   > ```bash
+   > bash crates/wasm/scripts/build-dual.sh
+   > ```
 
 2. **Run the demo**:
-   The `www` folder contains a diagnostic demo with an engine selector and threshold visualization.
+   The `crates/wasm/www` folder contains a diagnostic demo with an engine selector and threshold visualization.
    ```bash
-   cd www
+   cd crates/wasm/www
    # Serve using any local HTTP server, e.g.:
    npx serve .
    ```
+   Open the served URL in a browser and use the **WASM Engine** selector to switch between **Standard (Portable)** and **SIMD (High Performance)** builds.
 
 ## 📊 Benchmarking
 
