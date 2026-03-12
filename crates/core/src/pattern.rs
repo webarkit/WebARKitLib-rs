@@ -37,7 +37,9 @@
 //! Pattern Template matching logic
 //! Ported natively to safe Rust from arPattLoad.c and arPattGetID.c
 
-use crate::types::{ARPattHandle, ARdouble};
+use crate::types::*;
+
+
 
 pub const AR_PATT_NUM_MAX: i32 = 50;
 pub const AR_PATT_SIZE1: i32 = 16;
@@ -53,9 +55,9 @@ impl ARPattHandle {
             patt_num: 0,
             patt_num_max: pattern_count_max,
             pattf: vec![0; pattern_count_max as usize],
-            patt: vec![vec![0; (patt_size * patt_size * 3) as usize]; max_alloc],
+            patt: vec![vec![0i16; (patt_size * patt_size * 3) as usize]; max_alloc],
             pattpow: vec![0.0; max_alloc],
-            patt_bw: vec![vec![0; (patt_size * patt_size) as usize]; max_alloc],
+            patt_bw: vec![vec![0i16; (patt_size * patt_size) as usize]; max_alloc],
             pattpow_bw: vec![0.0; max_alloc],
             patt_size,
         }
@@ -107,12 +109,12 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
                     i_out += 1;
                     
                     j = 255 - j;
-                    patt_handle.patt[p_idx * 4 + h][(i2 * size + i1) * 3 + i3] = j;
+                    patt_handle.patt[p_idx * 4 + h][(i2 * size + i1) * 3 + i3] = j as i16;
                     
                     if i3 == 0 {
-                        patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] = j;
+                        patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] = j as i16;
                     } else {
-                        patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] += j;
+                        patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] += j as i16;
                     }
                     
                     if i3 == 2 {
@@ -126,9 +128,11 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
         l /= (size * size * 3) as i32;
 
         let mut m_col = 0i64;
+        let l16 = l as i16;
         for i in 0..(size * size * 3) {
-            patt_handle.patt[p_idx * 4 + h][i] -= l;
-            m_col += (patt_handle.patt[p_idx * 4 + h][i] * patt_handle.patt[p_idx * 4 + h][i]) as i64;
+            patt_handle.patt[p_idx * 4 + h][i] -= l16;
+            let val = patt_handle.patt[p_idx * 4 + h][i] as i32;
+            m_col += (val * val) as i64;
         }
         
         patt_handle.pattpow[p_idx * 4 + h] = (m_col as ARdouble).sqrt();
@@ -138,8 +142,9 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
 
         let mut m_bw = 0i64;
         for i in 0..(size * size) {
-            patt_handle.patt_bw[p_idx * 4 + h][i] -= l;
-            m_bw += (patt_handle.patt_bw[p_idx * 4 + h][i] * patt_handle.patt_bw[p_idx * 4 + h][i]) as i64;
+            patt_handle.patt_bw[p_idx * 4 + h][i] -= l16;
+            let val = patt_handle.patt_bw[p_idx * 4 + h][i] as i32;
+            m_bw += (val * val) as i64;
         }
         
         patt_handle.pattpow_bw[p_idx * 4 + h] = (m_bw as ARdouble).sqrt();
@@ -188,7 +193,7 @@ pub fn pattern_match(
         if data.len() < size_sqd_x3 {
             return Err("Data array too small");
         }
-        let mut input = vec![0; size_sqd_x3];
+        let mut input = vec![0i16; size_sqd_x3];
 
         let mut ave = 0i32;
         for i in 0..size_sqd_x3 {
@@ -197,9 +202,11 @@ pub fn pattern_match(
         ave /= size_sqd_x3 as i32;
 
         let mut sum = 0i64;
+        let ave16 = ave as i16;
         for i in 0..size_sqd_x3 {
-            input[i] = (255 - data[i]) as i32 - ave;
-            sum += (input[i] * input[i]) as i64;
+            input[i] = ((255 - data[i]) as i16) - ave16;
+            let val = input[i] as i32;
+            sum += (val * val) as i64;
         }
 
         let datapow = (sum as ARdouble).sqrt();
@@ -248,7 +255,7 @@ pub fn pattern_match(
             return Err("Data array too small");
         }
         
-        let mut input = vec![0; size_sqd];
+        let mut input = vec![0i16; size_sqd];
 
         let mut ave = 0i32;
         for i in 0..size_sqd {
@@ -257,9 +264,11 @@ pub fn pattern_match(
         ave /= size_sqd as i32;
 
         let mut sum = 0i64;
+        let ave16 = ave as i16;
         for i in 0..size_sqd {
-            input[i] = (255 - data[i]) as i32 - ave;
-            sum += (input[i] * input[i]) as i64;
+            input[i] = ((255 - data[i]) as i16) - ave16;
+            let val = input[i] as i32;
+            sum += (val * val) as i64;
         }
 
         let datapow = (sum as ARdouble).sqrt();
@@ -511,7 +520,7 @@ mod tests {
 }
 
 #[inline]
-fn dot_product(a: &[i32], b: &[i32]) -> i64 {
+fn dot_product(a: &[i16], b: &[i16]) -> i64 {
     #[cfg(feature = "simd-pattern")]
     {
         #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
@@ -526,28 +535,24 @@ fn dot_product(a: &[i32], b: &[i32]) -> i64 {
         }
     }
 
-    #[cfg(not(any(
-        all(target_arch = "wasm32", target_feature = "simd128"),
-        all(target_arch = "x86_64", target_feature = "sse4.1")
-    )))]
     dot_product_scalar(a, b)
 }
 
-pub fn dot_product_scalar(a: &[i32], b: &[i32]) -> i64 {
+pub fn dot_product_scalar(a: &[i16], b: &[i16]) -> i64 {
     let mut sum = 0i64;
     for i in 0..a.len() {
-        sum += (a[i] * b[i]) as i64;
+        sum += (a[i] as i32 * b[i] as i32) as i64;
     }
     sum
 }
 
 #[cfg(all(feature = "simd-pattern", target_arch = "wasm32", target_feature = "simd128"))]
 #[target_feature(enable = "simd128")]
-unsafe fn dot_product_simd_wasm(a: &[i32], b: &[i32]) -> i64 {
+unsafe fn dot_product_simd_wasm(a: &[i16], b: &[i16]) -> i64 {
     use std::arch::wasm32::*;
     
-    let mut sum_v = i64x2_splat(0);
-    let chunks_len = a.len() / 4;
+    let mut sum_v = i32x4_splat(0);
+    let chunks_len = a.len() / 8;
     
     let mut a_ptr = a.as_ptr();
     let mut b_ptr = b.as_ptr();
@@ -556,39 +561,45 @@ unsafe fn dot_product_simd_wasm(a: &[i32], b: &[i32]) -> i64 {
         let va = v128_load(a_ptr as *const v128);
         let vb = v128_load(b_ptr as *const v128);
         
-        // Low parts
-        let va_low = i64x2_extend_low_i32x4(va);
-        let vb_low = i64x2_extend_low_i32x4(vb);
-        sum_v = i64x2_add(sum_v, i64x2_mul(va_low, vb_low));
+        // i32x4_dot_i16x8 computes (a0*b0 + a1*b1), (a2*b2 + a3*b3), ...
+        let dot = i32x4_dot_i16x8(va, vb);
+        sum_v = i32x4_add(sum_v, dot);
         
-        // High parts
-        let va_high = i64x2_extend_high_i32x4(va);
-        let vb_high = i64x2_extend_high_i32x4(vb);
-        sum_v = i64x2_add(sum_v, i64x2_mul(va_high, vb_high));
-        
-        a_ptr = a_ptr.add(4);
-        b_ptr = b_ptr.add(4);
+        a_ptr = a_ptr.add(8);
+        b_ptr = b_ptr.add(8);
     }
     
+    // Sum the 4 horizontal parts into i64x2
+    let low = i64x2_extend_low_i32x4(sum_v);
+    let high = i64x2_extend_high_i32x4(sum_v);
+    let sum64 = i64x2_add(low, high);
+
     let mut res = [0i64; 2];
-    v128_store(res.as_mut_ptr() as *mut v128, sum_v);
+    v128_store(res.as_mut_ptr() as *mut v128, sum64);
     let mut total = res[0] + res[1];
     
-    let rem_start = chunks_len * 4;
+    let rem_start = chunks_len * 8;
     for i in rem_start..a.len() {
-        total += (a[i] * b[i]) as i64;
+        total += (a[i] as i32 * b[i] as i32) as i64;
     }
     
     total
 }
 
+/// Calculates the dot product of two i16 slices using SSE4.1 intrinsics.
+///
+/// Processes 8 elements at a time using `_mm_madd_epi16`.
+///
+/// # Safety
+/// This function is unsafe because it uses SIMD intrinsics and raw pointer arithmetic.
+/// The caller must ensure that the target CPU supports SSE4.1.
 #[cfg(all(feature = "simd-pattern", target_arch = "x86_64", target_feature = "sse4.1"))]
 #[target_feature(enable = "sse4.1")]
-pub unsafe fn dot_product_simd_x86(a: &[i32], b: &[i32]) -> i64 {
+pub unsafe fn dot_product_simd_x86(a: &[i16], b: &[i16]) -> i64 {
     use std::arch::x86_64::*;
     
-    let mut sum_v = _mm_setzero_si128(); // i64x2
-    let chunks_len = a.len() / 4;
+    let mut sum_v = _mm_setzero_si128(); // i32x4
+    let chunks_len = a.len() / 8;
     
     let mut a_ptr = a.as_ptr();
     let mut b_ptr = b.as_ptr();
@@ -597,22 +608,21 @@ pub unsafe fn dot_product_simd_x86(a: &[i32], b: &[i32]) -> i64 {
         let va = _mm_loadu_si128(a_ptr as *const __m128i);
         let vb = _mm_loadu_si128(b_ptr as *const __m128i);
         
-        // Use 32-bit multiplication (SSE4.1). 
-        // This is safe for pattern matching where (255*255)*768 << 2^31.
-        let prod = _mm_mullo_epi32(va, vb);
-        sum_v = _mm_add_epi32(sum_v, prod);
+        // Multiply and add adjacent pairs.
+        let m = _mm_madd_epi16(va, vb);
+        sum_v = _mm_add_epi32(sum_v, m);
         
-        a_ptr = a_ptr.add(4);
-        b_ptr = b_ptr.add(4);
+        a_ptr = a_ptr.add(8);
+        b_ptr = b_ptr.add(8);
     }
     
     let mut res = [0i32; 4];
     _mm_storeu_si128(res.as_mut_ptr() as *mut __m128i, sum_v);
     let mut total = (res[0] as i64) + (res[1] as i64) + (res[2] as i64) + (res[3] as i64);
     
-    let rem_start = chunks_len * 4;
+    let rem_start = chunks_len * 8;
     for i in rem_start..a.len() {
-        total += (a[i] * b[i]) as i64;
+        total += (a[i] as i32 * b[i] as i32) as i64;
     }
     
     total

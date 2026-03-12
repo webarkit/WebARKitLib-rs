@@ -45,7 +45,7 @@
 //! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
 
 use wasm_bindgen::prelude::*;
-use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode};
+use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode, ARMatrixCodeType};
 use webarkitlib_rs::image_proc::{ARImageProcInfo, rgba_to_gray};
 use webarkitlib_rs::marker::ar_detect_marker;
 use webarkitlib_rs::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
@@ -133,6 +133,43 @@ impl WasmARHandle {
         self.handle.ar_debug = if debug { 1 } else { 0 };
     }
 
+    /// Set the pattern detection mode.
+    /// 0 = template matching colour (pattern markers),
+    /// 1 = template matching mono,
+    /// 2 = matrix code detection (barcode markers),
+    /// 3 = colour + matrix code,
+    /// 4 = mono + matrix code.
+    pub fn set_pattern_detection_mode(&mut self, mode: i32) {
+        self.handle.set_pattern_detection_mode(mode);
+    }
+
+    /// Set the matrix code type used for barcode detection.
+    /// Maps integer values to `ARMatrixCodeType` variants:
+    /// 3=3x3, 259=3x3Parity65, 515=3x3Hamming63,
+    /// 4=4x4, 772=4x4BCH1393, 1028=4x4BCH1355,
+    /// 5=5x5, 1285=5x5BCH22125, 1541=5x5BCH2277, 6=6x6.
+    pub fn set_matrix_code_type(&mut self, code_type: i32) {
+        let ct = match code_type {
+            3   => ARMatrixCodeType::Code3x3,
+            259 => ARMatrixCodeType::Code3x3Parity65,
+            515 => ARMatrixCodeType::Code3x3Hamming63,
+            4   => ARMatrixCodeType::Code4x4,
+            772 => ARMatrixCodeType::Code4x4BCH1393,
+            1028 => ARMatrixCodeType::Code4x4BCH1355,
+            5   => ARMatrixCodeType::Code5x5,
+            1285 => ARMatrixCodeType::Code5x5BCH22125,
+            1541 => ARMatrixCodeType::Code5x5BCH2277,
+            6   => ARMatrixCodeType::Code6x6,
+            _   => {
+                web_sys::console::warn_1(&JsValue::from_str(&format!(
+                    "[WebARKit] Unknown matrix code type {code_type}, falling back to Code3x3"
+                )));
+                ARMatrixCodeType::Code3x3
+            }
+        };
+        self.handle.set_matrix_code_type(ct);
+    }
+
     pub fn detect_markers(&mut self, frame: &[u8], width: i32, height: i32) -> Result<JsValue, JsValue> {
         // Sync handle dimensions with actual frame dimensions
         if self.handle.xsize != width || self.handle.ysize != height {
@@ -176,9 +213,22 @@ impl WasmARHandle {
         for i in 0..self.handle.marker_num as usize {
             let marker = &self.handle.marker_info[i];
             results.push(MarkerResult {
+                area: marker.area,
                 id: marker.id,
-                cf: marker.cf as f32,
-                pos: [marker.pos[0] as f32, marker.pos[1] as f32],
+                id_patt: marker.id_patt,
+                id_matrix: marker.id_matrix,
+                dir: marker.dir,
+                dir_patt: marker.dir_patt,
+                dir_matrix: marker.dir_matrix,
+                cf: marker.cf,
+                cf_patt: marker.cf_patt,
+                cf_matrix: marker.cf_matrix,
+                pos: marker.pos,
+                line: marker.line,
+                vertex: marker.vertex,
+                cutoff_phase: marker.cutoff_phase as i32,
+                error_corrected: marker.error_corrected,
+                global_id: marker.global_id,
             });
         }
         
@@ -238,11 +288,44 @@ impl Drop for WasmARHandle {
     }
 }
 
+/// Full mapping of `ARMarkerInfo` for consumption by JavaScript.
+///
+/// All fields mirror `ARMarkerInfo` in `crates/core/src/types.rs`.
+/// The raw pointer (`marker_info2_ptr`) is intentionally omitted.
 #[derive(serde::Serialize)]
 pub struct MarkerResult {
+    /// Area in pixels of the largest connected region.
+    pub area: i32,
+    /// Global marker ID (-1 if unmatched).
     pub id: i32,
-    pub cf: f32,
-    pub pos: [f32; 2],
+    /// Template (pattern) marker ID (-1 if not matched by template).
+    pub id_patt: i32,
+    /// Matrix (barcode) marker ID (-1 if not matched by barcode).
+    pub id_matrix: i32,
+    /// Marker orientation (0–3, 90° increments).
+    pub dir: i32,
+    /// Orientation from template matching.
+    pub dir_patt: i32,
+    /// Orientation from matrix code decoding.
+    pub dir_matrix: i32,
+    /// Confidence of the best match (0.0–1.0).
+    pub cf: f64,
+    /// Confidence from template matching.
+    pub cf_patt: f64,
+    /// Confidence from matrix code decoding.
+    pub cf_matrix: f64,
+    /// Centre of the marker in 2D pixel space.
+    pub pos: [f64; 2],
+    /// Line equations `[a, b, c]` for each of the four sides.
+    pub line: [[f64; 3]; 4],
+    /// 2D coordinates of the four corners in undistorted camera space.
+    pub vertex: [[f64; 2]; 4],
+    /// Tracking phase at which this candidate was cut off (maps to `ARMarkerInfoCutoffPhase` as i32).
+    pub cutoff_phase: i32,
+    /// Number of errors detected and corrected (ECC).
+    pub error_corrected: i32,
+    /// Global ID for matrix codes.
+    pub global_id: u64,
 }
 
 #[derive(serde::Serialize)]

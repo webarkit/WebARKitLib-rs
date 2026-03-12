@@ -18,6 +18,8 @@ mkdir -p "$PKGDIR"
 # Copy LICENSE to wasm crate root so wasm-pack finds it
 cp "$ROOT/LICENSE" "$WASMDIR/"
 
+cd "$WASMDIR"
+
 echo "Building Standard Version..."
 wasm-pack build --target web --out-dir pkg/dist-std --scope webarkit
 

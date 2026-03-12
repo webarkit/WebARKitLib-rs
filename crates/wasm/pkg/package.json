@@ -1,34 +1,36 @@
 {
-  "name": "@webarkit/webarkitlib-wasm",
-  "type": "module",
-  "collaborators": [
-    "kalwalt <github@kalwaltart.it>"
-  ],
-  "description": "A high-performance, memory-safe Rust port of WebARKitLib (ARToolKit) for native and WASM.",
-  "version": "0.1.3",
-  "license": "LGPL-3.0-or-later",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/webarkit/WebARKitLib-rs"
-  },
-  "files": [
-    "webarkitlib_wasm_bg.wasm",
-    "webarkitlib_wasm.js",
-    "webarkitlib_wasm_bg.js",
-    "webarkitlib_wasm.d.ts"
-  ],
-  "main": "webarkitlib_wasm.js",
-  "homepage": "https://github.com/webarkit/WebARKitLib-rs",
-  "types": "webarkitlib_wasm.d.ts",
-  "sideEffects": [
-    "./webarkitlib_wasm.js",
-    "./snippets/*"
-  ],
-  "keywords": [
-    "augmented-reality",
-    "computer-vision",
-    "wasm",
-    "artoolkit",
-    "webarkit"
-  ]
+    "name":  "@webarkit/webarkitlib-wasm",
+    "type":  "module",
+    "collaborators":  [
+                          "kalwalt \u003cgithub@kalwaltart.it\u003e"
+                      ],
+    "description":  "A high-performance, memory-safe Rust port of WebARKitLib (ARToolKit) for native and WASM.",
+    "version":  "0.1.4",
+    "license":  "LGPL-3.0-or-later",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "https://github.com/webarkit/WebARKitLib-rs"
+                   },
+    "files":  [
+                  "webarkitlib_wasm_bg.wasm",
+                  "webarkitlib_wasm.js",
+                  "webarkitlib_wasm.d.ts"
+              ],
+    "main":  "webarkitlib_wasm.js",
+    "homepage":  "https://github.com/webarkit/WebARKitLib-rs",
+    "types":  "webarkitlib_wasm.d.ts",
+    "sideEffects":  [
+                        "./snippets/*"
+                    ],
+    "keywords":  [
+                     "augmented-reality",
+                     "computer-vision",
+                     "wasm",
+                     "artoolkit",
+                     "webarkit"
+                 ],
+    "exports":  {
+                    ".":  "./dist-std/webarkitlib_wasm.js",
+                    "./simd":  "./dist-simd/webarkitlib_wasm.js"
+                }
 }

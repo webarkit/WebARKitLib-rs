@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     let code_type = parse_matrix_code_type(&args.matrix_code_type)?;
-
+    
     println!("WebARKitLib-rs v{}", version::get_version());
     println!(
         "WebARKitLib-rs Barcode Detection Example (matrix_code_type={:?})",

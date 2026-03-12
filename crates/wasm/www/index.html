@@ -3,47 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebARKitLib.rs WASM Demo</title>
+    <title>WebARKitLib.rs – WASM Examples</title>
     <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; padding: 20px; background: #f0f2f5; }
-        .container { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 800px; width: 100%; }
-        h1 { color: #1a73e8; }
-        .controls { margin-bottom: 20px; display: flex; gap: 10px; }
-        button { padding: 10px 20px; border: none; border-radius: 4px; background: #1a73e8; color: white; cursor: pointer; transition: background 0.2s; }
-        button:hover { background: #1557b0; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        #canvas-container { position: relative; width: 100%; display: flex; justify-content: center; background: #000; border-radius: 4px; overflow: hidden; }
-        canvas { max-width: 100%; height: auto; }
-        #results { margin-top: 20px; white-space: pre-wrap; background: #f8f9fa; padding: 15px; border-radius: 4px; border-left: 4px solid #1a73e8; width: 100%; box-sizing: border-box; }
-        .status { margin-bottom: 10px; font-weight: bold; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 { color: #1a73e8; margin-bottom: 8px; font-size: 1.8rem; }
+        .subtitle { color: #666; margin-bottom: 32px; font-size: 0.95rem; }
+        .examples { display: flex; flex-direction: column; gap: 16px; }
+        .example-card {
+            display: block;
+            padding: 20px 24px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            text-decoration: none;
+            color: inherit;
+            text-align: left;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .example-card:hover {
+            border-color: #1a73e8;
+            box-shadow: 0 2px 8px rgba(26,115,232,0.15);
+        }
+        .example-card h2 { color: #1a73e8; font-size: 1.1rem; margin-bottom: 6px; }
+        .example-card p { color: #555; font-size: 0.88rem; line-height: 1.5; }
+        .badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 99px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .badge-static { background: #e8f0fe; color: #1a73e8; }
+        .badge-video  { background: #e6f4ea; color: #188038; }
+        footer { margin-top: 24px; font-size: 0.8rem; color: #999; }
+        footer a { color: #1a73e8; text-decoration: none; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>WebARKitLib.rs WASM Demo</h1>
-        <div class="status" id="status">Status: Loading WASM...</div>
-        
-        <div class="controls">
-            <label for="wasm-version">WASM Engine:</label>
-            <select id="wasm-version">
-                <option value="dist-std">Standard (Portable)</option>
-                <option value="dist-simd">SIMD (High Performance)</option>
-            </select>
-            <button id="btn-init" disabled>Initialize AR</button>
-            <button id="btn-detect" disabled>Detect Markers</button>
-        </div>
+<div class="container">
+    <h1>WebARKitLib.rs</h1>
+    <p class="subtitle">WebAssembly AR Marker Detection Examples</p>
 
-        <div id="refresh-notice" style="display: none; background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; margin-bottom: 20px; border: 1px solid #ffeeba; text-align: center;">
-            <strong>Note:</strong> Engine changed. For best results, please <strong>refresh the page</strong> after switching engines.
-        </div>
+    <div class="examples">
+        <a class="example-card" href="simple.html">
+            <span class="badge badge-static">Static Image</span>
+            <h2>Simple Demo</h2>
+            <p>Load a static test image and detect a Hiro pattern marker. Supports Standard and SIMD WASM engines with manual threshold control.</p>
+        </a>
 
-        <div id="canvas-container">
-            <canvas id="canvas"></canvas>
-        </div>
-
-        <div id="results">Detection results will appear here...</div>
+        <a class="example-card" href="simple_video_marker_example.html">
+            <span class="badge badge-video">Live Webcam</span>
+            <h2>Video Marker Example</h2>
+            <p>Real-time webcam AR detection. Supports pattern (Hiro) and barcode (matrix) markers with configurable matrix code type, WASM engine selector, and threshold slider.</p>
+        </a>
     </div>
 
-    <script type="module" src="main.js"></script>
+    <footer>
+        <a href="https://github.com/webarkit/WebARKitLib-rs" target="_blank" rel="noopener">WebARKitLib-rs on GitHub</a>
+    </footer>
+</div>
 </body>
 </html>
