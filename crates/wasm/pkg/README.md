@@ -91,7 +91,7 @@ The WASM port allows you to run the AR engine directly in most modern browsers.
 
 We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive. 
 
-Detailed SIMD performance results and reproduction steps can be found in the [BENCHMARKS.md](crates/core/benches/BENCHMARKS.md) file.
+Detailed SIMD performance results and reproduction steps can be found in the [BENCHMARKS.md](https://github.com/webarkit/WebARKitLib-rs/blob/main/crates/core/benches/BENCHMARKS.md) file.
 
 ### Running the Comparison
 
