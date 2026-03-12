@@ -40,12 +40,14 @@ use webarkitlib_rs::{
     pose::{ar_3d_create_handle, ar_get_trans_mat_square, ar_3d_delete_handle},
     types::{AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARMatrixCodeType, ARPixelFormat, ARParamLT, ARParamLTf, ARParam},
     image_proc::ARImageProcInfo,
+    version,
 };
 use image::ImageReader;
 use std::fs::File;
 
 fn main() {
     env_logger::init();
+    println!("WebARKitLib-rs v{}", version::get_version());
     println!("WebARKitLib Example: Simple Marker Detection");
 
     // Use command line args or defaults
