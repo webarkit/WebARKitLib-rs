@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "build:core": "cargo build -p webarkitlib-rs",
-    "build:wasm": "wasm-pack build crates/wasm --scope webarkit",
+    "build:wasm": "node crates/wasm/scripts/build.js",
     "build": "npm run build:core && npm run build:wasm",
     "test": "cargo test",
     "bench": "cargo bench",
