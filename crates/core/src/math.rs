@@ -701,6 +701,108 @@ impl ARVec {
     }
 }
 
+/// Convert a 3x4 transformation matrix to quaternion and position
+/// Port of arUtilMat2QuatPos
+pub fn ar_util_mat2_quat_pos(m: &[[ARdouble; 4]; 3], q: &mut [ARdouble; 4], p: &mut [ARdouble; 3]) {
+    p[0] = m[0][3];
+    p[1] = m[1][3];
+    p[2] = m[2][3];
+
+    let trace = m[0][0] + m[1][1] + m[2][2];
+    if trace > 0.0 {
+        let s = (trace + 1.0).sqrt() * 2.0;
+        q[0] = 0.25 * s;
+        q[1] = (m[2][1] - m[1][2]) / s;
+        q[2] = (m[0][2] - m[2][0]) / s;
+        q[3] = (m[1][0] - m[0][1]) / s;
+    } else if (m[0][0] > m[1][1]) && (m[0][0] > m[2][2]) {
+        let s = (1.0 + m[0][0] - m[1][1] - m[2][2]).sqrt() * 2.0;
+        q[0] = (m[2][1] - m[1][2]) / s;
+        q[1] = 0.25 * s;
+        q[2] = (m[0][1] + m[1][0]) / s;
+        q[3] = (m[0][2] + m[2][0]) / s;
+    } else if m[1][1] > m[2][2] {
+        let s = (1.0 + m[1][1] - m[0][0] - m[2][2]).sqrt() * 2.0;
+        q[0] = (m[0][2] - m[2][0]) / s;
+        q[1] = (m[0][1] + m[1][0]) / s;
+        q[2] = 0.25 * s;
+        q[3] = (m[1][2] + m[2][1]) / s;
+    } else {
+        let s = (1.0 + m[2][2] - m[0][0] - m[1][1]).sqrt() * 2.0;
+        q[0] = (m[1][0] - m[0][1]) / s;
+        q[1] = (m[0][2] + m[2][0]) / s;
+        q[2] = (m[1][2] + m[2][1]) / s;
+        q[3] = 0.25 * s;
+    }
+}
+
+/// Convert quaternion and position to a 3x4 transformation matrix
+/// Port of arUtilQuatPos2Mat
+pub fn ar_util_quat_pos2_mat(q: &[ARdouble; 4], p: &[ARdouble; 3], m: &mut [[ARdouble; 4]; 3]) {
+    let x2 = q[1] + q[1];
+    let y2 = q[2] + q[2];
+    let z2 = q[3] + q[3];
+    let xx = q[1] * x2;
+    let xy = q[1] * y2;
+    let xz = q[1] * z2;
+    let yy = q[2] * y2;
+    let yz = q[2] * z2;
+    let zz = q[3] * z2;
+    let wx = q[0] * x2;
+    let wy = q[0] * y2;
+    let wz = q[0] * z2;
+
+    m[0][0] = 1.0 - (yy + zz);
+    m[0][1] = xy - wz;
+    m[0][2] = xz + wy;
+
+    m[1][0] = xy + wz;
+    m[1][1] = 1.0 - (xx + zz);
+    m[1][2] = yz - wx;
+
+    m[2][0] = xz - wy;
+    m[2][1] = yz + wx;
+    m[2][2] = 1.0 - (xx + yy);
+
+    m[0][3] = p[0];
+    m[1][3] = p[1];
+    m[2][3] = p[2];
+}
+
+/// Spherical linear interpolation of quaternions
+/// Port of arUtilQuatSlerp
+pub fn ar_util_quat_slerp(q: &mut [ARdouble; 4], qy: &[ARdouble; 4], qz: &[ARdouble; 4], t: ARdouble) {
+    let mut cos_omega = qy[0] * qz[0] + qy[1] * qz[1] + qy[2] * qz[2] + qy[3] * qz[3];
+
+    let mut qz2 = [0.0; 4];
+    if cos_omega < 0.0 {
+        cos_omega = -cos_omega;
+        qz2[0] = -qz[0];
+        qz2[1] = -qz[1];
+        qz2[2] = -qz[2];
+        qz2[3] = -qz[3];
+    } else {
+        qz2 = *qz;
+    }
+
+    let (k0, k1);
+    if cos_omega > 0.9999 {
+        k0 = 1.0 - t;
+        k1 = t;
+    } else {
+        let sin_omega = (1.0 - cos_omega * cos_omega).sqrt();
+        let omega = sin_omega.atan2(cos_omega);
+        let inv_sin_omega = 1.0 / sin_omega;
+        k0 = ((1.0 - t) * omega).sin() * inv_sin_omega;
+        k1 = (t * omega).sin() * inv_sin_omega;
+    }
+
+    q[0] = qy[0] * k0 + qz2[0] * k1;
+    q[1] = qy[1] * k0 + qz2[1] * k1;
+    q[2] = qy[2] * k0 + qz2[2] * k1;
+    q[3] = qy[3] * k0 + qz2[3] * k1;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -807,6 +909,56 @@ mod tests {
         let vec = ARVec::default();
         assert_eq!(vec.v.len(), 0);
         assert_eq!(vec.clm, 0);
+    }
+
+    #[test]
+    fn test_quaternion_conversion() {
+        // Translation + 90 deg rotation around X
+        // R = [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
+        let m = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 0.0, -1.0, 20.0],
+            [0.0, 1.0, 0.0, 30.0],
+        ];
+        let mut q = [0.0; 4];
+        let mut p = [0.0; 3];
+        ar_util_mat2_quat_pos(&m, &mut q, &mut p);
+        
+        assert_eq!(p[0], 10.0);
+        assert_eq!(p[1], 20.0);
+        assert_eq!(p[2], 30.0);
+        
+        // Check rotation (90 deg around X => q = [cos(45), sin(45), 0, 0])
+        let half_sqrt2 = 2.0_f64.sqrt() / 2.0;
+        assert!((q[0] - half_sqrt2).abs() < 1e-10);
+        assert!((q[1] - half_sqrt2).abs() < 1e-10);
+        assert!((q[2]).abs() < 1e-10);
+        assert!((q[3]).abs() < 1e-10);
+
+        let mut m2 = [[0.0; 4]; 3];
+        ar_util_quat_pos2_mat(&q, &p, &mut m2);
+        
+        for i in 0..3 {
+            for j in 0..4 {
+                assert!((m[i][j] - m2[i][j]).abs() < 1e-10);
+            }
+        }
+    }
+
+    #[test]
+    fn test_quat_slerp() {
+        let q1 = [1.0, 0.0, 0.0, 0.0]; // Identity
+        let q2 = [0.0, 1.0, 0.0, 0.0]; // 180 deg around X (q = [cos(90), sin(90), 0, 0])
+        
+        let mut qr = [0.0; 4];
+        ar_util_quat_slerp(&mut qr, &q1, &q2, 0.5);
+        
+        // Midpoint should be 90 deg around X
+        let half_sqrt2 = 2.0_f64.sqrt() / 2.0;
+        assert!((qr[0] - half_sqrt2).abs() < 1e-10);
+        assert!((qr[1] - half_sqrt2).abs() < 1e-10);
+        assert!((qr[2]).abs() < 1e-10);
+        assert!((qr[3]).abs() < 1e-10);
     }
 }
 
