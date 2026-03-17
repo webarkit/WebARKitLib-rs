@@ -76,3 +76,4 @@ pub mod pattern;
 pub mod pose;
 pub mod ar2;
 pub mod bch;
+pub mod filter;
