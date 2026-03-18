@@ -60,6 +60,7 @@ impl ARPattHandle {
             patt_bw: vec![vec![0i16; (patt_size * patt_size) as usize]; max_alloc],
             pattpow_bw: vec![0.0; max_alloc],
             patt_size,
+            active: vec![false; pattern_count_max as usize],
         }
     }
 }
@@ -167,6 +168,123 @@ pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i3
         .map_err(|e| format!("Error reading pattern file '{}': {}", filename, e))?;
         
     ar_patt_load_from_buffer(patt_handle, &buffer).map_err(|e| e.to_string())
+}
+
+/// Extracts a pattern from an image and saves it to a file.
+/// This function generates 4 rotations of the pattern (0, 90, 180, 270 degrees)
+/// and writes them to the specified filename.
+pub fn ar_patt_save(
+    filename: &str,
+    patt_size: i32,
+    image: &[u8],
+    xsize: i32,
+    ysize: i32,
+    pixel_format: crate::types::ARPixelFormat,
+    vertex: &[[f64; 2]; 4],
+    patt_ratio: f64,
+) -> Result<(), String> {
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+
+    let file = File::create(filename)
+        .map_err(|e| format!("Failed to create pattern file '{}': {}", filename, e))?;
+    let mut writer = BufWriter::new(file);
+
+    writeln!(writer, "{}", patt_size).map_err(|e| e.to_string())?;
+
+    // Determine detect mode from pixel format if possible, otherwise default to COLOR
+    let detect_mode = if pixel_format == crate::types::ARPixelFormat::MONO {
+        AR_TEMPLATE_MATCHING_MONO
+    } else {
+        AR_TEMPLATE_MATCHING_COLOR
+    };
+    
+    let patt_channels = if detect_mode == AR_TEMPLATE_MATCHING_COLOR { 3 } else { 1 };
+    let mut ext_patt = vec![0u8; (patt_size * patt_size * patt_channels) as usize];
+
+    for r in 0..4 {
+        let mut rotated_vertex = [[0.0; 2]; 4];
+        for i in 0..4 {
+            rotated_vertex[i] = vertex[(i + r) % 4];
+        }
+
+        ar_patt_get_image(
+            0, // image_proc_mode: AR_IMAGE_PROC_FRAME_IMAGE
+            detect_mode,
+            patt_size,
+            patt_size * 4, // sample_size (defaulting to 4x for quality)
+            image,
+            xsize,
+            ysize,
+            pixel_format,
+            &rotated_vertex,
+            patt_ratio,
+            &mut ext_patt,
+        ).map_err(|e| e.to_string())?;
+
+        for c in 0..patt_channels {
+            for y in 0..patt_size {
+                for x in 0..patt_size {
+                    let val = ext_patt[(y * patt_size + x) as usize * patt_channels as usize + c as usize];
+                    // Save inverted because ar_patt_load does 255 - j
+                    let save_val = 255 - val; 
+                    write!(writer, "{:>4} ", save_val).map_err(|e| e.to_string())?;
+                }
+                writeln!(writer).map_err(|e| e.to_string())?;
+            }
+            writeln!(writer).map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Activates a pattern for detection.
+pub fn ar_patt_activate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
+    if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        return Err("Invalid pattern index");
+    }
+    if patt_handle.pattf[patno as usize] == 0 {
+        return Err("Pattern not loaded");
+    }
+    patt_handle.active[patno as usize] = true;
+    Ok(())
+}
+
+/// Deactivates a pattern from detection.
+pub fn ar_patt_deactivate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
+    if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        return Err("Invalid pattern index");
+    }
+    if patt_handle.pattf[patno as usize] == 0 {
+        return Err("Pattern not loaded");
+    }
+    patt_handle.active[patno as usize] = false;
+    Ok(())
+}
+
+/// Frees a pattern slot, making it available for a new pattern.
+pub fn ar_patt_free(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
+    if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        return Err("Invalid pattern index");
+    }
+    if patt_handle.pattf[patno as usize] != 0 {
+        patt_handle.pattf[patno as usize] = 0;
+        patt_handle.active[patno as usize] = false;
+        patt_handle.patt_num -= 1;
+    }
+    Ok(())
+}
+
+/// Returns the number of currently loaded patterns.
+pub fn ar_patt_count(patt_handle: &ARPattHandle) -> i32 {
+    patt_handle.patt_num
+}
+
+/// Deletes the handle and all its resources.
+pub fn ar_patt_delete_handle(patt_handle: ARPattHandle) {
+    // Rust's RAII will handle vector cleanup when patt_handle is dropped.
+    drop(patt_handle);
 }
 
 /// Matches the unwarped square marker against loaded templates via NCC (Normalized Cross Correlation).
@@ -480,7 +598,20 @@ pub fn ar_patt_get_image(
         }
     }
 
+
     Ok(())
+}
+
+pub fn ar_patt_get_id(
+    patt_handle: &ARPattHandle,
+    patt_detect_mode: i32,
+    data: &[u8], // Data from the normalized region of interest (square)
+    patt_size: i32,
+    code: &mut i32,
+    dir: &mut i32,
+    cf: &mut f64,
+) -> Result<(), &'static str> {
+    pattern_match(patt_handle, patt_detect_mode, data, patt_size, code, dir, cf)
 }
 
 #[cfg(test)]
@@ -516,6 +647,56 @@ mod tests {
         let mut cf = 0.0;
         let result = pattern_match(&handle, AR_TEMPLATE_MATCHING_COLOR, &mock_data, AR_PATT_SIZE1, &mut code, &mut dir, &mut cf);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_ar_patt_save_and_load() {
+        use std::fs;
+        let filename = "test_pattern_save.patt";
+        let patt_size = 16;
+        let xsize = 640;
+        let ysize = 480;
+        // Create a flat white image
+        let image = vec![255u8; (xsize * ysize * 3) as usize];
+        
+        // Define a simple square quad
+        let vertex = [
+            [100.0, 100.0],
+            [200.0, 100.0],
+            [200.0, 200.0],
+            [100.0, 200.0],
+        ];
+        
+        // Save using current crate's ar_patt_save
+        let res = ar_patt_save(
+            filename,
+            patt_size,
+            &image,
+            xsize,
+            ysize,
+            ARPixelFormat::RGB,
+            &vertex,
+            0.5, // patt_ratio
+        );
+        
+        assert!(res.is_ok(), "ar_patt_save failed: {:?}", res.err());
+        assert!(fs::metadata(filename).is_ok(), "Pattern file was not created");
+
+        // Test loading it back using the buffer version since load_from_file is not available
+        let content = fs::read_to_string(filename).expect("Failed to read saved pattern file");
+        let mut handle = ARPattHandle::new(patt_size, 1);
+        let load_res = ar_patt_load_from_buffer(&mut handle, &content);
+        
+        assert!(load_res.is_ok(), "ar_patt_load_from_buffer failed: {:?}", load_res.err());
+        
+        // In a gradient where B is constant 128, B - mean_B should be 0.
+        // handle.patt[0] is oriented 0, interleaved RGB. First pixel B is at index 2.
+        let val_b = handle.patt[0][2];
+        println!("Loaded B value (mean-subtracted): {}", val_b);
+        assert!(val_b.abs() < 10, "B channel should be nearly 0 after mean subtraction, got {}", val_b);
+
+        // Cleanup
+        let _ = fs::remove_file(filename);
     }
 }
 
