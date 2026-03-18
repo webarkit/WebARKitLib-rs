@@ -324,6 +324,7 @@ pub struct ARPattHandle {
     pub patt_bw: Vec<Vec<i16>>,
     pub pattpow_bw: Vec<ARdouble>,
     pub patt_size: i32,
+    pub active: Vec<bool>,
 }
 
 #[repr(C)]
