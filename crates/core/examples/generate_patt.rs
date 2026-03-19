@@ -4,7 +4,7 @@ use image::ImageReader;
 use image::{GrayImage, Luma};
 use imageproc::contrast::otsu_level;
 use webarkitlib_rs::pattern::{ar_patt_save, ar_patt_get_image2};
-use webarkitlib_rs::types::{ARPixelFormat, ARParamLTf, ARMarkerInfo};
+use webarkitlib_rs::types::{ARPixelFormat, ARParam, ARParamLT, ARParamLTf, ARMarkerInfo};
 
 fn main() {
     // Configurazione del file di output
@@ -28,8 +28,32 @@ fn main() {
     let pixel_format = ARPixelFormat::RGB;
     let patt_ratio = 0.5;
 
-    // Build a simple ARParamLTf identity mapping for the small generated image
-    let param_ltf = ARParamLTf::new_basic(xsize as i32, ysize as i32);
+    // Prefer to build the lookup table (`ARParamLT`) from real camera parameters
+    // when available. Try to load `benchmarks/data/camera_para.dat` (same path
+    // used by the `simple` example). If not found, fall back to an identity table.
+    let param_ltf = {
+        // Candidate path (project-relative) to the camera parameter file.
+        let cparam_rel = std::path::Path::new("examples").join("Data").join("camera_para.dat");
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let cparam_path = manifest_dir.join(&cparam_rel);
+
+        let param = if cparam_path.exists() {
+            // Load ARParam from file (BigEndian .dat format)
+            let f = fs::File::open(&cparam_path).expect(&format!("Failed to open camera parameters: {:?}", cparam_path));
+            ARParam::load(f).expect("Failed to load camera parameters")
+        } else {
+            // fallback to default ARParam (identity) if camera params not present
+            println!("Warning: camera parameter file not found at {:?}, using identity parameters", cparam_path);
+            ARParam::default()
+        };
+
+        // Build ARParamLT containing a proper lookup table; new_basic will
+        // construct an ARParamLTf appropriate for the image size.
+        let param_lt = ARParamLT::new_basic(param);
+        // Extract the lookup-table portion (ARParamLTf). Clone because we need owned.
+        param_lt.param_ltf.clone()
+    };
+
 
     // Attempt to auto-detect the marker region using Otsu threshold on grayscale image
     let gray: GrayImage = image.to_luma8();
