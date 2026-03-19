@@ -236,12 +236,33 @@ impl ARParamLTf {
         for y in 0..ysize {
             for x in 0..xsize {
                 let idx = ((y * xsize + x) * 2) as usize;
+                // Initialize both i2o and o2i to identity mapping so that
+                // ideal2observ and observ2ideal both behave as identity for
+                // this basic lookup table.
+                // Note: i2o maps ideal -> observed, o2i maps observed -> ideal.
+                // Populate both arrays accordingly.
+                // Safety: idx+1 is always within bounds because vectors sized appropriately.
+                // i2o is currently immutable here; create a mutable copy, fill it, and reuse.
+                // We'll construct i2o_vec and o2i directly instead of using the previously
+                // allocated `i2o` variable which is immutable.
+                // (We'll later replace the immutable i2o variable by a mutable one.)
+                // However to minimize changes, write to o2i and leave i2o to be overwritten below.
                 o2i[idx] = x as f32;
                 o2i[idx + 1] = y as f32;
             }
         }
+        // Now create a mutable i2o and fill it identically to o2i
+        let mut i2o_filled = i2o;
+        for y in 0..ysize {
+            for x in 0..xsize {
+                let idx = ((y * xsize + x) * 2) as usize;
+                i2o_filled[idx] = x as f32;
+                i2o_filled[idx + 1] = y as f32;
+            }
+        }
+
         Self {
-            i2o,
+            i2o: i2o_filled,
             o2i,
             xsize,
             ysize,
