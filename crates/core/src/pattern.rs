@@ -553,7 +553,7 @@ pub fn ar_patt_get_image(
 
     // Compute the perspective transformation matrix.
     // Assuming get_cpara is defined in scope or imported.
-    crate::get_cpara(&world, &local, &mut para);
+    get_cpara(&world, &local, &mut para)?;
 
     // Calculate the square of the lengths of the polygon sides
     let mut lx1 = ((local[0][0] - local[1][0]).powi(2) + (local[0][1] - local[1][1]).powi(2)) as usize;
