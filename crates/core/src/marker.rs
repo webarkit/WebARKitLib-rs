@@ -788,16 +788,27 @@ pub fn ar_get_marker_info(
                     };
                     let mut ext_patt = vec![0u8; ext_patt_len];
                     
+                    // ar_patt_get_image expects x_coord and y_coord arrays (contour)
+                    // and a 4-element array of vertex indices (usize).
+                    let vertex_indices: [usize; 4] = [
+                        marker_info2[i].vertex[0] as usize,
+                        marker_info2[i].vertex[1] as usize,
+                        marker_info2[i].vertex[2] as usize,
+                        marker_info2[i].vertex[3] as usize,
+                    ];
+
                     let res = crate::pattern::ar_patt_get_image(
                         image_proc_mode as i32,
                         patt_detect_mode,
-                        patt_size,
-                        patt_size * 2,
+                        patt_size as usize,
+                        (patt_size * 2) as usize,
                         image,
-                        xsize,
-                        ysize,
+                        xsize as usize,
+                        ysize as usize,
                         pixel_format,
-                        &marker_info[j].vertex,
+                        &marker_info2[i].x_coord,
+                        &marker_info2[i].y_coord,
+                        &vertex_indices,
                         patt_ratio,
                         &mut ext_patt,
                     );
