@@ -1073,7 +1073,7 @@ mod tests {
         // assert_eq!(content, _reference_content, "Saved pattern does not match the reference pattern");
 
         // Cleanup
-        //let _ = fs::remove_file(filename);
+        let _ = fs::remove_file(filename);
     }
 }
 
