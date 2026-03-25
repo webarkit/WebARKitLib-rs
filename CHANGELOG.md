@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
 - Add CLI options, batch mode, and diagnostic outputs to generate_patt.rs
 - Add --verbose and --debug options for detailed diagnostic and extraction logging in generate_patt.rs
 
+### 🧪 Testing
+
+- Enable cleanup of test pattern file in pattern.rs
+
 ## [0.1.5] - 2026-03-12
 
 ### Added
