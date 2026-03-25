@@ -63,17 +63,17 @@
 //! // ... detection logic here
 //! ```
 
-pub mod version;
-pub mod types;
-pub mod math;
-pub mod param;
+pub mod ar2;
+pub mod bch;
+pub mod filter;
 pub mod icp;
 pub mod image_proc;
 pub mod labeling;
 pub mod marker;
+pub mod math;
 pub mod matrix;
+pub mod param;
 pub mod pattern;
 pub mod pose;
-pub mod ar2;
-pub mod bch;
-pub mod filter;
+pub mod types;
+pub mod version;

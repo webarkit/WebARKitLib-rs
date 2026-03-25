@@ -35,14 +35,17 @@
  */
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::fs::File;
+use std::io::Read;
 use webarkitlib_rs::{
     marker::ar_detect_marker,
     pattern::ar_patt_load,
     pose::{ar_3d_create_handle, ar_get_trans_mat_square},
-    types::{AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARPixelFormat, ARParamLT, ARParamLTf, ARParam},
+    types::{
+        AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARParam, ARParamLT, ARParamLTf,
+        ARPixelFormat,
+    },
 };
-use std::fs::File;
-use std::io::Read;
 
 fn marker_detection_benchmark(c: &mut Criterion) {
     let cparam_path = "../../benchmarks/data/camera_para.dat";
@@ -51,11 +54,13 @@ fn marker_detection_benchmark(c: &mut Criterion) {
 
     let param_file = File::open(cparam_path).expect("Failed to open camera_para.dat");
     let param = ARParam::load(param_file).expect("Failed to read camera_para.dat");
-    
+
     let mut luma_file = File::open(img_path).expect("Failed to open hiro.raw");
     let mut luma_buffer_vec = Vec::new();
-    luma_file.read_to_end(&mut luma_buffer_vec).expect("Failed to read hiro.raw");
-    
+    luma_file
+        .read_to_end(&mut luma_buffer_vec)
+        .expect("Failed to read hiro.raw");
+
     let width = 429;
     let height = 317;
 
@@ -95,7 +100,13 @@ fn marker_detection_benchmark(c: &mut Criterion) {
             if ar_handle.marker_num > 0 {
                 let marker_info = &ar_handle.marker_info[0];
                 let mut trans = [[0.0; 4]; 3];
-                let _ = ar_get_trans_mat_square(black_box(ar_3d_handle), black_box(marker_info), 80.0, &mut trans).unwrap();
+                let _ = ar_get_trans_mat_square(
+                    black_box(ar_3d_handle),
+                    black_box(marker_info),
+                    80.0,
+                    &mut trans,
+                )
+                .unwrap();
             }
         })
     });

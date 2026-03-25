@@ -1,15 +1,15 @@
+use image::ImageReader;
+use image::{GrayImage, RgbImage, Rgba, RgbaImage};
+use imageproc::contrast::otsu_level;
+use imageproc::drawing::draw_hollow_rect_mut;
+use imageproc::rect::Rect;
 use std::env;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
-use image::ImageReader;
-use image::{GrayImage, RgbImage, RgbaImage, Rgba};
-use imageproc::contrast::otsu_level;
-use imageproc::drawing::draw_hollow_rect_mut;
-use imageproc::rect::Rect;
-use webarkitlib_rs::pattern::{ar_patt_save, ar_patt_get_image2};
-use webarkitlib_rs::types::{ARPixelFormat, ARParam, ARParamLT, ARParamLTf, ARMarkerInfo};
+use webarkitlib_rs::pattern::{ar_patt_get_image2, ar_patt_save};
+use webarkitlib_rs::types::{ARMarkerInfo, ARParam, ARParamLT, ARParamLTf, ARPixelFormat};
 
 /*
  English documentation / notes for this example
@@ -80,7 +80,9 @@ fn print_help_and_exit() {
     eprintln!("  --camera PATH          camera_para.dat path to build ARParamLT (optional)");
     eprintln!("  --border N             add black border of N pixels around input (default: 0)");
     eprintln!("  --patt-size N          pattern size in pixels (default: 16)");
-    eprintln!("  --sample-factor N      sample factor multiplier passed to extraction (default: 4)");
+    eprintln!(
+        "  --sample-factor N      sample factor multiplier passed to extraction (default: 4)"
+    );
     eprintln!("  --flip-v               flip input image vertically before processing");
     eprintln!("  --channel-order rgb|bgr interpret input buffer as rgb or bgr (default: rgb)");
     eprintln!("  --with-border          indicate the INPUT IMAGE ALREADY CONTAINS THE MARKER BORDER (no auto-add)");
@@ -114,14 +116,26 @@ struct Config {
 
 fn default_paths() -> (String, String) {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let input = Path::new(manifest_dir).join("examples").join("Data").join("HIRO-test.jpg");
+    let input = Path::new(manifest_dir)
+        .join("examples")
+        .join("Data")
+        .join("HIRO-test.jpg");
     let out = Path::new("./crates/core/examples/Data/generated.patt");
-    (input.to_string_lossy().into_owned(), out.to_string_lossy().into_owned())
+    (
+        input.to_string_lossy().into_owned(),
+        out.to_string_lossy().into_owned(),
+    )
 }
 
-fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f64>, Option<usize>, Option<bool>), String> {
+fn run_once(
+    cfg: &Config,
+    suffix: &str,
+) -> Result<(usize, u8, u8, f64, Option<f64>, Option<usize>, Option<bool>), String> {
     // Load image
-    let image = ImageReader::open(&cfg.input).map_err(|e| format!("open image: {}", e))?.decode().map_err(|e| format!("decode image: {}", e))?;
+    let image = ImageReader::open(&cfg.input)
+        .map_err(|e| format!("open image: {}", e))?
+        .decode()
+        .map_err(|e| format!("decode image: {}", e))?;
     let mut image_buf = image.to_rgb8();
     let mut width = image_buf.width();
     let mut height = image_buf.height();
@@ -163,7 +177,10 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
 
     if applied_border > 0 {
         // log the computed/applied border
-        eprintln!("Applied border = {} px (source={})", applied_border, border_source);
+        eprintln!(
+            "Applied border = {} px (source={})",
+            applied_border, border_source
+        );
 
         // If border was auto-computed and --verbose was passed, print verbose info: full_side, patt_ratio and min_dim
         if border_source == "auto" && cfg.verbose {
@@ -172,7 +189,10 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
                     let used = used_dimension.as_deref().unwrap_or("min");
                     eprintln!("Verbose: computed full_marker_side = {}  patt_ratio = {}  used={} min_dim={}", fs, cfg.patt_ratio, used, md);
                 } else {
-                    eprintln!("Verbose: computed full_marker_side = {}  patt_ratio = {}", fs, cfg.patt_ratio);
+                    eprintln!(
+                        "Verbose: computed full_marker_side = {}  patt_ratio = {}",
+                        fs, cfg.patt_ratio
+                    );
                 }
             }
         }
@@ -203,7 +223,8 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
             let src_row = (height as usize - 1 - y) * row_bytes;
             flipped.extend_from_slice(&image_buf.as_raw()[src_row..src_row + row_bytes]);
         }
-        image_buf = RgbImage::from_raw(width, height, flipped).ok_or("failed to build flipped image")?;
+        image_buf =
+            RgbImage::from_raw(width, height, flipped).ok_or("failed to build flipped image")?;
     }
 
     // channel order
@@ -233,7 +254,10 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         let cparam_path = if let Some(ref p) = cfg.camera {
             std::path::Path::new(p).to_path_buf()
         } else {
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples").join("Data").join("camera_para.dat")
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("examples")
+                .join("Data")
+                .join("camera_para.dat")
         };
         let param = if cparam_path.exists() {
             let f = fs::File::open(&cparam_path).map_err(|e| format!("open camera: {}", e))?;
@@ -257,10 +281,18 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         for (x, pixel) in row.enumerate() {
             let v = pixel[0];
             if v < thresh {
-                if (x as i32) < minx { minx = x as i32; }
-                if (y as i32) < miny { miny = y as i32; }
-                if (x as i32) > maxx { maxx = x as i32; }
-                if (y as i32) > maxy { maxy = y as i32; }
+                if (x as i32) < minx {
+                    minx = x as i32;
+                }
+                if (y as i32) < miny {
+                    miny = y as i32;
+                }
+                if (x as i32) > maxx {
+                    maxx = x as i32;
+                }
+                if (y as i32) > maxy {
+                    maxy = y as i32;
+                }
             }
         }
     }
@@ -268,16 +300,34 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         let side = ((width.min(height) as f32) * 0.6) as i32;
         let cx = (width as i32) / 2;
         let cy = (height as i32) / 2;
-        minx = cx - side/2; if minx < 0 { minx = 0 }
-        miny = cy - side/2; if miny < 0 { miny = 0 }
-        maxx = cx + side/2; if maxx >= width as i32 { maxx = width as i32 - 1 }
-        maxy = cy + side/2; if maxy >= height as i32 { maxy = height as i32 - 1 }
+        minx = cx - side / 2;
+        if minx < 0 {
+            minx = 0
+        }
+        miny = cy - side / 2;
+        if miny < 0 {
+            miny = 0
+        }
+        maxx = cx + side / 2;
+        if maxx >= width as i32 {
+            maxx = width as i32 - 1
+        }
+        maxy = cy + side / 2;
+        if maxy >= height as i32 {
+            maxy = height as i32 - 1
+        }
         if cfg.debug {
-            eprintln!("Debug: fallback bbox used -> minx={}, miny={}, maxx={}, maxy={}", minx, miny, maxx, maxy);
+            eprintln!(
+                "Debug: fallback bbox used -> minx={}, miny={}, maxx={}, maxy={}",
+                minx, miny, maxx, maxy
+            );
         }
     }
     if cfg.debug {
-        eprintln!("Debug: bbox -> minx={}, miny={}, maxx={}, maxy={}", minx, miny, maxx, maxy);
+        eprintln!(
+            "Debug: bbox -> minx={}, miny={}, maxx={}, maxy={}",
+            minx, miny, maxx, maxy
+        );
     }
 
     let mut marker = ARMarkerInfo::default();
@@ -335,7 +385,10 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         return Err(format!("ar_patt_get_image2 failed: {}", e));
     }
     if cfg.debug {
-        eprintln!("Debug: ar_patt_get_image2 returned, ext_patt.len()={}", ext_patt.len());
+        eprintln!(
+            "Debug: ar_patt_get_image2 returned, ext_patt.len()={}",
+            ext_patt.len()
+        );
     }
 
     // save extracted PNG
@@ -349,11 +402,18 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
             out_img.put_pixel(x as u32, y as u32, image::Rgb([r, g, b]));
         }
     }
-    out_img.save(&extracted_path).map_err(|e| format!("save extracted: {}", e))?;
+    out_img
+        .save(&extracted_path)
+        .map_err(|e| format!("save extracted: {}", e))?;
 
     // save .patt
     if cfg.debug {
-        eprintln!("Debug: calling ar_patt_save with patt_ratio={} patt_size={} patt_path={}", patt_ratio, cfg.patt_size, patt_path.display());
+        eprintln!(
+            "Debug: calling ar_patt_save with patt_ratio={} patt_size={} patt_path={}",
+            patt_ratio,
+            cfg.patt_size,
+            patt_path.display()
+        );
     }
     ar_patt_save(
         &img,
@@ -366,7 +426,8 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         patt_ratio,
         cfg.patt_size as usize,
         &patt_path,
-    ).map_err(|e| format!("ar_patt_save failed: {}", e))?;
+    )
+    .map_err(|e| format!("ar_patt_save failed: {}", e))?;
     if cfg.debug {
         eprintln!("Debug: ar_patt_save completed");
     }
@@ -406,12 +467,20 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
                     let mut best_flip = false;
                     for (i, rb) in ref_blocks.iter().enumerate() {
                         // direct
-                        let d = mean_abs_diff_u8(gen0, rb) ;
-                        if d < best { best = d; best_idx = i; best_flip = false; }
+                        let d = mean_abs_diff_u8(gen0, rb);
+                        if d < best {
+                            best = d;
+                            best_idx = i;
+                            best_flip = false;
+                        }
                         // vertical flip of ref
                         let rb_flip = flip_vert_u8(rb, cfg.patt_size);
                         let d2 = mean_abs_diff_u8(gen0, &rb_flip);
-                        if d2 < best { best = d2; best_idx = i; best_flip = true; }
+                        if d2 < best {
+                            best = d2;
+                            best_idx = i;
+                            best_flip = true;
+                        }
                     }
                     ref_mean = Some(best);
                     ref_best_idx = Some(best_idx);
@@ -425,7 +494,15 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         if let Some(rm) = ref_mean {
             println!("Wrote: {}  {}  count={} min={} max={} mean={:.2} ref_mean={:.2} ref_idx={} ref_flip={}", patt_path.display(), extracted_path.display(), count, min, max, mean, rm, ref_best_idx.unwrap_or(0), ref_best_flip.unwrap_or(false));
         } else {
-            println!("Wrote: {}  {}  count={} min={} max={} mean={:.2}", patt_path.display(), extracted_path.display(), count, min, max, mean);
+            println!(
+                "Wrote: {}  {}  count={} min={} max={} mean={:.2}",
+                patt_path.display(),
+                extracted_path.display(),
+                count,
+                min,
+                max,
+                mean
+            );
         }
     }
 
@@ -445,14 +522,20 @@ fn parse_patt_blocks(content: &str, patt_size: usize) -> Result<Vec<Vec<u8>>, St
         return Ok(vec![tokens]);
     }
     if tokens.len() % block_len != 0 {
-        return Err(format!("unexpected token count {} (not multiple of block_len {})", tokens.len(), block_len));
+        return Err(format!(
+            "unexpected token count {} (not multiple of block_len {})",
+            tokens.len(),
+            block_len
+        ));
     }
     let blocks = tokens.chunks(block_len).map(|c| c.to_vec()).collect();
     Ok(blocks)
 }
 
 fn mean_abs_diff_u8(a: &Vec<u8>, b: &Vec<u8>) -> f64 {
-    if a.len() != b.len() { return f64::INFINITY; }
+    if a.len() != b.len() {
+        return f64::INFINITY;
+    }
     let mut s: f64 = 0.0;
     for i in 0..a.len() {
         s += (a[i] as f64 - b[i] as f64).abs();
@@ -466,7 +549,7 @@ fn flip_vert_u8(buf: &Vec<u8>, patt_size: usize) -> Vec<u8> {
     for y in 0..patt_size {
         let src_row = y * row_bytes;
         let dst_row = (patt_size - 1 - y) * row_bytes;
-        out[dst_row..dst_row+row_bytes].copy_from_slice(&buf[src_row..src_row+row_bytes]);
+        out[dst_row..dst_row + row_bytes].copy_from_slice(&buf[src_row..src_row + row_bytes]);
     }
     out
 }
@@ -496,19 +579,57 @@ fn main() {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--help" | "-h" => print_help_and_exit(),
-            "--input" => if let Some(v) = args.next() { cfg.input = v; },
-            "--out" => if let Some(v) = args.next() { cfg.output = v; },
-            "--camera" => if let Some(v) = args.next() { cfg.camera = Some(v); },
-            "--ref" => if let Some(v) = args.next() { cfg.ref_patt = Some(v); },
-            "--border" => if let Some(v) = args.next() { cfg.border = usize::from_str(&v).unwrap_or(0); },
-            "--with-border" => { cfg.with_border = true; },
-            "--patt-ratio" => if let Some(v) = args.next() { cfg.patt_ratio = f64::from_str(&v).unwrap_or(0.5); },
-            "--patt-size" => if let Some(v) = args.next() { cfg.patt_size = usize::from_str(&v).unwrap_or(16); },
-            "--sample-factor" => if let Some(v) = args.next() { cfg.sample_factor = usize::from_str(&v).unwrap_or(4); },
+            "--input" => {
+                if let Some(v) = args.next() {
+                    cfg.input = v;
+                }
+            }
+            "--out" => {
+                if let Some(v) = args.next() {
+                    cfg.output = v;
+                }
+            }
+            "--camera" => {
+                if let Some(v) = args.next() {
+                    cfg.camera = Some(v);
+                }
+            }
+            "--ref" => {
+                if let Some(v) = args.next() {
+                    cfg.ref_patt = Some(v);
+                }
+            }
+            "--border" => {
+                if let Some(v) = args.next() {
+                    cfg.border = usize::from_str(&v).unwrap_or(0);
+                }
+            }
+            "--with-border" => {
+                cfg.with_border = true;
+            }
+            "--patt-ratio" => {
+                if let Some(v) = args.next() {
+                    cfg.patt_ratio = f64::from_str(&v).unwrap_or(0.5);
+                }
+            }
+            "--patt-size" => {
+                if let Some(v) = args.next() {
+                    cfg.patt_size = usize::from_str(&v).unwrap_or(16);
+                }
+            }
+            "--sample-factor" => {
+                if let Some(v) = args.next() {
+                    cfg.sample_factor = usize::from_str(&v).unwrap_or(4);
+                }
+            }
             "--flip-v" => cfg.flip_v = true,
             "--verbose" => cfg.verbose = true,
             "--debug" => cfg.debug = true,
-            "--channel-order" => if let Some(v) = args.next() { cfg.channel_order = v.to_lowercase(); },
+            "--channel-order" => {
+                if let Some(v) = args.next() {
+                    cfg.channel_order = v.to_lowercase();
+                }
+            }
             "--batch" => batch = true,
             "--quiet" => cfg.quiet = true,
             other => eprintln!("Unknown arg: {}", other),
@@ -532,15 +653,45 @@ fn main() {
                     c.border = b;
                     c.flip_v = f;
                     c.channel_order = ch.into();
-                    let suffix = format!("_b{}_{:1}_{:}", b, if f {1} else {0}, ch);
+                    let suffix = format!("_b{}_{:1}_{:}", b, if f { 1 } else { 0 }, ch);
                     match run_once(&c, &suffix) {
                         Ok((count, min, max, mean, ref_mean, ref_idx, ref_flip)) => {
                             let extracted = format!("extracted_pattern{}.png", suffix);
                             let patt = format!("generated{}.patt", suffix);
-                            let ref_mean_str: String = ref_mean.map(|v| format!("{:.2}", v)).unwrap_or_else(|| String::new());
-                            let ref_idx_str: String = ref_idx.map(|i| i.to_string()).unwrap_or_else(|| String::new());
-                            let ref_flip_str: String = ref_flip.map(|b| if b { String::from("1") } else { String::from("0") }).unwrap_or_else(|| String::new());
-                            writeln!(csv, "{},{},{},{},{},{},{},{},{:.2},{},{},{},{},{}", b, f as u8, ch, c.patt_size, c.sample_factor, count, min, max, mean, ref_mean_str, ref_idx_str, ref_flip_str, extracted, patt).ok();
+                            let ref_mean_str: String = ref_mean
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| String::new());
+                            let ref_idx_str: String = ref_idx
+                                .map(|i| i.to_string())
+                                .unwrap_or_else(|| String::new());
+                            let ref_flip_str: String = ref_flip
+                                .map(|b| {
+                                    if b {
+                                        String::from("1")
+                                    } else {
+                                        String::from("0")
+                                    }
+                                })
+                                .unwrap_or_else(|| String::new());
+                            writeln!(
+                                csv,
+                                "{},{},{},{},{},{},{},{},{:.2},{},{},{},{},{}",
+                                b,
+                                f as u8,
+                                ch,
+                                c.patt_size,
+                                c.sample_factor,
+                                count,
+                                min,
+                                max,
+                                mean,
+                                ref_mean_str,
+                                ref_idx_str,
+                                ref_flip_str,
+                                extracted,
+                                patt
+                            )
+                            .ok();
                         }
                         Err(e) => {
                             writeln!(csv, "{},{},{},ERROR,,,,,,{}", b, f as u8, ch, e).ok();
@@ -556,7 +707,9 @@ fn main() {
     // Single run
     match run_once(&cfg, "") {
         Ok((_count, _min, _max, _mean, _ref_mean, _ref_idx, _ref_flip)) => {
-            if !cfg.quiet { println!("Done."); }
+            if !cfg.quiet {
+                println!("Done.");
+            }
         }
         Err(e) => eprintln!("Error: {}", e),
     }

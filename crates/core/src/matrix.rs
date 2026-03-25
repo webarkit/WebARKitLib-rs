@@ -26,8 +26,8 @@
 //! Matrix Code (Barcode) Marker Decoding
 //! Ported from arGetMatrixCode.c and associated ECC logic.
 
-use crate::types::{ARMatrixCodeType, ARdouble, ARHandle, ARMarkerInfo, ARMarkerInfo2};
 use crate::marker::ar_get_line;
+use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble};
 use log::{debug, trace};
 
 /// Results of a matrix code decoding attempt.
@@ -101,22 +101,37 @@ pub fn ar_matrix_code_get_id(
     let grid_size = dim;
     let mut bits = vec![0u8; (grid_size * grid_size) as usize];
 
-    sample_grid(image, xsize, ysize, vertex, grid_size, pixel_format, patt_ratio, &mut bits)?;
-    
+    sample_grid(
+        image,
+        xsize,
+        ysize,
+        vertex,
+        grid_size,
+        pixel_format,
+        patt_ratio,
+        &mut bits,
+    )?;
+
     debug!("ar_matrix_code_get_id: vertices v0=({:.1},{:.1}) v1=({:.1},{:.1}) v2=({:.1},{:.1}) v3=({:.1},{:.1})",
         vertex[0][0], vertex[0][1], vertex[1][0], vertex[1][1],
         vertex[2][0], vertex[2][1], vertex[3][0], vertex[3][1]);
 
-
     let mut min_val = 255u8;
     let mut max_val = 0u8;
     for &b in &bits {
-        if b < min_val { min_val = b; }
-        if b > max_val { max_val = b; }
+        if b < min_val {
+            min_val = b;
+        }
+        if b > max_val {
+            max_val = b;
+        }
     }
-    
+
     let mid_thresh = ((min_val as u32 + max_val as u32) / 2) as u8;
-    debug!("ar_matrix_code_get_id: min={}, max={}, thresh={}", min_val, max_val, mid_thresh);
+    debug!(
+        "ar_matrix_code_get_id: min={}, max={}, thresh={}",
+        min_val, max_val, mid_thresh
+    );
 
     if (max_val as i32 - min_val as i32) < 30 {
         return Err("Low contrast in matrix grid");
@@ -126,8 +141,12 @@ pub fn ar_matrix_code_get_id(
     for i in 0..bits.len() {
         core_bits[i] = if bits[i] < mid_thresh { 1 } else { 0 };
     }
-    
-    trace!("ar_matrix_code_get_id: grid_size={}, core_bits={:?}", grid_size, core_bits);
+
+    trace!(
+        "ar_matrix_code_get_id: grid_size={}, core_bits={:?}",
+        grid_size,
+        core_bits
+    );
     debug!("ar_matrix_code_get_id: core_bits={:?}", core_bits);
 
     // The C reference `get_matrix_code` receives only the dim×dim inner data.
@@ -137,79 +156,114 @@ pub fn ar_matrix_code_get_id(
     //   bottom-right (dim-1, dim-1) = 0.
     let size = dim;
     let corners = [
-        0,                          // top-left
-        (size - 1) * size,          // bottom-left
-        size * size - 1,            // bottom-right
-        size - 1,                   // top-right
+        0,                 // top-left
+        (size - 1) * size, // bottom-left
+        size * size - 1,   // bottom-right
+        size - 1,          // top-right
     ];
-    
+
     let mut dir_code = [0u8; 4];
     for i in 0..4 {
         dir_code[i] = core_bits[corners[i] as usize];
     }
-    
+
     let mut matched_dir = -1;
     for i in 0..4 {
-        if dir_code[i] == 1 && dir_code[(i+1)%4] == 1 && dir_code[(i+2)%4] == 0 {
+        if dir_code[i] == 1 && dir_code[(i + 1) % 4] == 1 && dir_code[(i + 2) % 4] == 0 {
             matched_dir = i as i32;
             break;
         }
     }
-    
+
     if matched_dir == -1 {
         return Err("Barcode locator pattern not found in grid corners");
     }
-    
+
     // Extract code from the dim×dim core bits.
     // The 3 pixels forming the locator corners are ignored.
     let mut code_raw = 0u64;
-    
+
     if matched_dir == 0 {
         for j in 0..size {
             for i in 0..size {
-                if i == 0 && j == 0 { continue; }
-                if i == 0 && j == size - 1 { continue; }
-                if i == size - 1 && j == size - 1 { continue; }
+                if i == 0 && j == 0 {
+                    continue;
+                }
+                if i == 0 && j == size - 1 {
+                    continue;
+                }
+                if i == size - 1 && j == size - 1 {
+                    continue;
+                }
                 code_raw <<= 1;
-                if core_bits[(j * size + i) as usize] == 1 { code_raw += 1; }
+                if core_bits[(j * size + i) as usize] == 1 {
+                    code_raw += 1;
+                }
             }
         }
     } else if matched_dir == 1 {
         for i in 0..size {
             for j in (0..size).rev() {
-                if i == 0 && j == size - 1 { continue; }
-                if i == size - 1 && j == size - 1 { continue; }
-                if i == size - 1 && j == 0 { continue; }
+                if i == 0 && j == size - 1 {
+                    continue;
+                }
+                if i == size - 1 && j == size - 1 {
+                    continue;
+                }
+                if i == size - 1 && j == 0 {
+                    continue;
+                }
                 code_raw <<= 1;
-                if core_bits[(j * size + i) as usize] == 1 { code_raw += 1; }
+                if core_bits[(j * size + i) as usize] == 1 {
+                    code_raw += 1;
+                }
             }
         }
     } else if matched_dir == 2 {
         for j in (0..size).rev() {
             for i in (0..size).rev() {
-                if i == size - 1 && j == size - 1 { continue; }
-                if i == size - 1 && j == 0 { continue; }
-                if i == 0 && j == 0 { continue; }
+                if i == size - 1 && j == size - 1 {
+                    continue;
+                }
+                if i == size - 1 && j == 0 {
+                    continue;
+                }
+                if i == 0 && j == 0 {
+                    continue;
+                }
                 code_raw <<= 1;
-                if core_bits[(j * size + i) as usize] == 1 { code_raw += 1; }
+                if core_bits[(j * size + i) as usize] == 1 {
+                    code_raw += 1;
+                }
             }
         }
     } else if matched_dir == 3 {
         for i in (0..size).rev() {
             for j in 0..size {
-                if i == size - 1 && j == 0 { continue; }
-                if i == 0 && j == 0 { continue; }
-                if i == 0 && j == size - 1 { continue; }
+                if i == size - 1 && j == 0 {
+                    continue;
+                }
+                if i == 0 && j == 0 {
+                    continue;
+                }
+                if i == 0 && j == size - 1 {
+                    continue;
+                }
                 code_raw <<= 1;
-                if core_bits[(j * size + i) as usize] == 1 { code_raw += 1; }
+                if core_bits[(j * size + i) as usize] == 1 {
+                    code_raw += 1;
+                }
             }
         }
     }
-    
-    debug!("ar_matrix_code_get_id: code_raw={}, dir={}", code_raw, matched_dir);
-    
+
+    debug!(
+        "ar_matrix_code_get_id: code_raw={}, dir={}",
+        code_raw, matched_dir
+    );
+
     *dir = matched_dir;
-    *cf = 1.0; 
+    *cf = 1.0;
 
     // Handle decoding logic mapped from pattern types!
     if let Ok((decoded_id, err)) = decode_matrix_raw(code_raw, code_type) {
@@ -220,7 +274,6 @@ pub fn ar_matrix_code_get_id(
         Err("Failed to decode extracted matrix code string")
     }
 }
-
 
 /// Higher-level helper: trace contour lines then decode a barcode marker.
 ///
@@ -235,11 +288,15 @@ pub fn ar_matrix_code_get_id(
 /// or if the barcode decode fails.
 pub fn ar_get_barcode_marker(
     image: &[u8],
-    ar_handle: &mut ARHandle, 
-    marker_info2: &mut ARMarkerInfo2
+    ar_handle: &mut ARHandle,
+    marker_info2: &mut ARMarkerInfo2,
 ) -> Result<ARMarkerInfo, &'static str> {
-    trace!("ar_get_barcode_marker: started for area={}, coord_num={}", marker_info2.area, marker_info2.coord_num);
-    
+    trace!(
+        "ar_get_barcode_marker: started for area={}, coord_num={}",
+        marker_info2.area,
+        marker_info2.coord_num
+    );
+
     let mut marker_info = ARMarkerInfo::default();
     let mut id = -1;
     let mut dir = -1;
@@ -262,7 +319,7 @@ pub fn ar_get_barcode_marker(
         &marker_info2.vertex,
         &param_lt.param_ltf,
         &mut line,
-        &mut resolved_vertex
+        &mut resolved_vertex,
     )?;
 
     ar_matrix_code_get_id(
@@ -276,7 +333,7 @@ pub fn ar_get_barcode_marker(
         &mut id,
         &mut dir,
         &mut cf,
-        &mut error_corrected
+        &mut error_corrected,
     )?;
 
     marker_info.id_matrix = id;
@@ -290,7 +347,6 @@ pub fn ar_get_barcode_marker(
 
     Ok(marker_info)
 }
-
 
 /// Project image pixels onto a regular grid using a homography.
 ///
@@ -321,7 +377,9 @@ fn sample_grid(
     let nc = match pixel_format {
         crate::types::ARPixelFormat::MONO => 1,
         crate::types::ARPixelFormat::RGB | crate::types::ARPixelFormat::BGR => 3,
-        crate::types::ARPixelFormat::RGBA | crate::types::ARPixelFormat::BGRA | crate::types::ARPixelFormat::ARGB => 4,
+        crate::types::ARPixelFormat::RGBA
+        | crate::types::ARPixelFormat::BGRA
+        | crate::types::ARPixelFormat::ARGB => 4,
         _ => return Err("Unsupported pixel format in sample_grid"),
     };
 
@@ -329,10 +387,14 @@ fn sample_grid(
     let mut para = [[0.0; 3]; 3];
 
     // Match C reference arPattGetImage2: world coords (100,100)→(110,110)
-    world[0][0] = 100.0; world[0][1] = 100.0;
-    world[1][0] = 110.0; world[1][1] = 100.0;
-    world[2][0] = 110.0; world[2][1] = 110.0;
-    world[3][0] = 100.0; world[3][1] = 110.0;
+    world[0][0] = 100.0;
+    world[0][1] = 100.0;
+    world[1][0] = 110.0;
+    world[1][1] = 100.0;
+    world[2][0] = 110.0;
+    world[2][1] = 110.0;
+    world[3][0] = 100.0;
+    world[3][1] = 110.0;
 
     crate::pattern::get_cpara(&world, vertex, &mut para)?;
 
@@ -343,15 +405,19 @@ fn sample_grid(
         let yw = (100.0 + patt_ratio1) + patt_ratio2 * (y as f64 + 0.5) / grid_size as f64;
         for x in 0..grid_size {
             let xw = (100.0 + patt_ratio1) + patt_ratio2 * (x as f64 + 0.5) / grid_size as f64;
-            
+
             let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
-            if d == 0.0 { continue; }
-            
+            if d == 0.0 {
+                continue;
+            }
+
             let xc = ((para[0][0] * xw + para[0][1] * yw + para[0][2]) / d) as i32;
             let yc = ((para[1][0] * xw + para[1][1] * yw + para[1][2]) / d) as i32;
 
             if xc >= 0 && xc < xsize && yc >= 0 && yc < ysize {
-                if y == 0 && (x == 0 || x == grid_size - 1) || y == grid_size - 1 && (x == 0 || x == grid_size - 1) {
+                if y == 0 && (x == 0 || x == grid_size - 1)
+                    || y == grid_size - 1 && (x == 0 || x == grid_size - 1)
+                {
                     trace!("sample_grid: grid({},{}) -> image({},{})", x, y, xc, yc);
                 }
                 let idx = ((yc * xsize + xc) * nc) as usize;
@@ -359,7 +425,7 @@ fn sample_grid(
                     // For RGB, averaging R, G, B gives luma. Or we can just take Green channel for simplicity.
                     // We'll take the G channel (idx + 1) for RGB, or just first byte (idx) if luma
                     bits[(y * grid_size + x) as usize] = if nc >= 3 {
-                        // Approximation: Read the second byte (G) which usually represents contrast well, 
+                        // Approximation: Read the second byte (G) which usually represents contrast well,
                         // or do a simple average if safe
                         image[idx + 1]
                     } else {
@@ -372,8 +438,6 @@ fn sample_grid(
 
     Ok(())
 }
-
-
 
 /// Rotates a `dim × dim` bit-grid by `dir * 90°` counter-clockwise.
 ///
@@ -412,26 +476,31 @@ fn rotate_bits(bits: &[u8], dim: i32, dir: i32) -> Vec<u8> {
 /// | `Code3x3Parity65`            | Single-bit parity (table lookup)        |
 /// | `Code3x3Hamming63`           | Hamming (6,3) (table lookup)            |
 /// | `Code4x4` / `Code5x5`       | BCH (39,12) / BCH (51,12)               |
-fn decode_matrix_raw(code_raw: u64, code_type: ARMatrixCodeType) -> Result<(i32, i32), &'static str> {
+fn decode_matrix_raw(
+    code_raw: u64,
+    code_type: ARMatrixCodeType,
+) -> Result<(i32, i32), &'static str> {
     match code_type {
         ARMatrixCodeType::Code3x3 => {
             // Simple 3x3 has no ECC in ARToolKit5! The bits strictly form the value ranging up to 63 since it's 9 bits minus corners?
             // Actually it's 9 bits, so it ranges up to 511.
             Ok((code_raw as i32, 0))
-        },
+        }
         ARMatrixCodeType::Code3x3Parity65 => {
             let code = crate::bch::decode_parity65(code_raw)?;
             Ok((code as i32, 0))
-        },
+        }
         ARMatrixCodeType::Code3x3Hamming63 => {
             let (code, err) = crate::bch::decode_hamming63(code_raw)?;
             Ok((code as i32, err))
-        },
-        ARMatrixCodeType::Code4x4BCH1393 | ARMatrixCodeType::Code4x4BCH1355 |
-        ARMatrixCodeType::Code5x5BCH22125 | ARMatrixCodeType::Code5x5BCH2277 => {
+        }
+        ARMatrixCodeType::Code4x4BCH1393
+        | ARMatrixCodeType::Code4x4BCH1355
+        | ARMatrixCodeType::Code5x5BCH22125
+        | ARMatrixCodeType::Code5x5BCH2277 => {
             let (code, err) = crate::bch::decode_bch(code_type, code_raw)?;
             Ok((code as i32, err))
-        },
+        }
         _ => {
             // The unhandled types include GLOBAL_ID, etc.
             Ok((code_raw as i32, 0))
@@ -446,18 +515,10 @@ mod tests {
     #[test]
     fn test_rotate_bits() {
         let dim = 3;
-        let bits = vec![
-            1, 0, 0,
-            1, 1, 0,
-            1, 0, 0,
-        ];
-        
+        let bits = vec![1, 0, 0, 1, 1, 0, 1, 0, 0];
+
         let rot1 = rotate_bits(&bits, dim, 1);
-        let expected1 = vec![
-            0, 0, 0,
-            0, 1, 0,
-            1, 1, 1,
-        ];
+        let expected1 = vec![0, 0, 0, 0, 1, 0, 1, 1, 1];
         assert_eq!(rot1, expected1);
     }
 }

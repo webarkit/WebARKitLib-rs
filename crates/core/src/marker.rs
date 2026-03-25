@@ -88,24 +88,24 @@ pub fn ar_detect_marker(
     frame: &crate::types::AR2VideoBufferT,
 ) -> Result<(), &'static str> {
     ar_handle.marker_num = 0;
-    
+
     let luma_buff = match &frame.buff_luma {
         Some(b) => b.as_slice(),
         None => return Err("AR2VideoBufferT requires buff_luma to be available"),
     };
-    
+
     let color_buff = match &frame.buff {
         Some(b) => b.as_slice(),
         None => return Err("AR2VideoBufferT requires buff to be available"),
     };
-    
+
     let thresh = ar_handle.ar_labeling_thresh as u8;
     let label_mode = if ar_handle.ar_labeling_mode == 0 {
         crate::labeling::LabelingMode::BlackRegion
     } else {
         crate::labeling::LabelingMode::WhiteRegion
     };
-    
+
     let labeling_proc_mode = if ar_handle.ar_image_proc_mode == 0 {
         crate::labeling::ImageProcMode::FrameImage
     } else {
@@ -120,11 +120,14 @@ pub fn ar_detect_marker(
         thresh,
         labeling_proc_mode,
         &mut ar_handle.label_info,
-        ar_handle.ar_debug != 0
+        ar_handle.ar_debug != 0,
     )?;
-    
+
     if ar_handle.ar_debug != 0 {
-        debug!("ar_labeling found {} labels.", ar_handle.label_info.label_num);
+        debug!(
+            "ar_labeling found {} labels.",
+            ar_handle.label_info.label_num
+        );
     }
 
     let image_proc_mode = if ar_handle.ar_image_proc_mode == 0 {
@@ -146,19 +149,22 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        debug!("ar_detect_marker2 found {} square candidates.", ar_handle.marker2_num);
+        debug!(
+            "ar_detect_marker2 found {} square candidates.",
+            ar_handle.marker2_num
+        );
     }
 
     if ar_handle.ar_param_lt.is_null() {
         return Err("ARParamLT is null in ARHandle");
     }
-    
+
     let image_proc_mode2 = if ar_handle.ar_image_proc_mode == 0 {
         ImageProcMode::FrameImage
     } else {
         ImageProcMode::FieldImage
     };
-    
+
     let param_ltf = unsafe { &(*ar_handle.ar_param_lt).param_ltf };
 
     let patt_handle_opt = if !ar_handle.patt_handle.is_null() {
@@ -185,7 +191,10 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        debug!("ar_get_marker_info produced {} final markers.", ar_handle.marker_num);
+        debug!(
+            "ar_get_marker_info produced {} final markers.",
+            ar_handle.marker_num
+        );
     }
 
     Ok(())
@@ -233,11 +242,14 @@ pub fn ar_detect_marker2(
     }
 
     *marker2_num = 0;
-    
+
     let label_num = label_info.label_num as usize;
     for i in 0..label_num {
         if label_info.area[i] < area_min_local || label_info.area[i] > area_max_local {
-            debug!("Label {} skipped due to Area ({}) not in [{}, {}]", i, label_info.area[i], area_min_local, area_max_local); 
+            debug!(
+                "Label {} skipped due to Area ({}) not in [{}, {}]",
+                i, label_info.area[i], area_min_local, area_max_local
+            );
             continue;
         }
         if label_info.clip[i][0] <= 1 || label_info.clip[i][1] >= xsize_local - 2 {
@@ -250,7 +262,7 @@ pub fn ar_detect_marker2(
         }
 
         let mut current_marker = ARMarkerInfo2::default();
-        
+
         let ret = ar_get_contour(
             &label_info.label_image,
             xsize_local,
@@ -259,22 +271,30 @@ pub fn ar_detect_marker2(
             &label_info.clip[i],
             &mut current_marker,
         );
-        
+
         if ret.is_err() {
-            debug!("ar_get_contour failed for label {}: {:?}", i, ret.unwrap_err());
+            debug!(
+                "ar_get_contour failed for label {}: {:?}",
+                i,
+                ret.unwrap_err()
+            );
             continue;
         }
 
         let ret = check_square(label_info.area[i], &mut current_marker, square_fit_thresh);
         if ret.is_err() {
-            debug!("check_square failed for label {}: {:?}", i, ret.unwrap_err());
+            debug!(
+                "check_square failed for label {}: {:?}",
+                i,
+                ret.unwrap_err()
+            );
             continue;
         }
 
         current_marker.area = label_info.area[i];
         current_marker.pos[0] = label_info.pos[i][0];
         current_marker.pos[1] = label_info.pos[i][1];
-        
+
         marker_info2[*marker2_num as usize] = current_marker;
         *marker2_num += 1;
         if *marker2_num as usize == marker_info2.len() {
@@ -290,8 +310,8 @@ pub fn ar_detect_marker2(
                 continue;
             }
             let d = (marker_info2[i].pos[0] - marker_info2[j].pos[0]).powi(2)
-                  + (marker_info2[i].pos[1] - marker_info2[j].pos[1]).powi(2);
-            
+                + (marker_info2[i].pos[1] - marker_info2[j].pos[1]).powi(2);
+
             if marker_info2[i].area > marker_info2[j].area {
                 if d < (marker_info2[i].area as ARdouble) / 4.0 {
                     marker_info2[j].area = 0;
@@ -353,10 +373,10 @@ fn ar_get_contour(
 ) -> Result<(), &'static str> {
     let xdir = [0, 1, 1, 1, 0, -1, -1, -1];
     let ydir = [-1, -1, 0, 1, 1, 1, 0, -1];
-    
+
     let mut sx = -1;
     let sy = clip[2];
-    
+
     // After labeling Pass 3, limage contains dense sequential IDs.
     // Compare the pixel value directly against `label`.
     let mut p_idx = (sy * xsize + clip[0]) as usize;
@@ -369,7 +389,7 @@ fn ar_get_contour(
         }
         p_idx += 1;
     }
-    
+
     if sx == -1 {
         debug!("ar_get_contour failed. label={}. clip={:?}.", label, clip);
         return Err("Contour start point not found");
@@ -379,34 +399,37 @@ fn ar_get_contour(
     marker_info2.x_coord[0] = sx;
     marker_info2.y_coord[0] = sy;
     let mut dir = 5;
-    
+
     loop {
         let last_idx = (marker_info2.coord_num - 1) as usize;
-        let p_idx = (marker_info2.y_coord[last_idx] * xsize + marker_info2.x_coord[last_idx]) as usize;
-        
+        let p_idx =
+            (marker_info2.y_coord[last_idx] * xsize + marker_info2.x_coord[last_idx]) as usize;
+
         dir = (dir + 5) % 8;
         let mut found = false;
         for _ in 0..8 {
-            let next_idx = (p_idx as isize + ydir[dir] as isize * xsize as isize + xdir[dir] as isize) as usize;
+            let next_idx = (p_idx as isize
+                + ydir[dir] as isize * xsize as isize
+                + xdir[dir] as isize) as usize;
             if next_idx < limage.len() && limage[next_idx] > 0 {
                 found = true;
                 break;
             }
             dir = (dir + 1) % 8;
         }
-        
+
         if !found {
             return Err("Contour broken");
         }
-        
+
         let curr_idx = marker_info2.coord_num as usize;
         marker_info2.x_coord[curr_idx] = marker_info2.x_coord[last_idx] + xdir[dir];
         marker_info2.y_coord[curr_idx] = marker_info2.y_coord[last_idx] + ydir[dir];
-        
+
         if marker_info2.x_coord[curr_idx] == sx && marker_info2.y_coord[curr_idx] == sy {
             break;
         }
-        
+
         marker_info2.coord_num += 1;
         if marker_info2.coord_num as usize >= AR_CHAIN_MAX - 1 {
             return Err("Contour too long");
@@ -415,7 +438,7 @@ fn ar_get_contour(
 
     let mut dmax = 0;
     let mut v1 = 0;
-    
+
     for i in 1..marker_info2.coord_num as usize {
         let d = (marker_info2.x_coord[i] - sx).pow(2) + (marker_info2.y_coord[i] - sy).pow(2);
         if d > dmax {
@@ -426,24 +449,24 @@ fn ar_get_contour(
 
     let mut wx = vec![0; v1];
     let mut wy = vec![0; v1];
-    
+
     for i in 0..v1 {
         wx[i] = marker_info2.x_coord[i];
         wy[i] = marker_info2.y_coord[i];
     }
-    
+
     let coord_num = marker_info2.coord_num as usize;
     for i in v1..coord_num {
         marker_info2.x_coord[i - v1] = marker_info2.x_coord[i];
         marker_info2.y_coord[i - v1] = marker_info2.y_coord[i];
     }
-    
+
     let offset = coord_num - v1;
     for i in 0..v1 {
         marker_info2.x_coord[offset + i] = wx[i];
         marker_info2.y_coord[offset + i] = wy[i];
     }
-    
+
     let end_idx = marker_info2.coord_num as usize;
     marker_info2.x_coord[end_idx] = marker_info2.x_coord[0];
     marker_info2.y_coord[end_idx] = marker_info2.y_coord[0];
@@ -471,13 +494,17 @@ fn ar_get_contour(
 ///
 /// Returns `Err` if the split process cannot isolate exactly four corners,
 /// indicating the region is not a valid square marker candidate.
-fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -> Result<(), &'static str> {
+fn check_square(
+    area: i32,
+    marker_info2: &mut ARMarkerInfo2,
+    factor: ARdouble,
+) -> Result<(), &'static str> {
     let mut dmax = 0;
     let mut v1 = 0;
     let sx = marker_info2.x_coord[0];
     let sy = marker_info2.y_coord[0];
     let coord_num = marker_info2.coord_num as usize;
-    
+
     for i in 1..(coord_num - 1) {
         let d = (marker_info2.x_coord[i] - sx).pow(2) + (marker_info2.y_coord[i] - sy).pow(2);
         if d > dmax {
@@ -493,11 +520,31 @@ fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -
     let mut wvnum1 = 0;
     let mut wv2 = [0; 10];
     let mut wvnum2 = 0;
-    
-    if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, 0, v1, thresh, &mut wv1, &mut wvnum1).is_err() {
+
+    if get_vertex(
+        &marker_info2.x_coord,
+        &marker_info2.y_coord,
+        0,
+        v1,
+        thresh,
+        &mut wv1,
+        &mut wvnum1,
+    )
+    .is_err()
+    {
         return Err("Square check failed");
     }
-    if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, v1, coord_num - 1, thresh, &mut wv2, &mut wvnum2).is_err() {
+    if get_vertex(
+        &marker_info2.x_coord,
+        &marker_info2.y_coord,
+        v1,
+        coord_num - 1,
+        thresh,
+        &mut wv2,
+        &mut wvnum2,
+    )
+    .is_err()
+    {
         return Err("Square check failed");
     }
 
@@ -509,10 +556,30 @@ fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -
         let v2 = v1 / 2;
         wvnum1 = 0;
         wvnum2 = 0;
-        if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, 0, v2, thresh, &mut wv1, &mut wvnum1).is_err() {
+        if get_vertex(
+            &marker_info2.x_coord,
+            &marker_info2.y_coord,
+            0,
+            v2,
+            thresh,
+            &mut wv1,
+            &mut wvnum1,
+        )
+        .is_err()
+        {
             return Err("Square check failed");
         }
-        if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, v2, v1, thresh, &mut wv2, &mut wvnum2).is_err() {
+        if get_vertex(
+            &marker_info2.x_coord,
+            &marker_info2.y_coord,
+            v2,
+            v1,
+            thresh,
+            &mut wv2,
+            &mut wvnum2,
+        )
+        .is_err()
+        {
             return Err("Square check failed");
         }
         if wvnum1 == 1 && wvnum2 == 1 {
@@ -526,10 +593,30 @@ fn check_square(area: i32, marker_info2: &mut ARMarkerInfo2, factor: ARdouble) -
         let v2 = (v1 + coord_num - 1) / 2;
         wvnum1 = 0;
         wvnum2 = 0;
-        if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, v1, v2, thresh, &mut wv1, &mut wvnum1).is_err() {
+        if get_vertex(
+            &marker_info2.x_coord,
+            &marker_info2.y_coord,
+            v1,
+            v2,
+            thresh,
+            &mut wv1,
+            &mut wvnum1,
+        )
+        .is_err()
+        {
             return Err("Square check failed");
         }
-        if get_vertex(&marker_info2.x_coord, &marker_info2.y_coord, v2, coord_num - 1, thresh, &mut wv2, &mut wvnum2).is_err() {
+        if get_vertex(
+            &marker_info2.x_coord,
+            &marker_info2.y_coord,
+            v2,
+            coord_num - 1,
+            thresh,
+            &mut wv2,
+            &mut wvnum2,
+        )
+        .is_err()
+        {
             return Err("Square check failed");
         }
         if wvnum1 == 1 && wvnum2 == 1 {
@@ -574,10 +661,10 @@ fn get_vertex(
     let a = (y_coord[ed] - y_coord[st]) as f64;
     let b = (x_coord[st] - x_coord[ed]) as f64;
     let c = (x_coord[ed] * y_coord[st] - y_coord[ed] * x_coord[st]) as f64;
-    
+
     let mut dmax = 0.0;
     let mut v1 = st + 1;
-    
+
     for i in (st + 1)..ed {
         let d = a * (x_coord[i] as f64) + b * (y_coord[i] as f64) + c;
         if d * d > dmax {
@@ -585,28 +672,28 @@ fn get_vertex(
             v1 = i;
         }
     }
-    
+
     if dmax / (a * a + b * b) > thresh {
         if get_vertex(x_coord, y_coord, st, v1, thresh, vertex, vnum).is_err() {
             return Err("Vertex expansion failed");
         }
-        
+
         if *vnum > 5 {
             return Err("Too many vertices");
         }
         vertex[*vnum] = v1;
         *vnum += 1;
-        
+
         if get_vertex(x_coord, y_coord, v1, ed, thresh, vertex, vnum).is_err() {
             return Err("Vertex expansion failed");
         }
     }
-    
+
     Ok(())
 }
 
 use crate::math::{ARMat, ARVec};
-use crate::types::{ARParamLTf, ARMarkerInfo};
+use crate::types::{ARMarkerInfo, ARParamLTf};
 
 /// Fits undistorted straight lines to each of the four sides of a detected square.
 ///
@@ -642,10 +729,11 @@ pub fn ar_get_line(
         let st = (vertex[i] as f64 + w1) as usize;
         let ed = (vertex[i + 1] as f64 - w1) as usize;
         let n = ed - st + 1;
-        
+
         let mut input = ARMat::new(n as i32, 2);
         for j in 0..n {
-            let (ix, iy) = param_ltf.observ2ideal(x_coord[st + j] as f32, y_coord[st + j] as f32)?;
+            let (ix, iy) =
+                param_ltf.observ2ideal(x_coord[st + j] as f32, y_coord[st + j] as f32)?;
             input.m[j * 2 + 0] = ix as f64;
             input.m[j * 2 + 1] = iy as f64;
         }
@@ -655,7 +743,7 @@ pub fn ar_get_line(
         let mut mean = ARVec::new(2);
 
         input.pca(&mut evec, &mut ev, &mut mean)?;
-        
+
         line[i][0] = evec.m[1];
         line[i][1] = -evec.m[0];
         line[i][2] = -(line[i][0] * mean.v[0] + line[i][1] * mean.v[1]);
@@ -714,11 +802,13 @@ pub fn ar_get_marker_info(
     matrix_code_type: crate::types::ARMatrixCodeType,
 ) -> Result<(), &'static str> {
     let mut j = 0;
-    
+
     for i in 0..marker2_num as usize {
         marker_info[j].area = marker_info2[i].area;
-        
-        if let Ok((ix, iy)) = param_ltf.observ2ideal(marker_info2[i].pos[0] as f32, marker_info2[i].pos[1] as f32) {
+
+        if let Ok((ix, iy)) =
+            param_ltf.observ2ideal(marker_info2[i].pos[0] as f32, marker_info2[i].pos[1] as f32)
+        {
             marker_info[j].pos[0] = ix as f64;
             marker_info[j].pos[1] = iy as f64;
         } else {
@@ -733,13 +823,16 @@ pub fn ar_get_marker_info(
             param_ltf,
             &mut marker_info[j].line,
             &mut marker_info[j].vertex,
-        ).is_err() {
+        )
+        .is_err()
+        {
             continue;
         }
 
         // Branch on detection mode
         let is_matrix_mode = patt_detect_mode == crate::types::AR_MATRIX_CODE_DETECTION
-            || patt_detect_mode == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION;
+            || patt_detect_mode
+                == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION;
 
         if is_matrix_mode {
             // Decode the matrix (barcode) code
@@ -765,7 +858,10 @@ pub fn ar_get_marker_info(
                     marker_info[j].dir_matrix = mc_dir;
                     marker_info[j].cf_matrix = mc_cf;
                     marker_info[j].error_corrected = mc_err;
-                    debug!("ar_get_marker_info: barcode id={}, dir={}, cf={:.4}", mc_id, mc_dir, mc_cf);
+                    debug!(
+                        "ar_get_marker_info: barcode id={}, dir={}, cf={:.4}",
+                        mc_id, mc_dir, mc_cf
+                    );
                 }
                 Err(e) => {
                     debug!("ar_get_marker_info: barcode decode failed: {}", e);
@@ -776,18 +872,22 @@ pub fn ar_get_marker_info(
             }
         }
 
-        if !is_matrix_mode || patt_detect_mode == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION {
+        if !is_matrix_mode
+            || patt_detect_mode
+                == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION
+        {
             // Template matching branch
             if let Some(patt_handle) = patt_handle_opt {
                 if patt_handle.patt_num > 0 {
                     let patt_size = patt_handle.patt_size;
-                    let ext_patt_len = if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR {
-                        (patt_size * patt_size * 3) as usize
-                    } else {
-                        (patt_size * patt_size) as usize
-                    };
+                    let ext_patt_len =
+                        if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR {
+                            (patt_size * patt_size * 3) as usize
+                        } else {
+                            (patt_size * patt_size) as usize
+                        };
                     let mut ext_patt = vec![0u8; ext_patt_len];
-                    
+
                     // ar_patt_get_image expects x_coord and y_coord arrays (contour)
                     // and a 4-element array of vertex indices (usize).
                     let vertex_indices: [usize; 4] = [
@@ -812,7 +912,7 @@ pub fn ar_get_marker_info(
                         patt_ratio,
                         &mut ext_patt,
                     );
-                    
+
                     if res.is_ok() {
                         let mut p_code = -1;
                         let mut p_dir = 0;
@@ -826,7 +926,7 @@ pub fn ar_get_marker_info(
                             &mut p_dir,
                             &mut p_cf,
                         );
-                        
+
                         if match_res.is_ok() && p_code >= 0 {
                             marker_info[j].id = p_code;
                             marker_info[j].dir = p_dir;

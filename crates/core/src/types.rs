@@ -282,13 +282,10 @@ impl ARParamLT {
     pub fn new(param: ARParam, param_ltf: ARParamLTf) -> Self {
         Self { param, param_ltf }
     }
-    
+
     pub fn new_basic(param: ARParam) -> Self {
         let param_ltf = ARParamLTf::new_basic(param.xsize, param.ysize);
-        Self {
-            param,
-            param_ltf,
-        }
+        Self { param, param_ltf }
     }
 }
 
@@ -475,7 +472,10 @@ impl ARHandle {
         // Update pixel size based on format if needed
         self.ar_pixel_size = match format {
             ARPixelFormat::RGB | ARPixelFormat::BGR => 3,
-            ARPixelFormat::RGBA | ARPixelFormat::BGRA | ARPixelFormat::ABGR | ARPixelFormat::ARGB => 4,
+            ARPixelFormat::RGBA
+            | ARPixelFormat::BGRA
+            | ARPixelFormat::ABGR
+            | ARPixelFormat::ARGB => 4,
             ARPixelFormat::MONO => 1,
             _ => 0,
         };
@@ -620,6 +620,3 @@ mod tests {
         assert_eq!(handle.icp_stereo_handle, std::ptr::null_mut());
     }
 }
-
-
-
