@@ -87,6 +87,8 @@ fn print_help_and_exit() {
     eprintln!("  --patt-ratio F         pattern ratio (pattern/(pattern+2*border)), default 0.5");
     eprintln!("  --batch                run automatic experiments and write CSV report");
     eprintln!("  --quiet                reduce printed output");
+    eprintln!("  --verbose              print verbose diagnostic info (full_side, min_dim) when border is auto-computed");
+    eprintln!("  --debug                print very verbose intermediate extraction values (threshold, bbox, vertices, params)");
     eprintln!("  --help                 show this help");
     std::process::exit(0);
 }
@@ -105,6 +107,9 @@ struct Config {
     quiet: bool,
     with_border: bool,
     patt_ratio: f64,
+    // border_color removed: always use black border when adding
+    verbose: bool,
+    debug: bool,
 }
 
 fn default_paths() -> (String, String) {
@@ -123,13 +128,22 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
 
     // optional border: either explicit via --border or auto-computed when --with-border is NOT set
     let mut applied_border: usize = cfg.border;
+    // store computed values when auto-calculated so we can log them later
+    let mut computed_full_side: Option<f64> = None;
+    let mut computed_min_dim: Option<f64> = None;
+    let mut used_dimension: Option<String> = None; // e.g. "min" or "width"
     if applied_border == 0 && !cfg.with_border {
         // compute border so that patt_ratio = pattern_side / full_marker_side
         // full_marker_side = pattern_side / patt_ratio
         // border = (full_marker_side - pattern_side) / 2
         // use the minimum dimension of input to be conservative
         let min_dim = (width.min(height)) as f64;
+        // record used dimension and value
+        computed_min_dim = Some(min_dim);
+        used_dimension = Some("min".into());
         let full_side = (min_dim / cfg.patt_ratio).round();
+        // record computed full_side for verbose logging
+        computed_full_side = Some(full_side);
         let border_f = ((full_side - min_dim) / 2.0).round();
         if border_f > 0.0 {
             applied_border = border_f as usize;
@@ -138,11 +152,36 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         }
     }
 
+    // Determine how border was chosen for logging
+    let border_source = if cfg.border > 0 {
+        "explicit"
+    } else if applied_border > 0 {
+        "auto"
+    } else {
+        "none"
+    };
+
     if applied_border > 0 {
+        // log the computed/applied border
+        eprintln!("Applied border = {} px (source={})", applied_border, border_source);
+
+        // If border was auto-computed and --verbose was passed, print verbose info: full_side, patt_ratio and min_dim
+        if border_source == "auto" && cfg.verbose {
+            if let Some(fs) = computed_full_side {
+                if let Some(md) = computed_min_dim.as_ref() {
+                    let used = used_dimension.as_deref().unwrap_or("min");
+                    eprintln!("Verbose: computed full_marker_side = {}  patt_ratio = {}  used={} min_dim={}", fs, cfg.patt_ratio, used, md);
+                } else {
+                    eprintln!("Verbose: computed full_marker_side = {}  patt_ratio = {}", fs, cfg.patt_ratio);
+                }
+            }
+        }
+
         let b = applied_border as u32;
         let new_w = width + 2 * b;
         let new_h = height + 2 * b;
-        let mut framed: RgbImage = RgbImage::new(new_w, new_h);
+        // fill border with black (ARToolKit expects marker border as black/white contrast; black border is used here)
+        let mut framed: RgbImage = RgbImage::from_pixel(new_w, new_h, image::Rgb([0u8, 0u8, 0u8]));
         for y in 0..height {
             for x in 0..width {
                 let p = image_buf.get_pixel(x, y);
@@ -152,6 +191,8 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         image_buf = framed;
         width = new_w;
         height = new_h;
+    } else {
+        eprintln!("No border applied (source={})", border_source);
     }
 
     // flip
@@ -205,6 +246,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
 
     // detect via Otsu
     let thresh = otsu_level(&gray);
+    if cfg.debug {
+        eprintln!("Debug: Otsu threshold = {}", thresh);
+    }
     let mut minx = width as i32;
     let mut miny = height as i32;
     let mut maxx = 0i32;
@@ -228,6 +272,12 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         miny = cy - side/2; if miny < 0 { miny = 0 }
         maxx = cx + side/2; if maxx >= width as i32 { maxx = width as i32 - 1 }
         maxy = cy + side/2; if maxy >= height as i32 { maxy = height as i32 - 1 }
+        if cfg.debug {
+            eprintln!("Debug: fallback bbox used -> minx={}, miny={}, maxx={}, maxy={}", minx, miny, maxx, maxy);
+        }
+    }
+    if cfg.debug {
+        eprintln!("Debug: bbox -> minx={}, miny={}, maxx={}, maxy={}", minx, miny, maxx, maxy);
     }
 
     let mut marker = ARMarkerInfo::default();
@@ -237,6 +287,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         [maxx as f64, maxy as f64],
         [minx as f64, maxy as f64],
     ];
+    if cfg.debug {
+        eprintln!("Debug: marker vertices: {:?}", marker.vertex);
+    }
 
     // prepare output names
     let out_dir = Path::new("./crates/core/examples/Data/experiments");
@@ -262,6 +315,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
 
     // extract pattern image
     let mut ext_patt = vec![0u8; (cfg.patt_size * cfg.patt_size * 3) as usize];
+    if cfg.debug {
+        eprintln!("Debug: calling ar_patt_get_image2 with patt_size={} sample_size={} xsize={} ysize={} pixel_format={:?}", cfg.patt_size, cfg.patt_size * cfg.sample_factor, xsize, ysize, pixel_format);
+    }
     if let Err(e) = ar_patt_get_image2(
         0,
         ARPixelFormat::RGB as i32,
@@ -278,6 +334,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
     ) {
         return Err(format!("ar_patt_get_image2 failed: {}", e));
     }
+    if cfg.debug {
+        eprintln!("Debug: ar_patt_get_image2 returned, ext_patt.len()={}", ext_patt.len());
+    }
 
     // save extracted PNG
     let mut out_img = image::RgbImage::new(cfg.patt_size as u32, cfg.patt_size as u32);
@@ -293,6 +352,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
     out_img.save(&extracted_path).map_err(|e| format!("save extracted: {}", e))?;
 
     // save .patt
+    if cfg.debug {
+        eprintln!("Debug: calling ar_patt_save with patt_ratio={} patt_size={} patt_path={}", patt_ratio, cfg.patt_size, patt_path.display());
+    }
     ar_patt_save(
         &img,
         xsize,
@@ -305,6 +367,9 @@ fn run_once(cfg: &Config, suffix: &str) -> Result<(usize, u8, u8, f64, Option<f6
         cfg.patt_size as usize,
         &patt_path,
     ).map_err(|e| format!("ar_patt_save failed: {}", e))?;
+    if cfg.debug {
+        eprintln!("Debug: ar_patt_save completed");
+    }
 
     // compute stats
     let saved_content = fs::read_to_string(&patt_path).map_err(|e| format!("read patt: {}", e))?;
@@ -422,6 +487,8 @@ fn main() {
         quiet: false,
         with_border: false,
         patt_ratio: 0.5,
+        verbose: false,
+        debug: false,
     };
 
     let mut batch = false;
@@ -439,6 +506,8 @@ fn main() {
             "--patt-size" => if let Some(v) = args.next() { cfg.patt_size = usize::from_str(&v).unwrap_or(16); },
             "--sample-factor" => if let Some(v) = args.next() { cfg.sample_factor = usize::from_str(&v).unwrap_or(4); },
             "--flip-v" => cfg.flip_v = true,
+            "--verbose" => cfg.verbose = true,
+            "--debug" => cfg.debug = true,
             "--channel-order" => if let Some(v) = args.next() { cfg.channel_order = v.to_lowercase(); },
             "--batch" => batch = true,
             "--quiet" => cfg.quiet = true,
