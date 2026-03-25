@@ -1,12 +1,12 @@
 use clap::Parser;
-use webarkitlib_rs::marker::ar_detect_marker;
-use webarkitlib_rs::version;
-use webarkitlib_rs::types::{
-    ARHandle, ARPixelFormat, ARMatrixCodeType, AR_MATRIX_CODE_DETECTION,
-    ARParam, ARParamLT, ARParamLTf, AR2VideoBufferT, AR2VideoTimestampT,
-};
 use image::ImageReader;
 use std::fs::File;
+use webarkitlib_rs::marker::ar_detect_marker;
+use webarkitlib_rs::types::{
+    AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARMatrixCodeType, ARParam, ARParamLT,
+    ARParamLTf, ARPixelFormat, AR_MATRIX_CODE_DETECTION,
+};
+use webarkitlib_rs::version;
 
 /// WebARKitLib-rs Barcode Detection Example
 #[derive(Parser, Debug)]
@@ -30,17 +30,17 @@ struct Args {
 
 fn parse_matrix_code_type(s: &str) -> Result<ARMatrixCodeType, String> {
     match s.to_lowercase().as_str() {
-        "3x3"          => Ok(ARMatrixCodeType::Code3x3),
-        "3x3parity65"  => Ok(ARMatrixCodeType::Code3x3Parity65),
+        "3x3" => Ok(ARMatrixCodeType::Code3x3),
+        "3x3parity65" => Ok(ARMatrixCodeType::Code3x3Parity65),
         "3x3hamming63" => Ok(ARMatrixCodeType::Code3x3Hamming63),
-        "4x4"          => Ok(ARMatrixCodeType::Code4x4),
-        "4x4bch1393"   => Ok(ARMatrixCodeType::Code4x4BCH1393),
-        "4x4bch1355"   => Ok(ARMatrixCodeType::Code4x4BCH1355),
-        "5x5"          => Ok(ARMatrixCodeType::Code5x5),
-        "5x5bch22125"  => Ok(ARMatrixCodeType::Code5x5BCH22125),
-        "5x5bch2277"   => Ok(ARMatrixCodeType::Code5x5BCH2277),
-        "6x6"          => Ok(ARMatrixCodeType::Code6x6),
-        other          => Err(format!("Unknown matrix code type: '{other}'")),
+        "4x4" => Ok(ARMatrixCodeType::Code4x4),
+        "4x4bch1393" => Ok(ARMatrixCodeType::Code4x4BCH1393),
+        "4x4bch1355" => Ok(ARMatrixCodeType::Code4x4BCH1355),
+        "5x5" => Ok(ARMatrixCodeType::Code5x5),
+        "5x5bch22125" => Ok(ARMatrixCodeType::Code5x5BCH22125),
+        "5x5bch2277" => Ok(ARMatrixCodeType::Code5x5BCH2277),
+        "6x6" => Ok(ARMatrixCodeType::Code6x6),
+        other => Err(format!("Unknown matrix code type: '{other}'")),
     }
 }
 
@@ -112,13 +112,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let rust_luma_path = data_dir.join("rust_luma.png");
     let rust_color_path = data_dir.join("rust_color.png");
-    luma_img.save(&rust_luma_path).expect("Failed to save luma image");
-    color_img.save(&rust_color_path).expect("Failed to save color image");
+    luma_img
+        .save(&rust_luma_path)
+        .expect("Failed to save luma image");
+    color_img
+        .save(&rust_color_path)
+        .expect("Failed to save color image");
 
     // 4. Build threshold iterator: single value or sweep
     let thresholds: Box<dyn Iterator<Item = i32>> = match args.threshold {
         Some(t) => Box::new(std::iter::once(t)),
-        None    => Box::new((60..=180).step_by(20)),
+        None => Box::new((60..=180).step_by(20)),
     };
 
     for thresh in thresholds {
@@ -145,7 +149,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 param_ltf.o2i[idx + 1] = y as f32;
             }
         }
-        let mut param_lt = Box::new(ARParamLT { param: param.clone(), param_ltf });
+        let mut param_lt = Box::new(ARParamLT {
+            param: param.clone(),
+            param_ltf,
+        });
         ar_handle.ar_param_lt = &mut *param_lt;
 
         let frame = AR2VideoBufferT {

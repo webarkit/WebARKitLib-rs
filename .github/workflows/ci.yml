@@ -2,7 +2,8 @@ name: Rust CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - '**'
     tags: [ "v*" ]
   pull_request:
 
@@ -22,6 +23,9 @@ jobs:
         
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+
+    - name: Run cargo fmt check
+      run: cargo fmt --all -- --check
 
     - name: Run cargo check
       run: cargo check --workspace

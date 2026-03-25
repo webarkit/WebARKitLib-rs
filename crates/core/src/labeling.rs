@@ -103,7 +103,6 @@ pub fn ar_labeling(
     label_info: &mut ARLabelInfo,
     _debug_mode: bool,
 ) -> Result<(), &'static str> {
-    
     let is_region = |pixel: u8| -> bool {
         match mode {
             LabelingMode::BlackRegion => pixel <= thresh,
@@ -127,7 +126,8 @@ pub fn ar_labeling(
             lxsize = (xsize / 2) as usize;
             lysize = (ysize / 2) as usize;
             row_stride = (xsize * 2) as usize; // skip every other row
-            if ysize < 480 { // Assuming 'height' in the snippet refers to ysize
+            if ysize < 480 {
+                // Assuming 'height' in the snippet refers to ysize
                 _col_stride = 1;
             } else {
                 _col_stride = 2; // skip every other column
@@ -144,7 +144,12 @@ pub fn ar_labeling(
         label_info.label_image.resize(lxsize * lysize, 0);
     }
     label_info.label_image.fill(0);
-    trace!("ar_labeling: lxsize={}, lysize={}, len={}", lxsize, lysize, label_info.label_image.len());
+    trace!(
+        "ar_labeling: lxsize={}, lysize={}, len={}",
+        lxsize,
+        lysize,
+        label_info.label_image.len()
+    );
 
     // Initialize work equivalence arrays
     if label_info.work.len() < AR_LABELING_WORK_SIZE {
@@ -154,13 +159,13 @@ pub fn ar_labeling(
     let work = &mut label_info.work;
     // We'll use a local work2 of i64 to avoid overflow during summation
     let mut work2 = vec![0i64; AR_LABELING_WORK_SIZE * 7];
-    
+
     // Initialize xmin, ymin to large values
     for k in 0..AR_LABELING_WORK_SIZE {
         work2[k * 7 + 3] = xsize as i64; // xmin
         work2[k * 7 + 5] = ysize as i64; // ymin
     }
-    
+
     let label_img = &mut label_info.label_image;
 
     // Helper for Union-Find find with path compression
@@ -189,26 +194,50 @@ pub fn ar_labeling(
                 // Transfer data
                 let m_idx = (root_m as usize - 1) * 7;
                 let n_idx = (root_n as usize - 1) * 7;
-                for i in 0..3 { work2[m_idx + i] += work2[n_idx + i]; }
-                if work2[m_idx + 3] > work2[n_idx + 3] { work2[m_idx + 3] = work2[n_idx + 3]; }
-                if work2[m_idx + 4] < work2[n_idx + 4] { work2[m_idx + 4] = work2[n_idx + 4]; }
-                if work2[m_idx + 5] > work2[n_idx + 5] { work2[m_idx + 5] = work2[n_idx + 5]; }
-                if work2[m_idx + 6] < work2[n_idx + 6] { work2[m_idx + 6] = work2[n_idx + 6]; }
+                for i in 0..3 {
+                    work2[m_idx + i] += work2[n_idx + i];
+                }
+                if work2[m_idx + 3] > work2[n_idx + 3] {
+                    work2[m_idx + 3] = work2[n_idx + 3];
+                }
+                if work2[m_idx + 4] < work2[n_idx + 4] {
+                    work2[m_idx + 4] = work2[n_idx + 4];
+                }
+                if work2[m_idx + 5] > work2[n_idx + 5] {
+                    work2[m_idx + 5] = work2[n_idx + 5];
+                }
+                if work2[m_idx + 6] < work2[n_idx + 6] {
+                    work2[m_idx + 6] = work2[n_idx + 6];
+                }
                 // Clear old root (optional)
-                for i in 0..7 { work2[n_idx + i] = 0; }
+                for i in 0..7 {
+                    work2[n_idx + i] = 0;
+                }
                 root_m
             } else {
                 work[root_m as usize - 1] = root_n;
                 // Transfer data
                 let m_idx = (root_m as usize - 1) * 7;
                 let n_idx = (root_n as usize - 1) * 7;
-                for i in 0..3 { work2[n_idx + i] += work2[m_idx + i]; }
-                if work2[n_idx + 3] > work2[m_idx + 3] { work2[n_idx + 3] = work2[m_idx + 3]; }
-                if work2[n_idx + 4] < work2[m_idx + 4] { work2[n_idx + 4] = work2[m_idx + 4]; }
-                if work2[n_idx + 5] > work2[m_idx + 5] { work2[n_idx + 5] = work2[m_idx + 5]; }
-                if work2[n_idx + 6] < work2[m_idx + 6] { work2[n_idx + 6] = work2[m_idx + 6]; }
+                for i in 0..3 {
+                    work2[n_idx + i] += work2[m_idx + i];
+                }
+                if work2[n_idx + 3] > work2[m_idx + 3] {
+                    work2[n_idx + 3] = work2[m_idx + 3];
+                }
+                if work2[n_idx + 4] < work2[m_idx + 4] {
+                    work2[n_idx + 4] = work2[m_idx + 4];
+                }
+                if work2[n_idx + 5] > work2[m_idx + 5] {
+                    work2[n_idx + 5] = work2[m_idx + 5];
+                }
+                if work2[n_idx + 6] < work2[m_idx + 6] {
+                    work2[n_idx + 6] = work2[m_idx + 6];
+                }
                 // Clear old root
-                for i in 0..7 { work2[m_idx + i] = 0; }
+                for i in 0..7 {
+                    work2[m_idx + i] = 0;
+                }
                 root_n
             }
         } else {
@@ -235,17 +264,29 @@ pub fn ar_labeling(
 
                 let mut neighbors = [0; 4];
                 let mut n_count = 0;
-                if left_val > 0 { neighbors[n_count] = left_val as i32; n_count += 1; }
-                if up_left_val > 0 { neighbors[n_count] = up_left_val as i32; n_count += 1; }
-                if up_val > 0 { neighbors[n_count] = up_val as i32; n_count += 1; }
-                if up_right_val > 0 { neighbors[n_count] = up_right_val as i32; n_count += 1; }
+                if left_val > 0 {
+                    neighbors[n_count] = left_val as i32;
+                    n_count += 1;
+                }
+                if up_left_val > 0 {
+                    neighbors[n_count] = up_left_val as i32;
+                    n_count += 1;
+                }
+                if up_val > 0 {
+                    neighbors[n_count] = up_val as i32;
+                    n_count += 1;
+                }
+                if up_right_val > 0 {
+                    neighbors[n_count] = up_right_val as i32;
+                    n_count += 1;
+                }
 
                 if n_count > 0 {
                     // Sort and unique neighbors
                     neighbors[0..n_count].sort_unstable();
                     let mut unique_count = 1;
                     for k in 1..n_count {
-                        if neighbors[k] != neighbors[k-1] {
+                        if neighbors[k] != neighbors[k - 1] {
                             neighbors[unique_count] = neighbors[k];
                             unique_count += 1;
                         }
@@ -259,15 +300,23 @@ pub fn ar_labeling(
                         }
                     }
                     label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
-                    
+
                     let l = (final_label as usize - 1) * 7;
                     work2[l + 0] += 1;
                     work2[l + 1] += i as i64;
                     work2[l + 2] += j as i64;
-                    if work2[l + 3] > i as i64 { work2[l + 3] = i as i64; }
-                    if work2[l + 4] < i as i64 { work2[l + 4] = i as i64; }
-                    if work2[l + 5] > j as i64 { work2[l + 5] = j as i64; }
-                    if work2[l + 6] < j as i64 { work2[l + 6] = j as i64; }
+                    if work2[l + 3] > i as i64 {
+                        work2[l + 3] = i as i64;
+                    }
+                    if work2[l + 4] < i as i64 {
+                        work2[l + 4] = i as i64;
+                    }
+                    if work2[l + 5] > j as i64 {
+                        work2[l + 5] = j as i64;
+                    }
+                    if work2[l + 6] < j as i64 {
+                        work2[l + 6] = j as i64;
+                    }
                 } else {
                     wk_max += 1;
                     if wk_max > AR_LABELING_WORK_SIZE {
@@ -277,14 +326,14 @@ pub fn ar_labeling(
                     label_img[p_idx] = wk_max as crate::types::ARLabelingLabelType;
 
                     let l = (wk_max - 1) * 7;
-                    work2[l + 0] = 1;         // area
-                    work2[l + 1] = i as i64;  // pos[0]
-                    work2[l + 2] = j as i64;  // pos[1]
-                    work2[l + 3] = i as i64;  // clip[0] (xmin)
-                    work2[l + 4] = i as i64;  // clip[1] (xmax)
-                    work2[l + 5] = j as i64;  // clip[2] (ymin)
-                    work2[l + 6] = j as i64;  // clip[3] (ymax)
-                    
+                    work2[l + 0] = 1; // area
+                    work2[l + 1] = i as i64; // pos[0]
+                    work2[l + 2] = j as i64; // pos[1]
+                    work2[l + 3] = i as i64; // clip[0] (xmin)
+                    work2[l + 4] = i as i64; // clip[1] (xmax)
+                    work2[l + 5] = j as i64; // clip[2] (ymin)
+                    work2[l + 6] = j as i64; // clip[3] (ymax)
+
                     if wk_max == 32 || wk_max == 41 {
                         trace!("Label {} created at ({}, {})", wk_max, i, j);
                     }
@@ -299,21 +348,22 @@ pub fn ar_labeling(
     let mut num_labels = 0;
     // label_map[original_label - 1] = dense_id
     let mut label_map = vec![0; wk_max];
-    
+
     // Pass 2a: Assign dense IDs to roots
     for i in 1..=wk_max {
-        if work[i - 1] == i as i32 { // It's a root
+        if work[i - 1] == i as i32 {
+            // It's a root
             num_labels += 1;
             label_map[i - 1] = num_labels;
         }
     }
-    
+
     // Pass 2b: Map all original labels back to dense IDs via their roots
     for i in 1..=wk_max {
         let root = find(work, i as i32) as usize;
         label_map[i - 1] = label_map[root - 1];
     }
-    
+
     label_info.label_num = num_labels;
     if label_info.label_num == 0 {
         return Ok(());
@@ -322,29 +372,42 @@ pub fn ar_labeling(
     // Pass 3: Update label_image with final labels
     for i in 0..label_img.len() {
         if label_img[i] > 0 {
-            label_img[i] = label_map[label_img[i] as usize - 1] as crate::types::ARLabelingLabelType;
+            label_img[i] =
+                label_map[label_img[i] as usize - 1] as crate::types::ARLabelingLabelType;
         }
     }
 
     // Finalize label info
     // Transfer from work2 back to label_info
-    
+
     // Actually, we can just iterate the work2 table and match by finalized label
-    if label_info.area.len() < num_labels as usize { label_info.area.resize(num_labels as usize, 0); }
-    if label_info.pos.len() < num_labels as usize { label_info.pos.resize(num_labels as usize, [0.0; 2]); }
-    if label_info.clip.len() < num_labels as usize { label_info.clip.resize(num_labels as usize, [0; 4]); }
+    if label_info.area.len() < num_labels as usize {
+        label_info.area.resize(num_labels as usize, 0);
+    }
+    if label_info.pos.len() < num_labels as usize {
+        label_info.pos.resize(num_labels as usize, [0.0; 2]);
+    }
+    if label_info.clip.len() < num_labels as usize {
+        label_info.clip.resize(num_labels as usize, [0; 4]);
+    }
 
     label_info.area.fill(0);
-    for v in label_info.pos.iter_mut() { v.fill(0.0); }
-    for v in label_info.clip.iter_mut() { 
-        v[0] = lxsize as i32; v[1] = 0; v[2] = lysize as i32; v[3] = 0; 
+    for v in label_info.pos.iter_mut() {
+        v.fill(0.0);
+    }
+    for v in label_info.clip.iter_mut() {
+        v[0] = lxsize as i32;
+        v[1] = 0;
+        v[2] = lysize as i32;
+        v[3] = 0;
     }
 
     // Let's redo the finalization loop more cleanly.
     // We'll iterate all ROOTs and move their data to the dense slots.
     // Redo finalization: only process ROOTS
     for k in 1..=wk_max {
-        if work[k - 1] == k as i32 { // It's a root
+        if work[k - 1] == k as i32 {
+            // It's a root
             let src = (k - 1) * 7;
             if work2[src + 0] > 0 {
                 let dense_idx = label_map[k - 1];
@@ -403,25 +466,42 @@ mod tests {
             100,
             ImageProcMode::FrameImage,
             &mut info,
-            false
-        ).unwrap();
+            false,
+        )
+        .unwrap();
 
         assert_eq!(info.label_num, 2);
-        
+
         let mut found_s1 = false;
         let mut found_s2 = false;
-        
+
         for i in 0..info.label_num as usize {
             if info.area[i] == 25 {
-                if info.clip[i][0] == 2 && info.clip[i][1] == 6 && info.clip[i][2] == 2 && info.clip[i][3] == 6 {
+                if info.clip[i][0] == 2
+                    && info.clip[i][1] == 6
+                    && info.clip[i][2] == 2
+                    && info.clip[i][3] == 6
+                {
                     found_s1 = true;
-                } else if info.clip[i][0] == 12 && info.clip[i][1] == 16 && info.clip[i][2] == 12 && info.clip[i][3] == 16 {
+                } else if info.clip[i][0] == 12
+                    && info.clip[i][1] == 16
+                    && info.clip[i][2] == 12
+                    && info.clip[i][3] == 16
+                {
                     found_s2 = true;
                 }
             }
         }
-        
-        assert!(found_s1, "Square 1 (2,2)-(6,6) not correctly found. Area={:?}, Clip={:?}", info.area, info.clip);
-        assert!(found_s2, "Square 2 (12,12)-(16,16) not correctly found. Area={:?}, Clip={:?}", info.area, info.clip);
+
+        assert!(
+            found_s1,
+            "Square 1 (2,2)-(6,6) not correctly found. Area={:?}, Clip={:?}",
+            info.area, info.clip
+        );
+        assert!(
+            found_s2,
+            "Square 2 (12,12)-(16,16) not correctly found. Area={:?}, Clip={:?}",
+            info.area, info.clip
+        );
     }
 }

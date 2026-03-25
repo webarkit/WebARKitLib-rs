@@ -39,10 +39,8 @@
 
 use crate::types::*;
 use std::fs::File;
-use std::io::{BufWriter, Write, Result as IoResult, Error, ErrorKind};
+use std::io::{BufWriter, Error, ErrorKind, Result as IoResult, Write};
 use std::path::Path;
-
-
 
 pub const AR_PATT_NUM_MAX: i32 = 50;
 pub const AR_PATT_SIZE1: i32 = 16;
@@ -78,9 +76,12 @@ impl ARPattHandle {
 
 /// Loads a pattern into the provided ARPattHandle from a text-based buffer.
 /// Returns the index of the loaded pattern.
-pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) -> Result<i32, &'static str> {
+pub fn ar_patt_load_from_buffer(
+    patt_handle: &mut ARPattHandle,
+    buffer: &str,
+) -> Result<i32, &'static str> {
     let mut tokens = buffer.split_whitespace();
-    
+
     let mut patno = -1;
     for i in 0..patt_handle.patt_num_max as usize {
         if patt_handle.pattf[i] == 0 {
@@ -88,7 +89,7 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
             break;
         }
     }
-    
+
     if patno == -1 {
         return Err("Maximum pattern limit reached");
     }
@@ -99,9 +100,9 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
     for h in 0..4 {
         let mut l = 0;
         let mut i_out = 0;
-        
+
         let mut read_tokens = Vec::with_capacity(size * size * 3);
-        
+
         for _ in 0..(size * size * 3) {
             if let Some(t) = tokens.next() {
                 if let Ok(val) = t.parse::<i32>() {
@@ -113,22 +114,22 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
                 return Err("Pattern data read error (unexpected EOF)");
             }
         }
-        
+
         for i3 in 0..3 {
             for i2 in 0..size {
                 for i1 in 0..size {
                     let mut j = read_tokens[i_out];
                     i_out += 1;
-                    
+
                     j = 255 - j;
                     patt_handle.patt[p_idx * 4 + h][(i2 * size + i1) * 3 + i3] = j as i16;
-                    
+
                     if i3 == 0 {
                         patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] = j as i16;
                     } else {
                         patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] += j as i16;
                     }
-                    
+
                     if i3 == 2 {
                         patt_handle.patt_bw[p_idx * 4 + h][i2 * size + i1] /= 3;
                     }
@@ -136,7 +137,7 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
                 }
             }
         }
-        
+
         l /= (size * size * 3) as i32;
 
         let mut m_col = 0i64;
@@ -146,7 +147,7 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
             let val = patt_handle.patt[p_idx * 4 + h][i] as i32;
             m_col += (val * val) as i64;
         }
-        
+
         patt_handle.pattpow[p_idx * 4 + h] = (m_col as ARdouble).sqrt();
         if patt_handle.pattpow[p_idx * 4 + h] == 0.0 {
             patt_handle.pattpow[p_idx * 4 + h] = 0.0000001;
@@ -158,7 +159,7 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
             let val = patt_handle.patt_bw[p_idx * 4 + h][i] as i32;
             m_bw += (val * val) as i64;
         }
-        
+
         patt_handle.pattpow_bw[p_idx * 4 + h] = (m_bw as ARdouble).sqrt();
         if patt_handle.pattpow_bw[p_idx * 4 + h] == 0.0 {
             patt_handle.pattpow_bw[p_idx * 4 + h] = 0.0000001;
@@ -174,10 +175,10 @@ pub fn ar_patt_load_from_buffer(patt_handle: &mut ARPattHandle, buffer: &str) ->
 /// Loads a pattern from a specified file path.
 pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i32, String> {
     use std::fs;
-    
+
     let buffer = fs::read_to_string(filename)
         .map_err(|e| format!("Error reading pattern file '{}': {}", filename, e))?;
-        
+
     ar_patt_load_from_buffer(patt_handle, &buffer).map_err(|e| e.to_string())
 }
 
@@ -233,7 +234,8 @@ pub fn ar_patt_save(
             &vertex,
             patt_ratio,
             &mut ext_pat[j],
-        ).map_err(|err_msg| Error::new(ErrorKind::InvalidData, err_msg))?;
+        )
+        .map_err(|err_msg| Error::new(ErrorKind::InvalidData, err_msg))?;
     }
 
     // Open the file for writing
@@ -361,22 +363,24 @@ pub fn pattern_match(
         let mut res1 = -1;
         let mut res2 = -1;
         let mut max = 0.0;
-        
+
         let mut k = -1isize;
         for _ in 0..patt_handle.patt_num {
             k += 1;
             while (k as usize) < patt_handle.pattf.len() && patt_handle.pattf[k as usize] == 0 {
                 k += 1;
             }
-            if k as usize >= patt_handle.pattf.len() { break; }
+            if k as usize >= patt_handle.pattf.len() {
+                break;
+            }
             if patt_handle.pattf[k as usize] == 2 {
                 continue;
             }
-            
+
             for j in 0..4 {
                 let pattern_ref = &patt_handle.patt[k as usize * 4 + j];
                 let sum_cc = dot_product(&input, pattern_ref);
-                
+
                 let sum2 = (sum_cc as ARdouble) / patt_handle.pattpow[k as usize * 4 + j] / datapow;
                 if sum2 > max {
                     max = sum2;
@@ -395,7 +399,7 @@ pub fn pattern_match(
         if data.len() < size_sqd {
             return Err("Data array too small");
         }
-        
+
         let mut input = vec![0i16; size_sqd];
 
         let mut ave = 0i32;
@@ -423,23 +427,26 @@ pub fn pattern_match(
         let mut res1 = -1;
         let mut res2 = -1;
         let mut max = 0.0;
-        
+
         let mut k = -1isize;
         for _ in 0..patt_handle.patt_num {
             k += 1;
             while (k as usize) < patt_handle.pattf.len() && patt_handle.pattf[k as usize] == 0 {
                 k += 1;
             }
-            if k as usize >= patt_handle.pattf.len() { break; }
+            if k as usize >= patt_handle.pattf.len() {
+                break;
+            }
             if patt_handle.pattf[k as usize] == 2 {
                 continue;
             }
-            
+
             for j in 0..4 {
                 let pattern_ref = &patt_handle.patt_bw[k as usize * 4 + j];
                 let sum_cc = dot_product(&input, pattern_ref);
-                
-                let sum2 = (sum_cc as ARdouble) / patt_handle.pattpow_bw[k as usize * 4 + j] / datapow;
+
+                let sum2 =
+                    (sum_cc as ARdouble) / patt_handle.pattpow_bw[k as usize * 4 + j] / datapow;
                 if sum2 > max {
                     max = sum2;
                     res1 = j as i32;
@@ -457,8 +464,12 @@ pub fn pattern_match(
     }
 }
 
-pub fn get_cpara(world: &[[ARdouble; 2]; 4], vertex: &[[ARdouble; 2]; 4], para: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
-    use crate::math::{ARMat};
+pub fn get_cpara(
+    world: &[[ARdouble; 2]; 4],
+    vertex: &[[ARdouble; 2]; 4],
+    para: &mut [[ARdouble; 3]; 3],
+) -> Result<(), &'static str> {
+    use crate::math::ARMat;
     let mut a = ARMat::new(8, 8);
     let mut b = ARMat::new(8, 1);
 
@@ -471,7 +482,7 @@ pub fn get_cpara(world: &[[ARdouble; 2]; 4], vertex: &[[ARdouble; 2]; 4], para: 
         a.m[i * 16 + 5] = 0.0;
         a.m[i * 16 + 6] = -world[i][0] * vertex[i][0];
         a.m[i * 16 + 7] = -world[i][1] * vertex[i][0];
-        
+
         a.m[i * 16 + 8] = 0.0;
         a.m[i * 16 + 9] = 0.0;
         a.m[i * 16 + 10] = 0.0;
@@ -556,9 +567,11 @@ pub fn ar_patt_get_image(
     get_cpara(&world, &local, &mut para)?;
 
     // Calculate the square of the lengths of the polygon sides
-    let mut lx1 = ((local[0][0] - local[1][0]).powi(2) + (local[0][1] - local[1][1]).powi(2)) as usize;
+    let mut lx1 =
+        ((local[0][0] - local[1][0]).powi(2) + (local[0][1] - local[1][1]).powi(2)) as usize;
     let lx2 = ((local[2][0] - local[3][0]).powi(2) + (local[2][1] - local[3][1]).powi(2)) as usize;
-    let mut ly1 = ((local[1][0] - local[2][0]).powi(2) + (local[1][1] - local[2][1]).powi(2)) as usize;
+    let mut ly1 =
+        ((local[1][0] - local[2][0]).powi(2) + (local[1][1] - local[2][1]).powi(2)) as usize;
     let ly2 = ((local[3][0] - local[0][0]).powi(2) + (local[3][1] - local[0][1]).powi(2)) as usize;
 
     if lx2 > lx1 {
@@ -612,7 +625,8 @@ pub fn ar_patt_get_image(
     for j in 0..ydiv2 {
         let yw = (100.0 + patt_ratio1) + patt_ratio2 * (j as ARdouble + 0.5) / ydiv2 as ARdouble;
         for i in 0..xdiv2 {
-            let xw = (100.0 + patt_ratio1) + patt_ratio2 * (i as ARdouble + 0.5) / xdiv2 as ARdouble;
+            let xw =
+                (100.0 + patt_ratio1) + patt_ratio2 * (i as ARdouble + 0.5) / xdiv2 as ARdouble;
             let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
 
             if d == 0.0 {
@@ -650,7 +664,10 @@ pub fn ar_patt_get_image(
                             ext_patt2[dest_idx + 1] += image[src_idx + 1] as u32;
                             ext_patt2[dest_idx + 2] += image[src_idx] as u32;
                         }
-                        ARPixelFormat::MONO | ARPixelFormat::FourTwoZeroV | ARPixelFormat::FourTwoZeroF | ARPixelFormat::NV21 => {
+                        ARPixelFormat::MONO
+                        | ARPixelFormat::FourTwoZeroV
+                        | ARPixelFormat::FourTwoZeroF
+                        | ARPixelFormat::NV21 => {
                             let src_idx = yc * xsize + xc;
                             let val = image[src_idx] as u32;
                             ext_patt2[dest_idx] += val;
@@ -664,15 +681,24 @@ pub fn ar_patt_get_image(
                     match pixel_format {
                         ARPixelFormat::RGB | ARPixelFormat::BGR => {
                             let src_idx = (yc * xsize + xc) * 3;
-                            let val = (image[src_idx] as u32 + image[src_idx + 1] as u32 + image[src_idx + 2] as u32) / 3;
+                            let val = (image[src_idx] as u32
+                                + image[src_idx + 1] as u32
+                                + image[src_idx + 2] as u32)
+                                / 3;
                             ext_patt2[idx_patt] += val;
                         }
                         ARPixelFormat::RGBA | ARPixelFormat::BGRA => {
                             let src_idx = (yc * xsize + xc) * 4;
-                            let val = (image[src_idx] as u32 + image[src_idx + 1] as u32 + image[src_idx + 2] as u32) / 3;
+                            let val = (image[src_idx] as u32
+                                + image[src_idx + 1] as u32
+                                + image[src_idx + 2] as u32)
+                                / 3;
                             ext_patt2[idx_patt] += val;
                         }
-                        ARPixelFormat::MONO | ARPixelFormat::FourTwoZeroV | ARPixelFormat::FourTwoZeroF | ARPixelFormat::NV21 => {
+                        ARPixelFormat::MONO
+                        | ARPixelFormat::FourTwoZeroV
+                        | ARPixelFormat::FourTwoZeroF
+                        | ARPixelFormat::NV21 => {
                             let src_idx = yc * xsize + xc;
                             ext_patt2[idx_patt] += image[src_idx] as u32;
                         }
@@ -745,9 +771,11 @@ pub fn ar_patt_get_image2(
     get_cpara(&world, &local, &mut para)?;
 
     // The square roots of lx1, lx2, ly1, and ly2 are the lengths of the sides of the polygon.
-    let mut lx1 = ((local[0][0] - local[1][0]).powi(2) + (local[0][1] - local[1][1]).powi(2)) as usize;
+    let mut lx1 =
+        ((local[0][0] - local[1][0]).powi(2) + (local[0][1] - local[1][1]).powi(2)) as usize;
     let lx2 = ((local[2][0] - local[3][0]).powi(2) + (local[2][1] - local[3][1]).powi(2)) as usize;
-    let mut ly1 = ((local[1][0] - local[2][0]).powi(2) + (local[1][1] - local[2][1]).powi(2)) as usize;
+    let mut ly1 =
+        ((local[1][0] - local[2][0]).powi(2) + (local[1][1] - local[2][1]).powi(2)) as usize;
     let ly2 = ((local[3][0] - local[0][0]).powi(2) + (local[3][1] - local[0][1]).powi(2)) as usize;
 
     // Take the longest two adjacent sides, and calculate the square of the length in pattern space.
@@ -801,7 +829,8 @@ pub fn ar_patt_get_image2(
     for j in 0..ydiv2 {
         let yw = (100.0 + patt_ratio1) + patt_ratio2 * (j as ARdouble + 0.5) / ydiv2 as ARdouble;
         for i in 0..xdiv2 {
-            let xw = (100.0 + patt_ratio1) + patt_ratio2 * (i as ARdouble + 0.5) / xdiv2 as ARdouble;
+            let xw =
+                (100.0 + patt_ratio1) + patt_ratio2 * (i as ARdouble + 0.5) / xdiv2 as ARdouble;
             let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
 
             if d == 0.0 {
@@ -820,7 +849,10 @@ pub fn ar_patt_get_image2(
 
             // Calculate final pixel coordinates based on field/frame processing mode.
             let (xc, yc) = if image_proc_mode == AR_IMAGE_PROC_FIELD_IMAGE {
-                ((((xc2 + 1.0) as i32) / 2) * 2, (((yc2 + 1.0) as i32) / 2) * 2)
+                (
+                    (((xc2 + 1.0) as i32) / 2) * 2,
+                    (((yc2 + 1.0) as i32) / 2) * 2,
+                )
             } else {
                 ((xc2 + 0.5) as i32, (yc2 + 0.5) as i32)
             };
@@ -846,7 +878,10 @@ pub fn ar_patt_get_image2(
                             ext_patt2[dest_idx + 1] += image[src_idx + 1] as u32;
                             ext_patt2[dest_idx + 2] += image[src_idx] as u32;
                         }
-                        ARPixelFormat::MONO | ARPixelFormat::FourTwoZeroV | ARPixelFormat::FourTwoZeroF | ARPixelFormat::NV21 => {
+                        ARPixelFormat::MONO
+                        | ARPixelFormat::FourTwoZeroV
+                        | ARPixelFormat::FourTwoZeroF
+                        | ARPixelFormat::NV21 => {
                             let src_idx = yc * xsize + xc;
                             let val = image[src_idx] as u32;
                             ext_patt2[dest_idx] += val;
@@ -860,15 +895,24 @@ pub fn ar_patt_get_image2(
                     match pixel_format {
                         ARPixelFormat::RGB | ARPixelFormat::BGR => {
                             let src_idx = (yc * xsize + xc) * 3;
-                            let val = (image[src_idx] as u32 + image[src_idx + 1] as u32 + image[src_idx + 2] as u32) / 3;
+                            let val = (image[src_idx] as u32
+                                + image[src_idx + 1] as u32
+                                + image[src_idx + 2] as u32)
+                                / 3;
                             ext_patt2[idx_patt] += val;
                         }
                         ARPixelFormat::RGBA | ARPixelFormat::BGRA => {
                             let src_idx = (yc * xsize + xc) * 4;
-                            let val = (image[src_idx] as u32 + image[src_idx + 1] as u32 + image[src_idx + 2] as u32) / 3;
+                            let val = (image[src_idx] as u32
+                                + image[src_idx + 1] as u32
+                                + image[src_idx + 2] as u32)
+                                / 3;
                             ext_patt2[idx_patt] += val;
                         }
-                        ARPixelFormat::MONO | ARPixelFormat::FourTwoZeroV | ARPixelFormat::FourTwoZeroF | ARPixelFormat::NV21 => {
+                        ARPixelFormat::MONO
+                        | ARPixelFormat::FourTwoZeroV
+                        | ARPixelFormat::FourTwoZeroF
+                        | ARPixelFormat::NV21 => {
                             let src_idx = yc * xsize + xc;
                             ext_patt2[idx_patt] += image[src_idx] as u32;
                         }
@@ -898,7 +942,15 @@ pub fn ar_patt_get_id(
     dir: &mut i32,
     cf: &mut f64,
 ) -> Result<(), &'static str> {
-    pattern_match(patt_handle, patt_detect_mode, data, patt_size, code, dir, cf)
+    pattern_match(
+        patt_handle,
+        patt_detect_mode,
+        data,
+        patt_size,
+        code,
+        dir,
+        cf,
+    )
 }
 
 #[cfg(test)]
@@ -908,17 +960,17 @@ mod tests {
     #[test]
     fn test_pattern_load_and_match() {
         let mut handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
-        
+
         let mut mock_patt = String::new();
         // 4 orientations * size * size * 3 colors
         for _ in 0..(4 * AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) {
             mock_patt.push_str("128 ");
         }
-        
+
         let patno = ar_patt_load_from_buffer(&mut handle, &mock_patt).unwrap();
         assert_eq!(patno, 0);
         assert_eq!(handle.patt_num, 1);
-        
+
         // Mock extracted pattern with high contrast
         let mut mock_data = vec![0; (AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) as usize];
         for i in 0..mock_data.len() {
@@ -928,18 +980,26 @@ mod tests {
                 mock_data[i] = 240;
             }
         }
-        
+
         let mut code = 0;
         let mut dir = 0;
         let mut cf = 0.0;
-        let result = pattern_match(&handle, AR_TEMPLATE_MATCHING_COLOR, &mock_data, AR_PATT_SIZE1, &mut code, &mut dir, &mut cf);
+        let result = pattern_match(
+            &handle,
+            AR_TEMPLATE_MATCHING_COLOR,
+            &mock_data,
+            AR_PATT_SIZE1,
+            &mut code,
+            &mut dir,
+            &mut cf,
+        );
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_ar_patt_save_and_load() {
-        use std::fs;
         use image::ImageReader;
+        use std::fs;
         let filename = "test_pattern_save.patt";
         let patt_size_i32: i32 = 16;
         let patt_size: usize = 16;
@@ -991,17 +1051,25 @@ mod tests {
         );
 
         assert!(res.is_ok(), "ar_patt_save failed: {:?}", res.err());
-        assert!(fs::metadata(filename).is_ok(), "Pattern file was not created");
+        assert!(
+            fs::metadata(filename).is_ok(),
+            "Pattern file was not created"
+        );
 
         // Test loading it back using the buffer version since load_from_file is not available
         let content = fs::read_to_string(filename).expect("Failed to read saved pattern file");
         let mut handle = ARPattHandle::new(patt_size_i32, 1);
         let load_res = ar_patt_load_from_buffer(&mut handle, &content);
 
-        assert!(load_res.is_ok(), "ar_patt_load_from_buffer failed: {:?}", load_res.err());
+        assert!(
+            load_res.is_ok(),
+            "ar_patt_load_from_buffer failed: {:?}",
+            load_res.err()
+        );
 
         // Compare with crates/core/examples/Data/patt.hiro (left commented for now)
-        let _reference_content = fs::read_to_string("../core/examples/Data/patt.hiro").expect("Failed to read reference pattern file");
+        let _reference_content = fs::read_to_string("../core/examples/Data/patt.hiro")
+            .expect("Failed to read reference pattern file");
         // assert_eq!(content, _reference_content, "Saved pattern does not match the reference pattern");
 
         // Cleanup
@@ -1036,29 +1104,33 @@ pub fn dot_product_scalar(a: &[i16], b: &[i16]) -> i64 {
     sum
 }
 
-#[cfg(all(feature = "simd-pattern", target_arch = "wasm32", target_feature = "simd128"))]
+#[cfg(all(
+    feature = "simd-pattern",
+    target_arch = "wasm32",
+    target_feature = "simd128"
+))]
 #[target_feature(enable = "simd128")]
 unsafe fn dot_product_simd_wasm(a: &[i16], b: &[i16]) -> i64 {
     use std::arch::wasm32::*;
-    
+
     let mut sum_v = i32x4_splat(0);
     let chunks_len = a.len() / 8;
-    
+
     let mut a_ptr = a.as_ptr();
     let mut b_ptr = b.as_ptr();
-    
+
     for _ in 0..chunks_len {
         let va = v128_load(a_ptr as *const v128);
         let vb = v128_load(b_ptr as *const v128);
-        
+
         // i32x4_dot_i16x8 computes (a0*b0 + a1*b1), (a2*b2 + a3*b3), ...
         let dot = i32x4_dot_i16x8(va, vb);
         sum_v = i32x4_add(sum_v, dot);
-        
+
         a_ptr = a_ptr.add(8);
         b_ptr = b_ptr.add(8);
     }
-    
+
     // Sum the 4 horizontal parts into i64x2
     let low = i64x2_extend_low_i32x4(sum_v);
     let high = i64x2_extend_high_i32x4(sum_v);
@@ -1067,12 +1139,12 @@ unsafe fn dot_product_simd_wasm(a: &[i16], b: &[i16]) -> i64 {
     let mut res = [0i64; 2];
     v128_store(res.as_mut_ptr() as *mut v128, sum64);
     let mut total = res[0] + res[1];
-    
+
     let rem_start = chunks_len * 8;
     for i in rem_start..a.len() {
         total += (a[i] as i32 * b[i] as i32) as i64;
     }
-    
+
     total
 }
 
@@ -1083,37 +1155,41 @@ unsafe fn dot_product_simd_wasm(a: &[i16], b: &[i16]) -> i64 {
 /// # Safety
 /// This function is unsafe because it uses SIMD intrinsics and raw pointer arithmetic.
 /// The caller must ensure that the target CPU supports SSE4.1.
-#[cfg(all(feature = "simd-pattern", target_arch = "x86_64", target_feature = "sse4.1"))]
+#[cfg(all(
+    feature = "simd-pattern",
+    target_arch = "x86_64",
+    target_feature = "sse4.1"
+))]
 #[target_feature(enable = "sse4.1")]
 pub unsafe fn dot_product_simd_x86(a: &[i16], b: &[i16]) -> i64 {
     use std::arch::x86_64::*;
-    
+
     let mut sum_v = _mm_setzero_si128(); // i32x4
     let chunks_len = a.len() / 8;
-    
+
     let mut a_ptr = a.as_ptr();
     let mut b_ptr = b.as_ptr();
-    
+
     for _ in 0..chunks_len {
         let va = _mm_loadu_si128(a_ptr as *const __m128i);
         let vb = _mm_loadu_si128(b_ptr as *const __m128i);
-        
+
         // Multiply and add adjacent pairs.
         let m = _mm_madd_epi16(va, vb);
         sum_v = _mm_add_epi32(sum_v, m);
-        
+
         a_ptr = a_ptr.add(8);
         b_ptr = b_ptr.add(8);
     }
-    
+
     let mut res = [0i32; 4];
     _mm_storeu_si128(res.as_mut_ptr() as *mut __m128i, sum_v);
     let mut total = (res[0] as i64) + (res[1] as i64) + (res[2] as i64) + (res[3] as i64);
-    
+
     let rem_start = chunks_len * 8;
     for i in rem_start..a.len() {
         total += (a[i] as i32 * b[i] as i32) as i64;
     }
-    
+
     total
 }

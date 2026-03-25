@@ -2,9 +2,9 @@ use crate::types::ARMatrixCodeType;
 
 pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
     const PARITY65_DECODER_TABLE: [i8; 64] = [
-        0, -1, -1, 3, -1, 5, 6, -1, -1, 9, 10, -1, 12, -1, -1, 15, -1, 17, 18, -1, 20, -1, -1, 23, 24,
-        -1, -1, 27, -1, 29, 30, -1, -1, 1, 2, -1, 4, -1, -1, 7, 8, -1, -1, 11, -1, 13, 14, -1, 16, -1,
-        -1, 19, -1, 21, 22, -1, -1, 25, 26, -1, 28, -1, -1, 31,
+        0, -1, -1, 3, -1, 5, 6, -1, -1, 9, 10, -1, 12, -1, -1, 15, -1, 17, 18, -1, 20, -1, -1, 23,
+        24, -1, -1, 27, -1, 29, 30, -1, -1, 1, 2, -1, 4, -1, -1, 7, 8, -1, -1, 11, -1, 13, 14, -1,
+        16, -1, -1, 19, -1, 21, 22, -1, -1, 25, 26, -1, 28, -1, -1, 31,
     ];
     if code_raw >= 64 {
         return Err("EDC fail");
@@ -19,16 +19,16 @@ pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
 
 pub fn decode_hamming63(code_raw: u64) -> Result<(u64, i32), &'static str> {
     const HAMMING63_DECODER_TABLE: [i8; 64] = [
-        0, 0, 0, 1, 0, 1, 1, 1, 0, 2, 4, -1, -1, 5, 3, 1, 0, 2, -1, 6, 7, -1, 3, 1, 2, 2, 3, 2, 3, 2,
-        3, 3, 0, -1, 4, 6, 7, 5, -1, 1, 4, 5, 4, 4, 5, 5, 4, 5, 7, 6, 6, 6, 7, 7, 7, 6, -1, 2, 4, 6, 7,
-        5, 3, -1,
+        0, 0, 0, 1, 0, 1, 1, 1, 0, 2, 4, -1, -1, 5, 3, 1, 0, 2, -1, 6, 7, -1, 3, 1, 2, 2, 3, 2, 3,
+        2, 3, 3, 0, -1, 4, 6, 7, 5, -1, 1, 4, 5, 4, 4, 5, 5, 4, 5, 7, 6, 6, 6, 7, 7, 7, 6, -1, 2,
+        4, 6, 7, 5, 3, -1,
     ];
     const ERROR_CORRECTED: [bool; 64] = [
-        false, true, true, true, true, true, true, false, true, true, true, false, false, true, true,
-        true, true, true, false, true, true, false, true, true, true, false, true, true, true, true,
-        false, true, true, false, true, true, true, true, false, true, true, true, false, true, true,
-        false, true, true, true, true, true, false, false, true, true, true, false, true, true, true,
-        true, true, true, false,
+        false, true, true, true, true, true, true, false, true, true, true, false, false, true,
+        true, true, true, true, false, true, true, false, true, true, true, false, true, true,
+        true, true, false, true, true, false, true, true, true, true, false, true, true, true,
+        false, true, true, false, true, true, true, true, true, false, false, true, true, true,
+        false, true, true, true, true, true, true, false,
     ];
     if code_raw >= 64 {
         return Err("EDC fail");
@@ -64,8 +64,8 @@ pub fn decode_bch(
         25, 23, 11, 22, 9, 18,
     ];
     const BCH_31_INDEX_OF: [i32; 32] = [
-        -1, 0, 1, 18, 2, 5, 19, 11, 3, 29, 6, 27, 20, 8, 12, 23, 4, 10, 30, 17, 7, 22, 28, 26, 21, 25,
-        9, 16, 13, 14, 24, 15,
+        -1, 0, 1, 18, 2, 5, 19, 11, 3, 29, 6, 27, 20, 8, 12, 23, 4, 10, 30, 17, 7, 22, 28, 26, 21,
+        25, 9, 16, 13, 14, 24, 15,
     ];
 
     let mut recd = [0u8; 127];
@@ -185,7 +185,8 @@ pub fn decode_bch(
                 }
                 for i in 0..=l_arr[q] {
                     if elp[q][i] != -1 {
-                        elp[u + 1][i + u - q] = alpha_to[((d[u] + (n as i32) - d[q] + elp[q][i]) % (n as i32)) as usize];
+                        elp[u + 1][i + u - q] = alpha_to
+                            [((d[u] + (n as i32) - d[q] + elp[q][i]) % (n as i32)) as usize];
                     }
                 }
                 for i in 0..=l_arr[u] {
@@ -205,7 +206,8 @@ pub fn decode_bch(
                 }
                 for i in 1..=l_arr[u + 1] {
                     if s[u + 1 - i] != -1 && elp[u + 1][i] != 0 {
-                        d[u + 1] ^= alpha_to[((s[u + 1 - i] + index_of[elp[u + 1][i] as usize]) % (n as i32)) as usize];
+                        d[u + 1] ^= alpha_to[((s[u + 1 - i] + index_of[elp[u + 1][i] as usize])
+                            % (n as i32)) as usize];
                     }
                 }
                 if d[u + 1] >= 0 {
@@ -265,6 +267,10 @@ pub fn decode_bch(
         out_bit <<= 1;
     }
 
-    let corrected = if syn_error { l_arr[s.len() - 1] as i32 } else { 0 };
+    let corrected = if syn_error {
+        l_arr[s.len() - 1] as i32
+    } else {
+        0
+    };
     Ok((out_p, corrected))
 }

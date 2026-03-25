@@ -23,8 +23,8 @@
  *
  */
 
-use crate::types::ARdouble;
 use crate::math::{ar_util_mat2_quat_pos, ar_util_quat_pos2_mat, ar_util_quat_slerp};
+use crate::types::ARdouble;
 
 /// Smooths a transformation matrix over time using a simple interpolation filter.
 ///
@@ -65,7 +65,7 @@ pub fn ar_filter_trans_mat(
         let rc = 1.0 / (2.0 * std::f64::consts::PI * cutoff_freq);
         alpha = dt / (rc + dt);
     }
-    
+
     if alpha > 1.0 {
         alpha = 1.0;
     }
@@ -102,7 +102,7 @@ mod tests {
         ];
         let m_prev = m;
         let filtered = ar_filter_trans_mat(&m, &m_prev, 30.0, 10.0);
-        
+
         for i in 0..3 {
             for j in 0..4 {
                 assert!((filtered[i][j] - m[i][j]).abs() < 1e-10);
@@ -122,16 +122,16 @@ mod tests {
             [0.0, 1.0, 0.0, 100.0],
             [0.0, 0.0, 1.0, 100.0],
         ];
-        
+
         // Alpha will be 0.5 if dt = rc
         // rc = 1 / (2 * PI * cutoff)
         // dt = 1 / sample_rate
         // dt = rc => sample_rate = 2 * PI * cutoff
         let cutoff = 1.0;
         let sample_rate = 2.0 * std::f64::consts::PI * cutoff;
-        
+
         let filtered = ar_filter_trans_mat(&m1, &m0, sample_rate, cutoff);
-        
+
         // Position should be exactly in the middle (50.0)
         assert!((filtered[0][3] - 50.0).abs() < 1e-10);
         assert!((filtered[1][3] - 50.0).abs() < 1e-10);

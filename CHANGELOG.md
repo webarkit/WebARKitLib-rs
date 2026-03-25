@@ -1,6 +1,22 @@
-# Changelog
+# Changelog - webarkit/webarkitlib-rs
 
 All notable changes to this project will be documented in this file.
+
+## [0.1.6] - 2026-03-25
+
+### 🐛 Bug Fixes
+
+- Correct get_cpara calling
+
+### 🚀 Features
+
+- Introduce transformation matrix smoothing filter pub fn ar_filter_trans_mat and quaternion/matrix utility functions.
+- Improved ar_patt_save pattern extraction and saving utilities with image-based API
+- Add automatic marker region detection and pattern extraction preview to generate_patt.rs
+- Enhance pattern generation by loading camera parameters from file with fallback to identity mapping
+- Add flexible pattern extraction supporting multiple pixel formats and color/mono modes in ar_patt_get_image
+- Add CLI options, batch mode, and diagnostic outputs to generate_patt.rs
+- Add --verbose and --debug options for detailed diagnostic and extraction logging in generate_patt.rs
 
 ## [0.1.5] - 2026-03-12
 

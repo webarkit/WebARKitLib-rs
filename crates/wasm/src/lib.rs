@@ -45,14 +45,17 @@
 //! - `init_wasm`: Combined initializer — installs the panic hook and logs the library version.
 //! - `init_panic_hook`: Utility to get better Rust panic messages in the browser console.
 
-use wasm_bindgen::prelude::*;
-use webarkitlib_rs::types::{ARHandle, ARParam, ARPixelFormat, AR2VideoBufferT, AR3DHandle, ARPattHandle, ARParamLT, ARLabelingThreshMode, ARMatrixCodeType};
-use webarkitlib_rs::image_proc::{ARImageProcInfo, rgba_to_gray};
-use webarkitlib_rs::marker::ar_detect_marker;
-use webarkitlib_rs::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
-use webarkitlib_rs::pattern::ar_patt_load_from_buffer;
-use webarkitlib_rs::version;
 use std::io::Cursor;
+use wasm_bindgen::prelude::*;
+use webarkitlib_rs::image_proc::{rgba_to_gray, ARImageProcInfo};
+use webarkitlib_rs::marker::ar_detect_marker;
+use webarkitlib_rs::pattern::ar_patt_load_from_buffer;
+use webarkitlib_rs::pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square};
+use webarkitlib_rs::types::{
+    AR2VideoBufferT, AR3DHandle, ARHandle, ARLabelingThreshMode, ARMatrixCodeType, ARParam,
+    ARParamLT, ARPattHandle, ARPixelFormat,
+};
+use webarkitlib_rs::version;
 
 /// Returns the current version string of the library.
 #[wasm_bindgen]
@@ -94,9 +97,8 @@ impl WasmARHandle {
         let cursor = Cursor::new(param_bytes);
         let param = ARParam::load(cursor)
             .map_err(|e| JsValue::from_str(&format!("Failed to load param: {}", e)))?;
-        
-        let ar3d_handle = ar_3d_create_handle(&param)
-            .map_err(|e| JsValue::from_str(e))?;
+
+        let ar3d_handle = ar_3d_create_handle(&param).map_err(|e| JsValue::from_str(e))?;
 
         let mut handle = ARHandle::new(param.clone());
         handle.set_pixel_format(ARPixelFormat::RGBA);
@@ -104,12 +106,16 @@ impl WasmARHandle {
         // Initialize pattern handle
         let patt_handle = Box::into_raw(Box::new(ARPattHandle::new(16, 25)));
         handle.patt_handle = patt_handle;
-        
+
         // Initialize lookup table handle
         let ar_param_lt = Box::into_raw(Box::new(ARParamLT::new_basic(param.clone())));
         handle.ar_param_lt = ar_param_lt;
-        
-        Ok(WasmARHandle { handle, ar3d_handle, param })
+
+        Ok(WasmARHandle {
+            handle,
+            ar3d_handle,
+            param,
+        })
     }
 
     pub fn load_pattern(&mut self, patt_content: &str) -> Result<i32, JsValue> {
@@ -156,17 +162,17 @@ impl WasmARHandle {
     /// 5=5x5, 1285=5x5BCH22125, 1541=5x5BCH2277, 6=6x6.
     pub fn set_matrix_code_type(&mut self, code_type: i32) {
         let ct = match code_type {
-            3   => ARMatrixCodeType::Code3x3,
+            3 => ARMatrixCodeType::Code3x3,
             259 => ARMatrixCodeType::Code3x3Parity65,
             515 => ARMatrixCodeType::Code3x3Hamming63,
-            4   => ARMatrixCodeType::Code4x4,
+            4 => ARMatrixCodeType::Code4x4,
             772 => ARMatrixCodeType::Code4x4BCH1393,
             1028 => ARMatrixCodeType::Code4x4BCH1355,
-            5   => ARMatrixCodeType::Code5x5,
+            5 => ARMatrixCodeType::Code5x5,
             1285 => ARMatrixCodeType::Code5x5BCH22125,
             1541 => ARMatrixCodeType::Code5x5BCH2277,
-            6   => ARMatrixCodeType::Code6x6,
-            _   => {
+            6 => ARMatrixCodeType::Code6x6,
+            _ => {
                 web_sys::console::warn_1(&JsValue::from_str(&format!(
                     "[WebARKit] Unknown matrix code type {code_type}, falling back to Code3x3"
                 )));
@@ -176,12 +182,17 @@ impl WasmARHandle {
         self.handle.set_matrix_code_type(ct);
     }
 
-    pub fn detect_markers(&mut self, frame: &[u8], width: i32, height: i32) -> Result<JsValue, JsValue> {
+    pub fn detect_markers(
+        &mut self,
+        frame: &[u8],
+        width: i32,
+        height: i32,
+    ) -> Result<JsValue, JsValue> {
         // Sync handle dimensions with actual frame dimensions
         if self.handle.xsize != width || self.handle.ysize != height {
             self.handle.xsize = width;
             self.handle.ysize = height;
-            
+
             // Recreate lookup table for new dimensions
             if !self.handle.ar_param_lt.is_null() {
                 unsafe {
@@ -198,23 +209,25 @@ impl WasmARHandle {
         let luma = rgba_to_gray(frame);
 
         // Handle auto-thresholding if requested
-        if matches!(self.handle.ar_labeling_thresh_mode, ARLabelingThreshMode::AutoOtsu) {
+        if matches!(
+            self.handle.ar_labeling_thresh_mode,
+            ARLabelingThreshMode::AutoOtsu
+        ) {
             let mut ipi = ARImageProcInfo::new(width, height);
             if let Ok(otsu) = ipi.luma_hist_and_otsu(&luma) {
                 self.handle.ar_labeling_thresh = otsu as i32;
             }
         }
-        
+
         let video_buffer = AR2VideoBufferT {
             buff: Some(frame.to_vec()),
             buff_luma: Some(luma),
             fill_flag: true,
             ..Default::default()
         };
-        
-        ar_detect_marker(&mut self.handle, &video_buffer)
-            .map_err(|e| JsValue::from_str(e))?;
-            
+
+        ar_detect_marker(&mut self.handle, &video_buffer).map_err(|e| JsValue::from_str(e))?;
+
         let mut results = Vec::new();
         for i in 0..self.handle.marker_num as usize {
             let marker = &self.handle.marker_info[i];
@@ -237,7 +250,7 @@ impl WasmARHandle {
                 global_id: marker.global_id,
             });
         }
-        
+
         Ok(serde_wasm_bindgen::to_value(&results)
             .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?)
     }
@@ -251,15 +264,15 @@ impl WasmARHandle {
         if marker_idx >= self.handle.marker_num as usize {
             return Err(JsValue::from_str("Invalid marker index"));
         }
-        
+
         let marker_info = &self.handle.marker_info[marker_idx];
         let mut conv = [[0.0; 4]; 3];
-        
+
         let ar3d_ref = unsafe { &*self.ar3d_handle };
-        
+
         let icp_error = ar_get_trans_mat_square(ar3d_ref, marker_info, width, &mut conv)
             .map_err(|e| JsValue::from_str(e))?;
-            
+
         // Flatten 3x4 to 12 floats
         let mut flat = [0.0f32; 12];
         for r in 0..3 {
@@ -267,7 +280,7 @@ impl WasmARHandle {
                 flat[r * 4 + c] = conv[r][c] as f32;
             }
         }
-        
+
         let result = PoseResult {
             matrix: flat.to_vec(),
             icp_error: icp_error as f32,
@@ -339,4 +352,3 @@ pub struct PoseResult {
     pub matrix: Vec<f32>,
     pub icp_error: f32,
 }
-

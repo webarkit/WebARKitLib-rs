@@ -37,9 +37,9 @@
 //! Parameter loading and manipulation utilities
 //! Translated from ARToolKit C headers (param.h)
 
+use crate::types::ARParam;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read};
-use crate::types::ARParam;
 
 impl ARParam {
     /// Load ARParam from a byte stream (Endian-safe cross-platform BigEndian deserialization)
@@ -80,20 +80,23 @@ impl crate::types::ARParamLTf {
     pub fn observ2ideal(&self, ox: f32, oy: f32) -> Result<(f32, f32), &'static str> {
         let px = (ox + 0.5) as i32 + self.x_off;
         let py = (oy + 0.5) as i32 + self.y_off;
-        
+
         if px < 0 || px >= self.xsize || py < 0 || py >= self.ysize {
-            println!("param.rs observ2ideal bounds fail: ox={}, oy={}, px={}, py={}, xsize={}, ysize={}", ox, oy, px, py, self.xsize, self.ysize);
+            println!(
+                "param.rs observ2ideal bounds fail: ox={}, oy={}, px={}, py={}, xsize={}, ysize={}",
+                ox, oy, px, py, self.xsize, self.ysize
+            );
             return Err("Coordinates out of bounds in lookup table");
         }
-        
+
         let idx = ((py * self.xsize + px) * 2) as usize;
         if idx + 1 >= self.o2i.len() {
             return Err("Lookup table not properly initialized");
         }
-        
+
         let ix = self.o2i[idx];
         let iy = self.o2i[idx + 1];
-        
+
         Ok((ix, iy))
     }
 
@@ -101,19 +104,19 @@ impl crate::types::ARParamLTf {
     pub fn ideal2observ(&self, ix: f32, iy: f32) -> Result<(f32, f32), &'static str> {
         let px = (ix + 0.5) as i32 + self.x_off;
         let py = (iy + 0.5) as i32 + self.y_off;
-        
+
         if px < 0 || px >= self.xsize || py < 0 || py >= self.ysize {
             return Err("Coordinates out of bounds in lookup table");
         }
-        
+
         let idx = ((py * self.xsize + px) * 2) as usize;
         if idx + 1 >= self.i2o.len() {
             return Err("Lookup table not properly initialized");
         }
-        
+
         let ox = self.i2o[idx];
         let oy = self.i2o[idx + 1];
-        
+
         Ok((ox, oy))
     }
 }
@@ -127,7 +130,7 @@ mod tests {
     fn test_arparam_load_big_endian() {
         // Construct a dummy byte array representing BigEndian encoded param data
         // xsize (4), ysize(4), mat(3*4 * 8), dist_factor(9 * 8)
-        
+
         let mut buffer = Vec::new();
         // xsize = 640
         buffer.extend_from_slice(&640i32.to_be_bytes());
