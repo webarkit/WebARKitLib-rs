@@ -12,13 +12,12 @@
                        "url":  "https://github.com/webarkit/WebARKitLib-rs"
                    },
     "files":  [
-                  "webarkitlib_wasm_bg.wasm",
-                  "webarkitlib_wasm.js",
-                  "webarkitlib_wasm.d.ts"
+                  "dist-std/",
+                  "dist-simd/"
               ],
-    "main":  "webarkitlib_wasm.js",
+    "main":  "dist-std/webarkitlib_wasm.js",
     "homepage":  "https://github.com/webarkit/WebARKitLib-rs",
-    "types":  "webarkitlib_wasm.d.ts",
+    "types":  "dist-std/webarkitlib_wasm.d.ts",
     "sideEffects":  [
                         "./snippets/*"
                     ],
