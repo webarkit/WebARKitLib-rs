@@ -14,7 +14,7 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -39,7 +39,7 @@ jobs:
   wasm-build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -54,7 +54,7 @@ jobs:
       run: npm run build:wasm
 
     - name: Upload WASM Package
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: wasm-package
         path: crates/wasm/pkg
@@ -62,7 +62,7 @@ jobs:
   native-example:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -74,7 +74,7 @@ jobs:
   benchmarks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
@@ -101,7 +101,7 @@ jobs:
         cd ../..
         cargo bench -p webarkitlib-rs --bench marker_bench
     - name: Upload benchmark reports
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: benchmark-reports
         path: target/criterion
