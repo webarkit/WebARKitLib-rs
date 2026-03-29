@@ -29,6 +29,10 @@ export RUSTFLAGS="-C target-feature=+simd128"
 wasm-pack build --target web --out-dir pkg/dist-simd --scope webarkit -- --features simd
 unset RUSTFLAGS
 
+# Remove wasm-pack generated .gitignore files that block npm publish
+rm -f "$PKGDIR/dist-std/.gitignore"
+rm -f "$PKGDIR/dist-simd/.gitignore"
+
 # 3. Create Unified Package Infrastructure
 echo "Generating unified package.json..."
 
@@ -41,9 +45,15 @@ const path = require('path');
 const stdPkgJsonPath = path.join('$PKGDIR', 'dist-std', 'package.json');
 const pkgJson = JSON.parse(fs.readFileSync(stdPkgJsonPath, 'utf8'));
 
-// Delete files array since wasm-pack generates it based on subfolder content
-// We want the root pkg to contain everything.
-delete pkgJson.files;
+// Set explicit files array so npm includes both dist directories
+pkgJson.files = [
+    "dist-std/",
+    "dist-simd/"
+];
+
+// Update main and types to point into dist-std
+pkgJson.main = "dist-std/webarkitlib_wasm.js";
+pkgJson.types = "dist-std/webarkitlib_wasm.d.ts";
 
 // Add exports for standard and simd
 pkgJson.exports = {
