@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2026-03-29
+
+### ⚙️ Miscellaneous Tasks
+
+- Update GitHub Actions to Node.js 24-compatible versions
+
+### 🐛 Bug Fixes
+
+- Include dist-std and dist-simd folders in npm package
+
 ## [0.1.6] - 2026-03-25
 
 ### 🐛 Bug Fixes

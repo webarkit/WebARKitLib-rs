@@ -27,9 +27,9 @@ benchmarks/data/*.png
 crates/core/examples/Data/found.jpg
 crates/core/examples/Data/rust_*.png
 **/.libraries.json
- 
- # WASM Build Artifacts
- crates/wasm/pkg/
- !crates/wasm/pkg/LICENSE
- !crates/wasm/pkg/README.md
- !crates/wasm/pkg/package.json
+
+# WASM Build Artifacts
+crates/wasm/pkg/
+!crates/wasm/pkg/LICENSE
+!crates/wasm/pkg/README.md
+!crates/wasm/pkg/package.json
