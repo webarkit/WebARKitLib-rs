@@ -28,13 +28,37 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Run cargo check
-      run: cargo check --workspace
+      run: cargo check --workspace --exclude webarkitlib-kpm
 
     - name: Run cargo test
-      run: cargo test --workspace
+      run: cargo test --workspace --exclude webarkitlib-kpm
 
     - name: Run cargo test with SIMD
-      run: cargo test --workspace --features simd
+      run: cargo test --workspace --exclude webarkitlib-kpm --features simd
+
+  kpm-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install libclang
+      run: sudo apt-get update && sudo apt-get install -y libclang-dev
+
+    - name: Bootstrap WebARKitLib C++ sources
+      working-directory: benchmarks/c_benchmark
+      run: python ../bootstrap.py --bootstrap-file libraries.json
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Build kpm crate (FFI backend)
+      run: cargo build -p webarkitlib-kpm --features ffi-backend
+
+    - name: Check kpm formatting
+      run: cargo fmt -p webarkitlib-kpm -- --check
 
   wasm-build:
     runs-on: ubuntu-latest
