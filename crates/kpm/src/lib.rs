@@ -11,7 +11,7 @@ pub mod cpp_backend;
 // Re-export key types for convenience.
 pub use backend::KpmBackend;
 pub use handle::KpmHandle;
-pub use types::{Homography3x3, KpmConfig, QueryResult, RefImage};
+pub use types::{Homography3x3, QueryResult, RefImage};
 
 #[cfg(feature = "ffi-backend")]
 pub use cpp_backend::CppBackend;
