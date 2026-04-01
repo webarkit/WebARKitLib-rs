@@ -14,5 +14,10 @@ pub trait KpmBackend {
     fn add_ref_image(&mut self, image: &RefImage) -> Result<(), String>;
 
     /// Query the database with a grayscale image.
-    fn query(&mut self, gray_image: &[u8], width: i32, height: i32) -> Result<Option<QueryResult>, String>;
+    fn query(
+        &mut self,
+        gray_image: &[u8],
+        width: i32,
+        height: i32,
+    ) -> Result<Option<QueryResult>, String>;
 }
