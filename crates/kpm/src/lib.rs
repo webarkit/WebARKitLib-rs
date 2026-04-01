@@ -1,17 +1,17 @@
-pub mod kpm_ffi;
-pub mod types;
 pub mod backend;
 pub mod handle;
-pub mod ref_data_set;
+pub mod kpm_ffi;
 pub mod matching;
+pub mod ref_data_set;
+pub mod types;
 
 #[cfg(feature = "ffi-backend")]
 pub mod cpp_backend;
 
 // Re-export key types for convenience.
-pub use types::{Homography3x3, KpmConfig, QueryResult, RefImage};
 pub use backend::KpmBackend;
 pub use handle::KpmHandle;
+pub use types::{Homography3x3, KpmConfig, QueryResult, RefImage};
 
 #[cfg(feature = "ffi-backend")]
 pub use cpp_backend::CppBackend;

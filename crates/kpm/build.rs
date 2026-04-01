@@ -31,14 +31,24 @@ fn build_freak_matcher() {
 
     // FreakMatcher C++ source files
     let cpp_sources: Vec<PathBuf> = vec![
-        freak_matcher_root.join("facade").join("visual_database_facade.cpp"),
-        freak_matcher_root.join("detectors").join("DoG_scale_invariant_detector.cpp"),
-        freak_matcher_root.join("detectors").join("gaussian_scale_space_pyramid.cpp"),
+        freak_matcher_root
+            .join("facade")
+            .join("visual_database_facade.cpp"),
+        freak_matcher_root
+            .join("detectors")
+            .join("DoG_scale_invariant_detector.cpp"),
+        freak_matcher_root
+            .join("detectors")
+            .join("gaussian_scale_space_pyramid.cpp"),
         freak_matcher_root.join("detectors").join("pyramid.cpp"),
-        freak_matcher_root.join("matchers").join("hough_similarity_voting.cpp"),
+        freak_matcher_root
+            .join("matchers")
+            .join("hough_similarity_voting.cpp"),
         // Additional sources required by transitive dependencies
         freak_matcher_root.join("detectors").join("gradients.cpp"),
-        freak_matcher_root.join("detectors").join("orientation_assignment.cpp"),
+        freak_matcher_root
+            .join("detectors")
+            .join("orientation_assignment.cpp"),
         freak_matcher_root.join("matchers").join("freak.cpp"),
         freak_matcher_root.join("framework").join("image.cpp"),
         freak_matcher_root.join("framework").join("logger.cpp"),
