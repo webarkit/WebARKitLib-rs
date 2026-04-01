@@ -1,51 +1,90 @@
-use crate::backend::KpmBackend;
+use crate::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult};
 use crate::kpm_ffi;
-use crate::types::{Homography3x3, QueryResult, RefImage};
 
 /// C++ FFI backend that delegates to the FreakMatcher library.
 pub struct CppBackend {
     handle: *mut kpm_ffi::KpmOpaqueHandle,
+    last_inliers: Vec<Match>,
+    last_matched_id: i32,
+    last_query_points: Vec<FeaturePoint>,
 }
 
-impl KpmBackend for CppBackend {
-    fn new(width: i32, height: i32) -> Self {
-        let handle = unsafe { kpm_ffi::kpm_create(width, height) };
-        assert!(!handle.is_null(), "kpm_create returned null");
-        Self { handle }
+impl CppBackend {
+    pub fn new(width: usize, height: usize) -> Result<Self, KpmError> {
+        let handle = unsafe { kpm_ffi::kpm_create(width as i32, height as i32) };
+        if handle.is_null() {
+            return Err(KpmError::NullHandle);
+        }
+        Ok(Self {
+            handle,
+            last_inliers: Vec::new(),
+            last_matched_id: -1,
+            last_query_points: Vec::new(),
+        })
     }
+}
 
-    fn add_ref_image(&mut self, image: &RefImage) -> Result<(), String> {
+impl FreakMatcherBackend for CppBackend {
+    fn add_image(
+        &mut self,
+        image: &[u8],
+        width: usize,
+        height: usize,
+        image_id: usize,
+    ) -> Result<(), KpmError> {
+        let expected = width * height;
+        if image.len() < expected {
+            return Err(KpmError::InvalidInput(format!(
+                "buffer too small: got {} bytes, need {expected}",
+                image.len()
+            )));
+        }
         let rc = unsafe {
             kpm_ffi::kpm_add_ref_image(
                 self.handle,
-                image.data.as_ptr(),
-                image.width,
-                image.height,
-                image.dpi,
-                image.page_no,
-                image.image_no,
+                image.as_ptr(),
+                width as i32,
+                height as i32,
+                72.0, // default DPI
+                image_id as i32,
+                0,
             )
         };
         if rc == 0 {
             Ok(())
         } else {
-            Err("kpm_add_ref_image failed".to_string())
+            Err(KpmError::InternalError(
+                "kpm_add_ref_image failed".to_string(),
+            ))
         }
+    }
+
+    fn add_freak_features(
+        &mut self,
+        _points: &[FeaturePoint],
+        _descriptors: &[u8],
+        _points_3d: &[Point3d],
+        _width: usize,
+        _height: usize,
+        _db_id: usize,
+    ) -> Result<(), KpmError> {
+        // The C API wrapper handles feature extraction internally in
+        // kpm_add_ref_image, so this is a no-op for the FFI backend.
+        Ok(())
     }
 
     fn query(
         &mut self,
-        gray_image: &[u8],
-        width: i32,
-        height: i32,
-    ) -> Result<Option<QueryResult>, String> {
-        let expected_len = (width as usize) * (height as usize);
-        if gray_image.len() < expected_len {
-            return Err(format!(
-                "buffer too small: got {} bytes, need {}",
-                gray_image.len(),
-                expected_len
-            ));
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<QueryResult, KpmError> {
+        let expected = width * height;
+        if image.len() < expected {
+            return Err(KpmError::InvalidInput(format!(
+                "buffer too small: got {} bytes, need {expected}",
+                image.len()
+            )));
         }
 
         let mut pose_out = [0.0f32; 12];
@@ -55,9 +94,9 @@ impl KpmBackend for CppBackend {
         let rc = unsafe {
             kpm_ffi::kpm_query(
                 self.handle,
-                gray_image.as_ptr(),
-                width,
-                height,
+                image.as_ptr(),
+                width as i32,
+                height as i32,
                 pose_out.as_mut_ptr(),
                 &mut error_out,
                 &mut page_no_out,
@@ -65,16 +104,34 @@ impl KpmBackend for CppBackend {
         };
 
         if rc == 0 {
-            let mut h = [0.0f32; 9];
-            h.copy_from_slice(&pose_out[..9]);
-            Ok(Some(QueryResult {
-                page_no: page_no_out,
-                homography: Homography3x3(h),
-                error: error_out,
-            }))
+            self.last_matched_id = page_no_out;
+            Ok(QueryResult {
+                matched_id: page_no_out,
+                inlier_count: 0,
+            })
         } else {
-            Ok(None)
+            self.last_matched_id = -1;
+            Ok(QueryResult {
+                matched_id: -1,
+                inlier_count: 0,
+            })
         }
+    }
+
+    fn inliers(&self) -> &[Match] {
+        &self.last_inliers
+    }
+
+    fn matched_id(&self) -> i32 {
+        self.last_matched_id
+    }
+
+    fn query_feature_points(&self) -> &[FeaturePoint] {
+        &self.last_query_points
+    }
+
+    fn get_3d_feature_points(&self, _image_id: usize) -> &[Point3d] {
+        &[]
     }
 }
 
