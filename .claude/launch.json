@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "wasm-www-server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "crates/wasm/www"],
+      "port": 3000
+    },
+    {
+      "name": "wasm-build-watch",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "build:wasm"],
+      "port": 0
+    }
+  ]
+}
