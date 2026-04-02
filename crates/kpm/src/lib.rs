@@ -34,6 +34,44 @@
  *
  */
 
+//! # webarkitlib-kpm
+//!
+//! KPM (Key-Point Matching) / NFT (Natural Feature Tracking) layer for
+//! WebARKitLib-rs, ported from the C++ FreakMatcher library.
+//!
+//! This crate provides a Rust interface to the FREAK-descriptor-based
+//! feature matching pipeline used for planar image tracking. It supports
+//! two operation modes:
+//!
+//! - **`ffi-backend`** (default) — delegates to the compiled C++ FreakMatcher
+//!   static library through a thin `extern "C"` wrapper (`kpm_c_api.h`).
+//! - *(future)* **pure-Rust** — a native Rust re-implementation of the same
+//!   pipeline, swappable via the [`FreakMatcherBackend`] trait.
+//!
+//! ## Quick start
+//!
+//! ```rust,no_run
+//! use webarkitlib_kpm::{CppFreakMatcher, KpmHandle};
+//!
+//! // Create a C++ backend for a 640x480 camera frame.
+//! let backend = CppFreakMatcher::new(640, 480).unwrap();
+//!
+//! // Wrap it in a KpmHandle (the central coordinator).
+//! let mut handle = KpmHandle::new(640, 480, None, Box::new(backend));
+//! ```
+//!
+//! ## Crate layout
+//!
+//! | Module           | Purpose |
+//! |------------------|---------|
+//! | [`backend`]      | `FreakMatcherBackend` trait and associated error / data types |
+//! | [`handle`]       | [`KpmHandle`] struct — central coordinator for KPM operations |
+//! | [`types`]        | Ported C structs (`KpmRefDataSet`, `KpmResult`, etc.) |
+//! | [`cpp_backend`]  | [`CppFreakMatcher`] — FFI backend (feature-gated) |
+//! | [`kpm_ffi`]      | Raw bindgen bindings (feature-gated) |
+//! | [`matching`]     | [`MatchResult`](matching::MatchResult) wrapper |
+//! | [`ref_data_set`] | [`RefDataSet`](ref_data_set::RefDataSet) collection |
+
 pub mod backend;
 pub mod handle;
 pub mod kpm_ffi;
@@ -47,11 +85,8 @@ pub mod cpp_backend;
 // Re-export key types for convenience.
 pub use backend::QueryResult;
 pub use backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d};
-pub use handle::KpmHandle;
+pub use handle::{KpmHandle, KpmPoseMode, KpmProcMode};
 pub use types::{Homography3x3, RefImage};
 
 #[cfg(feature = "ffi-backend")]
 pub use cpp_backend::CppFreakMatcher;
-
-#[cfg(feature = "ffi-backend")]
-pub type DefaultKpmHandle = KpmHandle<CppFreakMatcher>;

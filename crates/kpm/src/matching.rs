@@ -34,32 +34,56 @@
  *
  */
 
+//! High-level matching result wrapper.
+//!
+//! [`MatchResult`] provides a convenient `Option`-like API around a
+//! [`QueryResult`](crate::types::QueryResult), making it easy to check
+//! whether a match was found and to extract the result.
+
 use crate::types::QueryResult;
 
-/// Result of a matching operation.
+/// Outcome of a single matching operation.
+///
+/// Wraps an `Option<QueryResult>` and exposes helper methods to inspect
+/// the match without pattern matching.
+///
+/// # Examples
+///
+/// ```rust
+/// use webarkitlib_kpm::matching::MatchResult;
+///
+/// let miss = MatchResult::not_found();
+/// assert!(!miss.is_match());
+/// assert!(miss.result().is_none());
+/// ```
 pub struct MatchResult {
     inner: Option<QueryResult>,
 }
 
 impl MatchResult {
+    /// Creates a successful match result.
     pub fn found(result: QueryResult) -> Self {
         Self {
             inner: Some(result),
         }
     }
 
+    /// Creates a "no match" result.
     pub fn not_found() -> Self {
         Self { inner: None }
     }
 
+    /// Returns `true` if a match was found.
     pub fn is_match(&self) -> bool {
         self.inner.is_some()
     }
 
+    /// Returns a reference to the inner [`QueryResult`], if any.
     pub fn result(&self) -> Option<&QueryResult> {
         self.inner.as_ref()
     }
 
+    /// Consumes `self` and returns the inner [`QueryResult`], if any.
     pub fn into_result(self) -> Option<QueryResult> {
         self.inner
     }

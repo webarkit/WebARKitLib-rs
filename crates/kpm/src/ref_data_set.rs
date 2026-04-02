@@ -34,30 +34,44 @@
  *
  */
 
+//! Reference-image collection for the KPM database.
+//!
+//! [`RefDataSet`] is a simple growable collection of [`RefImage`]
+//! entries. It is used to stage reference images before they are
+//! submitted to the backend for feature extraction.
+
 use crate::types::RefImage;
 
-/// Collection of reference images for the KPM database.
+/// A collection of reference images to be registered in the KPM database.
+///
+/// Images are added one at a time via [`add`](RefDataSet::add) and can
+/// be iterated over with [`iter`](RefDataSet::iter).
 pub struct RefDataSet {
     images: Vec<RefImage>,
 }
 
 impl RefDataSet {
+    /// Creates an empty reference data set.
     pub fn new() -> Self {
         Self { images: Vec::new() }
     }
 
+    /// Appends a reference image to the set.
     pub fn add(&mut self, image: RefImage) {
         self.images.push(image);
     }
 
+    /// Returns the number of images in the set.
     pub fn len(&self) -> usize {
         self.images.len()
     }
 
+    /// Returns `true` if the set contains no images.
     pub fn is_empty(&self) -> bool {
         self.images.is_empty()
     }
 
+    /// Returns an iterator over the reference images.
     pub fn iter(&self) -> impl Iterator<Item = &RefImage> {
         self.images.iter()
     }
