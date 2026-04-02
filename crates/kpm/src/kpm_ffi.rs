@@ -34,6 +34,18 @@
  *
  */
 
+//! Raw bindgen-generated FFI bindings for `kpm_c_api.h`.
+//!
+//! This module is only compiled when the **`ffi-backend`** feature is
+//! enabled. It re-exports all symbols produced by `bindgen` in
+//! `build.rs`, including the opaque [`KpmOpaqueHandle`] type and the
+//! four `extern "C"` functions: [`kpm_create`], [`kpm_destroy`],
+//! [`kpm_add_ref_image`], and [`kpm_query`].
+//!
+//! **Do not call these functions directly** — use
+//! [`CppFreakMatcher`](crate::CppFreakMatcher) instead, which wraps
+//! them with safe Rust types and null-pointer guards.
+
 #[cfg(feature = "ffi-backend")]
 mod bindings {
     #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]

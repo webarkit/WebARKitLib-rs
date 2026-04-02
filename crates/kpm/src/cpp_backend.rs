@@ -34,12 +34,47 @@
  *
  */
 
+//! C++ FFI backend for the KPM pipeline.
+//!
+//! [`CppFreakMatcher`] implements [`FreakMatcherBackend`] by delegating
+//! to the compiled FreakMatcher C++ static library through the thin
+//! `extern "C"` wrapper defined in `kpm_c_api.h` / `kpm_c_api.cpp`.
+//!
+//! This module is only compiled when the **`ffi-backend`** feature is
+//! enabled (the default).
+//!
+//! # Safety
+//!
+//! All FFI calls are guarded by a null-pointer check on the internal
+//! [`KpmOpaqueHandle`](crate::kpm_ffi::KpmOpaqueHandle) pointer, and
+//! every `unsafe` block carries a `// SAFETY:` comment explaining why
+//! the call is sound.
+
 use crate::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult};
 use crate::kpm_ffi;
 
-/// C++ FFI backend implementing `FreakMatcherBackend` by delegating to the
-/// compiled FreakMatcher static library through `kpm_c_api.h` bindings.
+/// C++ FFI backend implementing [`FreakMatcherBackend`].
+///
+/// Wraps an opaque `KpmOpaqueHandle` pointer allocated on the C++ side.
+/// The handle is freed automatically when the struct is dropped.
+///
+/// # Thread safety
+///
+/// The struct implements [`Send`] because the C++ handle is not shared;
+/// ownership is transferred with the Rust struct. All trait methods take
+/// `&mut self`, preventing concurrent access.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use webarkitlib_kpm::CppFreakMatcher;
+///
+/// let matcher = CppFreakMatcher::new(640, 480).expect("failed to create backend");
+/// // Use `matcher` through the `FreakMatcherBackend` trait…
+/// // Automatically freed on drop.
+/// ```
 pub struct CppFreakMatcher {
+    /// Raw pointer to the C++ `KpmOpaqueHandle`.
     ptr: *mut kpm_ffi::KpmOpaqueHandle,
 }
 
@@ -62,6 +97,16 @@ impl Drop for CppFreakMatcher {
 unsafe impl Send for CppFreakMatcher {}
 
 impl CppFreakMatcher {
+    /// Creates a new C++ FreakMatcher backend for the given frame size.
+    ///
+    /// # Arguments
+    ///
+    /// * `xsize` — expected camera frame width in pixels.
+    /// * `ysize` — expected camera frame height in pixels.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KpmError::NullHandle`] if the C++ allocation fails.
     pub fn new(xsize: i32, ysize: i32) -> Result<Self, KpmError> {
         // SAFETY: `kpm_create` allocates a new handle on the C++ side.
         // It returns null only on allocation failure.
@@ -123,6 +168,11 @@ impl FreakMatcherBackend for CppFreakMatcher {
         }
     }
 
+    /// No-op for the C++ backend.
+    ///
+    /// The C API wrapper handles feature extraction internally inside
+    /// `kpm_add_ref_image`, so pre-extracted features cannot be injected
+    /// through the FFI.
     fn add_freak_features(
         &mut self,
         _points: &[FeaturePoint],
@@ -133,9 +183,6 @@ impl FreakMatcherBackend for CppFreakMatcher {
         _db_id: usize,
     ) -> Result<(), KpmError> {
         self.check_ptr()?;
-        // The C API wrapper handles feature extraction internally inside
-        // kpm_add_ref_image, so pre-extracted features cannot be injected
-        // through the FFI. This is a no-op for the C++ backend.
         Ok(())
     }
 
@@ -186,24 +233,25 @@ impl FreakMatcherBackend for CppFreakMatcher {
         }
     }
 
+    /// Returns an empty slice — the C API does not expose inlier data.
     fn inliers(&self) -> &[Match] {
-        // The C API does not expose inlier data; return empty slice.
         &[]
     }
 
+    /// Returns `-1` — the thin C wrapper does not cache the last matched ID.
+    ///
+    /// Callers should use the [`QueryResult`] returned by [`query`](FreakMatcherBackend::query) instead.
     fn matched_id(&self) -> i32 {
-        // Without cached state the last matched ID is not available through
-        // the thin C wrapper. Callers should use the QueryResult instead.
         -1
     }
 
+    /// Returns an empty slice — the C API does not expose query feature points.
     fn query_feature_points(&self) -> &[FeaturePoint] {
-        // The C API does not expose query feature points.
         &[]
     }
 
+    /// Returns an empty slice — the C API does not expose per-image 3D feature points.
     fn get_3d_feature_points(&self, _image_id: usize) -> &[Point3d] {
-        // The C API does not expose per-image 3D feature points.
         &[]
     }
 }
