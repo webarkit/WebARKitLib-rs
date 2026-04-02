@@ -10,6 +10,7 @@ homepage.workspace = true
 
 [dependencies]
 webarkitlib-rs = { path = "../core" }
+byteorder = "1"
 
 [build-dependencies]
 cc = "1"
