@@ -15,7 +15,7 @@ pub use handle::KpmHandle;
 pub use types::{Homography3x3, RefImage};
 
 #[cfg(feature = "ffi-backend")]
-pub use cpp_backend::CppBackend;
+pub use cpp_backend::CppFreakMatcher;
 
 #[cfg(feature = "ffi-backend")]
-pub type DefaultKpmHandle = KpmHandle<CppBackend>;
+pub type DefaultKpmHandle = KpmHandle<CppFreakMatcher>;

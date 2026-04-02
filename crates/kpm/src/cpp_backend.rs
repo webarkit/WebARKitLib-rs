@@ -1,30 +1,52 @@
 use crate::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult};
 use crate::kpm_ffi;
 
-/// C++ FFI backend that delegates to the FreakMatcher library.
-pub struct CppBackend {
-    handle: *mut kpm_ffi::KpmOpaqueHandle,
-    last_inliers: Vec<Match>,
-    last_matched_id: i32,
-    last_query_points: Vec<FeaturePoint>,
+/// C++ FFI backend implementing `FreakMatcherBackend` by delegating to the
+/// compiled FreakMatcher static library through `kpm_c_api.h` bindings.
+pub struct CppFreakMatcher {
+    ptr: *mut kpm_ffi::KpmOpaqueHandle,
 }
 
-impl CppBackend {
-    pub fn new(width: usize, height: usize) -> Result<Self, KpmError> {
-        let handle = unsafe { kpm_ffi::kpm_create(width as i32, height as i32) };
-        if handle.is_null() {
-            return Err(KpmError::NullHandle);
+impl Drop for CppFreakMatcher {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            // SAFETY: `self.ptr` was allocated by `kpm_create` and has not been
+            // freed yet. After this call the pointer is invalid, so we null it.
+            unsafe {
+                kpm_ffi::kpm_destroy(self.ptr);
+            }
+            self.ptr = std::ptr::null_mut();
         }
-        Ok(Self {
-            handle,
-            last_inliers: Vec::new(),
-            last_matched_id: -1,
-            last_query_points: Vec::new(),
-        })
     }
 }
 
-impl FreakMatcherBackend for CppBackend {
+// SAFETY: KpmOpaqueHandle is not shared between threads; ownership is
+// transferred with the struct. All trait methods take `&mut self`, so no
+// concurrent access is possible.
+unsafe impl Send for CppFreakMatcher {}
+
+impl CppFreakMatcher {
+    pub fn new(xsize: i32, ysize: i32) -> Result<Self, KpmError> {
+        // SAFETY: `kpm_create` allocates a new handle on the C++ side.
+        // It returns null only on allocation failure.
+        let ptr = unsafe { kpm_ffi::kpm_create(xsize, ysize) };
+        if ptr.is_null() {
+            return Err(KpmError::NullHandle);
+        }
+        Ok(Self { ptr })
+    }
+
+    /// Returns an error if the internal pointer is null (use-after-free guard).
+    fn check_ptr(&self) -> Result<(), KpmError> {
+        if self.ptr.is_null() {
+            Err(KpmError::NullHandle)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl FreakMatcherBackend for CppFreakMatcher {
     fn add_image(
         &mut self,
         image: &[u8],
@@ -32,6 +54,8 @@ impl FreakMatcherBackend for CppBackend {
         height: usize,
         image_id: usize,
     ) -> Result<(), KpmError> {
+        self.check_ptr()?;
+
         let expected = width * height;
         if image.len() < expected {
             return Err(KpmError::InvalidInput(format!(
@@ -39,9 +63,12 @@ impl FreakMatcherBackend for CppBackend {
                 image.len()
             )));
         }
+
+        // SAFETY: `self.ptr` is valid (checked above). `image` points to at
+        // least `width * height` bytes. The C++ side copies the data it needs.
         let rc = unsafe {
             kpm_ffi::kpm_add_ref_image(
-                self.handle,
+                self.ptr,
                 image.as_ptr(),
                 width as i32,
                 height as i32,
@@ -50,12 +77,13 @@ impl FreakMatcherBackend for CppBackend {
                 0,
             )
         };
-        if rc == 0 {
-            Ok(())
-        } else {
+
+        if rc < 0 {
             Err(KpmError::InternalError(
                 "kpm_add_ref_image failed".to_string(),
             ))
+        } else {
+            Ok(())
         }
     }
 
@@ -68,8 +96,10 @@ impl FreakMatcherBackend for CppBackend {
         _height: usize,
         _db_id: usize,
     ) -> Result<(), KpmError> {
-        // The C API wrapper handles feature extraction internally in
-        // kpm_add_ref_image, so this is a no-op for the FFI backend.
+        self.check_ptr()?;
+        // The C API wrapper handles feature extraction internally inside
+        // kpm_add_ref_image, so pre-extracted features cannot be injected
+        // through the FFI. This is a no-op for the C++ backend.
         Ok(())
     }
 
@@ -79,6 +109,8 @@ impl FreakMatcherBackend for CppBackend {
         width: usize,
         height: usize,
     ) -> Result<QueryResult, KpmError> {
+        self.check_ptr()?;
+
         let expected = width * height;
         if image.len() < expected {
             return Err(KpmError::InvalidInput(format!(
@@ -91,9 +123,11 @@ impl FreakMatcherBackend for CppBackend {
         let mut error_out: f32 = 0.0;
         let mut page_no_out: i32 = -1;
 
+        // SAFETY: `self.ptr` is valid (checked above). `image` has at least
+        // `width * height` bytes. Output pointers are stack-local and valid.
         let rc = unsafe {
             kpm_ffi::kpm_query(
-                self.handle,
+                self.ptr,
                 image.as_ptr(),
                 width as i32,
                 height as i32,
@@ -103,49 +137,55 @@ impl FreakMatcherBackend for CppBackend {
             )
         };
 
-        if rc == 0 {
-            self.last_matched_id = page_no_out;
+        if rc < 0 {
             Ok(QueryResult {
-                matched_id: page_no_out,
+                matched_id: -1,
                 inlier_count: 0,
             })
         } else {
-            self.last_matched_id = -1;
             Ok(QueryResult {
-                matched_id: -1,
+                matched_id: page_no_out,
                 inlier_count: 0,
             })
         }
     }
 
     fn inliers(&self) -> &[Match] {
-        &self.last_inliers
+        // The C API does not expose inlier data; return empty slice.
+        &[]
     }
 
     fn matched_id(&self) -> i32 {
-        self.last_matched_id
+        // Without cached state the last matched ID is not available through
+        // the thin C wrapper. Callers should use the QueryResult instead.
+        -1
     }
 
     fn query_feature_points(&self) -> &[FeaturePoint] {
-        &self.last_query_points
+        // The C API does not expose query feature points.
+        &[]
     }
 
     fn get_3d_feature_points(&self, _image_id: usize) -> &[Point3d] {
+        // The C API does not expose per-image 3D feature points.
         &[]
     }
 }
 
-impl Drop for CppBackend {
-    fn drop(&mut self) {
-        if !self.handle.is_null() {
-            unsafe {
-                kpm_ffi::kpm_destroy(self.handle);
-            }
-            self.handle = std::ptr::null_mut();
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cpp_freak_matcher_new_and_drop() {
+        let matcher = CppFreakMatcher::new(640, 480);
+        assert!(matcher.is_ok());
+        // Drop runs implicitly — should not panic.
+    }
+
+    #[test]
+    fn test_cpp_freak_matcher_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<CppFreakMatcher>();
     }
 }
-
-// Safety: The C++ handle is not thread-safe, but Send is fine
-// since we only access it from one thread at a time via &mut self.
-unsafe impl Send for CppBackend {}
