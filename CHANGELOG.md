@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-04-02
+
+### Milestone 1: Kpm C++ FFI Backend and Crate Scaffolding
+
+### ⚙️ Miscellaneous Tasks
+
+- Add dedicated kpm-build job, exclude kpm from workspace checks (#30)
+- *(kpm)* Update bindgen dependency to version 0.72.1
+- *(kpm)* Add LGPL-3.0 license headers to all source files
+
+### 🎨 Styling
+
+- *(kpm)* Apply cargo fmt formatting
+
+### 🚀 Features
+
+- *(kpm)* Add crate scaffold with C++ FFI build system (#21)
+- *(kpm)* Port KPM types and structs to Rust (#31)
+- *(kpm)* Add FreakMatcherBackend trait and supporting types (#23)
+- *(kpm)* Implement CppFreakMatcher FFI backend (#24)
+- *(kpm)* Implement KpmHandle struct and improve crate documentation (#25)
+
 ## [0.1.7] - 2026-03-29
 
 ### ⚙️ Miscellaneous Tasks

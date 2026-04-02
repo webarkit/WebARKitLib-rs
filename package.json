@@ -1,6 +1,6 @@
 {
   "name": "webarkitlib-rs",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Port of WebARKitLib (ARToolKit) to Rust and WASM",
   "private": true,
   "scripts": {
