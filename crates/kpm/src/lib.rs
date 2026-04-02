@@ -86,6 +86,7 @@ pub mod cpp_backend;
 pub use backend::QueryResult;
 pub use backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d};
 pub use handle::{KpmHandle, KpmPoseMode, KpmProcMode};
+pub use ref_data_set::KpmCompMode;
 pub use types::{Homography3x3, RefImage};
 
 #[cfg(feature = "ffi-backend")]
