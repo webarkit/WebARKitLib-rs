@@ -205,7 +205,7 @@ fn gen_bw_image_quart(image: &[u8], xsize: usize, ysize: usize) -> (Vec<u8>, usi
 /// Resize a grayscale image according to the given [`KpmProcMode`].
 ///
 /// Returns `(resized_pixels, new_width, new_height)`.
-fn resize_image(
+pub(crate) fn resize_image(
     image: &[u8],
     xsize: usize,
     ysize: usize,
