@@ -36,6 +36,8 @@
 
 #include "kpm_c_api.h"
 #include <facade/visual_database_facade.h>
+#include <matchers/feature_point.h>
+#include <matchers/matcher_types.h>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -145,6 +147,97 @@ int kpm_query(KpmOpaqueHandle* handle, const unsigned char* gray_image,
     *error_out = 0.0f;
 
     return 0;
+}
+
+// ---- New accessors for kpm_matching orchestration (#36) ----
+
+int kpm_add_freak_features(KpmOpaqueHandle* handle,
+                           const float* points, const int* maxima,
+                           const unsigned char* descriptors,
+                           const float* points_3d,
+                           int num_points,
+                           int width, int height, int db_id) {
+    if (!handle || !handle->db || !points || !maxima || !descriptors ||
+        !points_3d || num_points <= 0 || width <= 0 || height <= 0) {
+        return -1;
+    }
+
+    std::vector<vision::FeaturePoint> fps(num_points);
+    std::vector<unsigned char> descs(num_points * 96);
+    std::vector<vision::Point3d<float>> pts3d(num_points);
+
+    for (int i = 0; i < num_points; i++) {
+        fps[i] = vision::FeaturePoint(
+            points[i * 4 + 0],   // x
+            points[i * 4 + 1],   // y
+            points[i * 4 + 2],   // angle
+            points[i * 4 + 3],   // scale
+            maxima[i] != 0       // maxima
+        );
+        pts3d[i].x = points_3d[i * 3 + 0];
+        pts3d[i].y = points_3d[i * 3 + 1];
+        pts3d[i].z = points_3d[i * 3 + 2];
+    }
+    std::memcpy(descs.data(), descriptors, num_points * 96);
+
+    handle->db->addFreakFeaturesAndDescriptors(
+        fps, descs, pts3d,
+        static_cast<size_t>(width), static_cast<size_t>(height), db_id);
+
+    return 0;
+}
+
+int kpm_get_inlier_count(KpmOpaqueHandle* handle) {
+    if (!handle || !handle->db) return 0;
+    return static_cast<int>(handle->db->inliers().size());
+}
+
+int kpm_get_inliers(KpmOpaqueHandle* handle, int* ins_out, int* ref_out) {
+    if (!handle || !handle->db || !ins_out || !ref_out) return -1;
+    const vision::matches_t& m = handle->db->inliers();
+    for (size_t i = 0; i < m.size(); i++) {
+        ins_out[i] = m[i].ins;
+        ref_out[i] = m[i].ref;
+    }
+    return static_cast<int>(m.size());
+}
+
+int kpm_get_query_feature_count(KpmOpaqueHandle* handle) {
+    if (!handle || !handle->db) return 0;
+    return static_cast<int>(handle->db->getQueryFeaturePoints().size());
+}
+
+int kpm_get_query_feature_points(KpmOpaqueHandle* handle,
+                                 float* x_out, float* y_out) {
+    if (!handle || !handle->db || !x_out || !y_out) return -1;
+    const auto& pts = handle->db->getQueryFeaturePoints();
+    for (size_t i = 0; i < pts.size(); i++) {
+        x_out[i] = pts[i].x;
+        y_out[i] = pts[i].y;
+    }
+    return static_cast<int>(pts.size());
+}
+
+int kpm_get_3d_feature_count(KpmOpaqueHandle* handle, int image_id) {
+    if (!handle || !handle->db) return 0;
+    return static_cast<int>(handle->db->get3DFeaturePoints(image_id).size());
+}
+
+int kpm_get_3d_feature_points(KpmOpaqueHandle* handle, int image_id,
+                              float* x_out, float* y_out, float* z_out) {
+    if (!handle || !handle->db || !x_out || !y_out || !z_out) return -1;
+    const auto& pts = handle->db->get3DFeaturePoints(image_id);
+    for (size_t i = 0; i < pts.size(); i++) {
+        x_out[i] = pts[i].x;
+        y_out[i] = pts[i].y;
+        z_out[i] = pts[i].z;
+    }
+    return static_cast<int>(pts.size());
+}
+
+int kpm_matched_id(KpmOpaqueHandle* handle) {
+    if (!handle || !handle->db) return -1;
+    return handle->db->matchedId();
 }
 
 } // extern "C"

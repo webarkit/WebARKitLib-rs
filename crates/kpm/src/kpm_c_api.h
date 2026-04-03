@@ -51,6 +51,50 @@ int  kpm_query(KpmOpaqueHandle* handle, const unsigned char* gray_image,
                int xsize, int ysize,
                float pose_out[12], float* error_out, int* page_no_out);
 
+/* ---- New accessors for kpm_matching orchestration (#36) ---- */
+
+/* Feed pre-extracted FREAK features into the database (one image slot).
+ * points:      flat array [x,y,angle,scale, ...] — 4 floats per point.
+ * maxima:      array of ints (0 or 1) per point.
+ * descriptors: packed binary descriptors, 96 bytes per point.
+ * points_3d:   flat array [x,y,z, ...] — 3 floats per point.
+ * Returns 0 on success, -1 on error. */
+int kpm_add_freak_features(KpmOpaqueHandle* handle,
+                           const float* points, const int* maxima,
+                           const unsigned char* descriptors,
+                           const float* points_3d,
+                           int num_points,
+                           int width, int height, int db_id);
+
+/* Return the number of inlier matches from the most recent query. */
+int kpm_get_inlier_count(KpmOpaqueHandle* handle);
+
+/* Copy inlier match pairs into caller-provided arrays.
+ * ins_out / ref_out must have room for at least kpm_get_inlier_count() ints.
+ * Returns number of pairs written, or -1 on error. */
+int kpm_get_inliers(KpmOpaqueHandle* handle, int* ins_out, int* ref_out);
+
+/* Return the number of feature points detected in the most recent query. */
+int kpm_get_query_feature_count(KpmOpaqueHandle* handle);
+
+/* Copy query feature points into caller-provided arrays.
+ * x_out / y_out must have room for kpm_get_query_feature_count() floats.
+ * Returns number written, or -1 on error. */
+int kpm_get_query_feature_points(KpmOpaqueHandle* handle,
+                                 float* x_out, float* y_out);
+
+/* Return the number of 3D feature points for the given image_id. */
+int kpm_get_3d_feature_count(KpmOpaqueHandle* handle, int image_id);
+
+/* Copy 3D feature points into caller-provided arrays.
+ * x/y/z_out must have room for kpm_get_3d_feature_count() floats.
+ * Returns number written, or -1 on error. */
+int kpm_get_3d_feature_points(KpmOpaqueHandle* handle, int image_id,
+                              float* x_out, float* y_out, float* z_out);
+
+/* Return the matched image ID from the most recent query, or -1. */
+int kpm_matched_id(KpmOpaqueHandle* handle);
+
 #ifdef __cplusplus
 }
 #endif
