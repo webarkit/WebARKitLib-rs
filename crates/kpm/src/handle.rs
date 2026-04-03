@@ -41,8 +41,8 @@
 //! coordinates reference-image management, query execution, and result
 //! retrieval.
 
-use crate::backend::{FreakMatcherBackend, KpmError};
-use crate::types::{KpmInputDataSet, KpmRefDataSet, KpmResult, DB_IMAGE_MAX};
+use crate::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Point3d};
+use crate::types::{KpmInputDataSet, KpmRefDataSet, KpmResult, DB_IMAGE_MAX, FREAK_SUB_DIMENSION};
 use std::sync::Arc;
 use webarkitlib_rs::types::ARParamLT;
 
@@ -262,6 +262,73 @@ impl KpmHandle {
             .iter()
             .find(|r| r.cam_pose_f == 0)
             .map(|r| (&r.cam_pose, r.page_no, r.error))
+    }
+
+    /// Load a [`KpmRefDataSet`] into the backend.
+    ///
+    /// This is the Rust equivalent of `kpmSetRefDataSet()` in the C++ code
+    /// (BINARY_FEATURE=1 path). It:
+    ///
+    /// 1. Copies the ref data set into the handle.
+    /// 2. Allocates a [`KpmResult`] slot per page.
+    /// 3. Iterates over pages and images, extracts matching features,
+    ///    and calls [`FreakMatcherBackend::add_freak_features`] for each.
+    /// 4. Records `page_ids` for mapping backend db_id → page number.
+    pub fn set_ref_data_set(&mut self, ref_data_set: KpmRefDataSet) -> Result<(), KpmError> {
+        if ref_data_set.num == 0 {
+            return Err(KpmError::InvalidInput("ref data set is empty".to_string()));
+        }
+
+        // Allocate result slots.
+        self.result = vec![KpmResult::default(); ref_data_set.page_num as usize];
+
+        // Feed features into the backend, grouped by page + image.
+        let mut db_id: usize = 0;
+        for page in &ref_data_set.page_info {
+            for img in &page.image_info {
+                let mut points = Vec::new();
+                let mut descriptors = Vec::new();
+                let mut points_3d = Vec::new();
+
+                for rp in &ref_data_set.ref_point {
+                    if rp.ref_image_no == img.image_no && rp.page_no == page.page_no {
+                        points.push(FeaturePoint {
+                            x: rp.coord2d.x,
+                            y: rp.coord2d.y,
+                            angle: rp.feature_vec.angle,
+                            scale: rp.feature_vec.scale,
+                            maxima: rp.feature_vec.maxima != 0,
+                        });
+                        points_3d.push(Point3d {
+                            x: rp.coord3d.x,
+                            y: rp.coord3d.y,
+                            z: 0.0,
+                        });
+                        descriptors.extend_from_slice(&rp.feature_vec.v[..FREAK_SUB_DIMENSION]);
+                    }
+                }
+
+                if db_id < DB_IMAGE_MAX {
+                    self.page_ids[db_id] = page.page_no;
+                }
+
+                self.matcher.add_freak_features(
+                    &points,
+                    &descriptors,
+                    &points_3d,
+                    img.width as usize,
+                    img.height as usize,
+                    db_id,
+                )?;
+
+                db_id += 1;
+            }
+        }
+
+        // Store the ref data set in the handle.
+        self.ref_data_set = ref_data_set;
+
+        Ok(())
     }
 }
 

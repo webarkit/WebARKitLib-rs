@@ -52,6 +52,7 @@
 
 use crate::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult};
 use crate::kpm_ffi;
+use std::cell::UnsafeCell;
 
 /// C++ FFI backend implementing [`FreakMatcherBackend`].
 ///
@@ -76,6 +77,16 @@ use crate::kpm_ffi;
 pub struct CppFreakMatcher {
     /// Raw pointer to the C++ `KpmOpaqueHandle`.
     ptr: *mut kpm_ffi::KpmOpaqueHandle,
+    /// Cached inlier matches from the most recent query.
+    cached_inliers: Vec<Match>,
+    /// Cached query feature points from the most recent query.
+    cached_query_points: Vec<FeaturePoint>,
+    /// Cached 3D feature points (populated on demand per image_id).
+    /// Wrapped in `UnsafeCell` because `get_3d_feature_points` takes `&self`
+    /// but needs to lazily populate the cache.
+    cached_3d_points: UnsafeCell<Vec<Point3d>>,
+    /// The image_id for which `cached_3d_points` was last populated.
+    cached_3d_image_id: UnsafeCell<Option<usize>>,
 }
 
 impl Drop for CppFreakMatcher {
@@ -114,7 +125,13 @@ impl CppFreakMatcher {
         if ptr.is_null() {
             return Err(KpmError::NullHandle);
         }
-        Ok(Self { ptr })
+        Ok(Self {
+            ptr,
+            cached_inliers: Vec::new(),
+            cached_query_points: Vec::new(),
+            cached_3d_points: UnsafeCell::new(Vec::new()),
+            cached_3d_image_id: UnsafeCell::new(None),
+        })
     }
 
     /// Returns an error if the internal pointer is null (use-after-free guard).
@@ -168,22 +185,76 @@ impl FreakMatcherBackend for CppFreakMatcher {
         }
     }
 
-    /// No-op for the C++ backend.
-    ///
-    /// The C API wrapper handles feature extraction internally inside
-    /// `kpm_add_ref_image`, so pre-extracted features cannot be injected
-    /// through the FFI.
     fn add_freak_features(
         &mut self,
-        _points: &[FeaturePoint],
-        _descriptors: &[u8],
-        _points_3d: &[Point3d],
-        _width: usize,
-        _height: usize,
-        _db_id: usize,
+        points: &[FeaturePoint],
+        descriptors: &[u8],
+        points_3d: &[Point3d],
+        width: usize,
+        height: usize,
+        db_id: usize,
     ) -> Result<(), KpmError> {
         self.check_ptr()?;
-        Ok(())
+
+        let num = points.len();
+        if num == 0 {
+            return Ok(());
+        }
+        if descriptors.len() < num * 96 {
+            return Err(KpmError::InvalidInput(format!(
+                "descriptors too short: got {} bytes, need {}",
+                descriptors.len(),
+                num * 96
+            )));
+        }
+        if points_3d.len() < num {
+            return Err(KpmError::InvalidInput(format!(
+                "points_3d too short: got {}, need {num}",
+                points_3d.len()
+            )));
+        }
+
+        // Pack into flat arrays for the C API.
+        let mut flat_pts = vec![0.0f32; num * 4];
+        let mut maxima = vec![0i32; num];
+        let mut flat_3d = vec![0.0f32; num * 3];
+
+        for (i, pt) in points.iter().enumerate() {
+            flat_pts[i * 4] = pt.x;
+            flat_pts[i * 4 + 1] = pt.y;
+            flat_pts[i * 4 + 2] = pt.angle;
+            flat_pts[i * 4 + 3] = pt.scale;
+            maxima[i] = if pt.maxima { 1 } else { 0 };
+        }
+        for (i, p3) in points_3d.iter().enumerate() {
+            flat_3d[i * 3] = p3.x;
+            flat_3d[i * 3 + 1] = p3.y;
+            flat_3d[i * 3 + 2] = p3.z;
+        }
+
+        // SAFETY: `self.ptr` is valid (checked above). All flat arrays have
+        // the correct sizes. The C++ side copies the data it needs.
+        let rc = unsafe {
+            kpm_ffi::kpm_add_freak_features(
+                self.ptr,
+                flat_pts.as_ptr(),
+                maxima.as_ptr(),
+                descriptors.as_ptr(),
+                flat_3d.as_ptr(),
+                num as i32,
+                width as i32,
+                height as i32,
+                db_id as i32,
+            )
+        };
+
+        if rc < 0 {
+            Err(KpmError::InternalError(
+                "kpm_add_freak_features failed".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     fn query(
@@ -220,39 +291,126 @@ impl FreakMatcherBackend for CppFreakMatcher {
             )
         };
 
+        // Invalidate 3D cache — a new query may match a different image.
+        // SAFETY: We have `&mut self`, so no other references exist.
+        unsafe {
+            *self.cached_3d_image_id.get() = None;
+            (*self.cached_3d_points.get()).clear();
+        }
+
         if rc < 0 {
-            Ok(QueryResult {
+            self.cached_inliers.clear();
+            self.cached_query_points.clear();
+            return Ok(QueryResult {
                 matched_id: -1,
                 inlier_count: 0,
-            })
-        } else {
-            Ok(QueryResult {
-                matched_id: page_no_out,
-                inlier_count: 0,
-            })
+            });
         }
+
+        // Populate inlier cache.
+        // SAFETY: `self.ptr` is valid. The C function writes at most `count` pairs.
+        let inlier_count = unsafe { kpm_ffi::kpm_get_inlier_count(self.ptr) } as usize;
+        self.cached_inliers.clear();
+        if inlier_count > 0 {
+            let mut ins = vec![0i32; inlier_count];
+            let mut refs = vec![0i32; inlier_count];
+            unsafe {
+                kpm_ffi::kpm_get_inliers(self.ptr, ins.as_mut_ptr(), refs.as_mut_ptr());
+            }
+            self.cached_inliers = ins
+                .iter()
+                .zip(refs.iter())
+                .map(|(&i, &r)| Match {
+                    ins: i as usize,
+                    ref_: r as usize,
+                })
+                .collect();
+        }
+
+        // Populate query feature point cache.
+        let qf_count = unsafe { kpm_ffi::kpm_get_query_feature_count(self.ptr) } as usize;
+        self.cached_query_points.clear();
+        if qf_count > 0 {
+            let mut xs = vec![0.0f32; qf_count];
+            let mut ys = vec![0.0f32; qf_count];
+            unsafe {
+                kpm_ffi::kpm_get_query_feature_points(self.ptr, xs.as_mut_ptr(), ys.as_mut_ptr());
+            }
+            self.cached_query_points = xs
+                .iter()
+                .zip(ys.iter())
+                .map(|(&x, &y)| FeaturePoint {
+                    x,
+                    y,
+                    ..Default::default()
+                })
+                .collect();
+        }
+
+        Ok(QueryResult {
+            matched_id: page_no_out,
+            inlier_count,
+        })
     }
 
-    /// Returns an empty slice — the C API does not expose inlier data.
     fn inliers(&self) -> &[Match] {
-        &[]
+        &self.cached_inliers
     }
 
-    /// Returns `-1` — the thin C wrapper does not cache the last matched ID.
-    ///
-    /// Callers should use the [`QueryResult`] returned by [`query`](FreakMatcherBackend::query) instead.
     fn matched_id(&self) -> i32 {
-        -1
+        if self.ptr.is_null() {
+            return -1;
+        }
+        // SAFETY: `self.ptr` is valid (null-checked above).
+        unsafe { kpm_ffi::kpm_matched_id(self.ptr) }
     }
 
-    /// Returns an empty slice — the C API does not expose query feature points.
     fn query_feature_points(&self) -> &[FeaturePoint] {
-        &[]
+        &self.cached_query_points
     }
 
-    /// Returns an empty slice — the C API does not expose per-image 3D feature points.
-    fn get_3d_feature_points(&self, _image_id: usize) -> &[Point3d] {
-        &[]
+    fn get_3d_feature_points(&self, image_id: usize) -> &[Point3d] {
+        // SAFETY: No other thread can access `self` concurrently — the struct
+        // is `Send` but not `Sync`, and all `&mut self` methods are exclusive.
+        // The `UnsafeCell` provides interior mutability for this lazy cache.
+        unsafe {
+            // Return cached data if we already fetched for this image_id.
+            if *self.cached_3d_image_id.get() == Some(image_id) {
+                return &*self.cached_3d_points.get();
+            }
+
+            if self.ptr.is_null() {
+                return &[];
+            }
+
+            let count = kpm_ffi::kpm_get_3d_feature_count(self.ptr, image_id as i32) as usize;
+
+            if count == 0 {
+                return &[];
+            }
+
+            let mut xs = vec![0.0f32; count];
+            let mut ys = vec![0.0f32; count];
+            let mut zs = vec![0.0f32; count];
+            kpm_ffi::kpm_get_3d_feature_points(
+                self.ptr,
+                image_id as i32,
+                xs.as_mut_ptr(),
+                ys.as_mut_ptr(),
+                zs.as_mut_ptr(),
+            );
+
+            let pts = self.cached_3d_points.get();
+            *pts = xs
+                .iter()
+                .zip(ys.iter())
+                .zip(zs.iter())
+                .map(|((&x, &y), &z)| Point3d { x, y, z })
+                .collect();
+            *self.cached_3d_image_id.get() = Some(image_id);
+
+            &*pts
+        }
     }
 }
 
