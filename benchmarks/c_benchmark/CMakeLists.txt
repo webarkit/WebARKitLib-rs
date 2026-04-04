@@ -1,20 +1,73 @@
 cmake_minimum_required(VERSION 3.10)
-project(c_benchmark C)
+project(c_benchmark C CXX)
 
 set(CMAKE_C_STANDARD 99)
+set(CMAKE_CXX_STANDARD 17)
 
 # Path to the bootstrapped WebARKitLib source (relative to THIS file)
 set(AR_LIB_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/WebARKitLib/lib/SRC")
 set(AR_LIB_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/WebARKitLib/include")
+set(JPEG_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/jpeg-9f")
 
 # Add include directories
 include_directories(
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${AR_LIB_INCLUDE_DIR}"
+    "${JPEG_SRC_DIR}"
+)
+
+# libjpeg-9f core sources (bootstrapped via libraries.json)
+set(JPEG_SOURCES
+    "${JPEG_SRC_DIR}/jaricom.c"
+    "${JPEG_SRC_DIR}/jcapimin.c"
+    "${JPEG_SRC_DIR}/jcapistd.c"
+    "${JPEG_SRC_DIR}/jcarith.c"
+    "${JPEG_SRC_DIR}/jccoefct.c"
+    "${JPEG_SRC_DIR}/jccolor.c"
+    "${JPEG_SRC_DIR}/jcdctmgr.c"
+    "${JPEG_SRC_DIR}/jchuff.c"
+    "${JPEG_SRC_DIR}/jcinit.c"
+    "${JPEG_SRC_DIR}/jcmainct.c"
+    "${JPEG_SRC_DIR}/jcmarker.c"
+    "${JPEG_SRC_DIR}/jcmaster.c"
+    "${JPEG_SRC_DIR}/jcomapi.c"
+    "${JPEG_SRC_DIR}/jcparam.c"
+    "${JPEG_SRC_DIR}/jcprepct.c"
+    "${JPEG_SRC_DIR}/jcsample.c"
+    "${JPEG_SRC_DIR}/jctrans.c"
+    "${JPEG_SRC_DIR}/jdapimin.c"
+    "${JPEG_SRC_DIR}/jdapistd.c"
+    "${JPEG_SRC_DIR}/jdarith.c"
+    "${JPEG_SRC_DIR}/jdatadst.c"
+    "${JPEG_SRC_DIR}/jdatasrc.c"
+    "${JPEG_SRC_DIR}/jdcoefct.c"
+    "${JPEG_SRC_DIR}/jdcolor.c"
+    "${JPEG_SRC_DIR}/jddctmgr.c"
+    "${JPEG_SRC_DIR}/jdhuff.c"
+    "${JPEG_SRC_DIR}/jdinput.c"
+    "${JPEG_SRC_DIR}/jdmainct.c"
+    "${JPEG_SRC_DIR}/jdmarker.c"
+    "${JPEG_SRC_DIR}/jdmaster.c"
+    "${JPEG_SRC_DIR}/jdmerge.c"
+    "${JPEG_SRC_DIR}/jdpostct.c"
+    "${JPEG_SRC_DIR}/jdsample.c"
+    "${JPEG_SRC_DIR}/jdtrans.c"
+    "${JPEG_SRC_DIR}/jerror.c"
+    "${JPEG_SRC_DIR}/jfdctflt.c"
+    "${JPEG_SRC_DIR}/jfdctfst.c"
+    "${JPEG_SRC_DIR}/jfdctint.c"
+    "${JPEG_SRC_DIR}/jidctflt.c"
+    "${JPEG_SRC_DIR}/jidctfst.c"
+    "${JPEG_SRC_DIR}/jidctint.c"
+    "${JPEG_SRC_DIR}/jmemmgr.c"
+    "${JPEG_SRC_DIR}/jmemnobs.c"
+    "${JPEG_SRC_DIR}/jquant1.c"
+    "${JPEG_SRC_DIR}/jquant2.c"
+    "${JPEG_SRC_DIR}/jutils.c"
 )
 
 # Core AR files
-set(SOURCES
+set(AR_CORE_SOURCES
     "${AR_LIB_SRC_DIR}/AR/ar3DCreateHandle.c"
     "${AR_LIB_SRC_DIR}/AR/ar3DUtil.c"
     "${AR_LIB_SRC_DIR}/AR/arCreateHandle.c"
@@ -26,7 +79,7 @@ set(SOURCES
     "${AR_LIB_SRC_DIR}/AR/arGetTransMat.c"
     "${AR_LIB_SRC_DIR}/AR/arImageProc.c"
     "${AR_LIB_SRC_DIR}/AR/arLabeling.c"
-    
+
     # Labeling Sub
     "${AR_LIB_SRC_DIR}/AR/arLabelingSub/arLabelingSubDBIC.c"
     "${AR_LIB_SRC_DIR}/AR/arLabelingSub/arLabelingSubDBRC.c"
@@ -46,7 +99,7 @@ set(SOURCES
     "${AR_LIB_SRC_DIR}/AR/arPattGetID.c"
     "${AR_LIB_SRC_DIR}/AR/arPattLoad.c"
     "${AR_LIB_SRC_DIR}/AR/arUtil.c"
-    
+
     # Math/Matrix/Param
     "${AR_LIB_SRC_DIR}/AR/mAlloc.c"
     "${AR_LIB_SRC_DIR}/AR/mFree.c"
@@ -90,27 +143,73 @@ set(SOURCES
     "${AR_LIB_SRC_DIR}/ARICP/icpStereoPointRobust.c"
     "${AR_LIB_SRC_DIR}/ARICP/icpCalibStereo.c"
     "${AR_LIB_SRC_DIR}/ARICP/icpUtil.c"
-    
+
     # ARUtil
     "${AR_LIB_SRC_DIR}/ARUtil/log.c"
-    # "${AR_LIB_SRC_DIR}/ARUtil/file_utils.c" # Requires zlib
-    # "${AR_LIB_SRC_DIR}/ARUtil/time.c"
 
-    # Main benchmark file
-    "main.c"
+    # Stubs for file_utils symbols (cat, test_d, mkdir_p)
+    "${CMAKE_CURRENT_SOURCE_DIR}/stubs.c"
 )
 
-# Output executable
-add_executable(c_benchmark ${SOURCES})
+# KPM / FreakMatcher C++ sources
+set(KPM_SOURCES
+    "${AR_LIB_SRC_DIR}/KPM/kpmHandle.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/kpmRefDataSet.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/kpmMatching.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/kpmResult.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/kpmUtil.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/kpmFopen.c"
+    # FreakMatcher
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/detectors/DoG_scale_invariant_detector.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/detectors/gaussian_scale_space_pyramid.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/detectors/gradients.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/detectors/orientation_assignment.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/detectors/pyramid.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/facade/visual_database_facade.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/framework/date_time.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/framework/image.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/framework/logger.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/framework/timers.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/matchers/freak.cpp"
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher/matchers/hough_similarity_voting.cpp"
+)
 
-# Target compiles with appropriate definitions
-target_compile_definitions(c_benchmark PRIVATE AR_LITTLE_ENDIAN)
+# Common compile definitions
+set(COMMON_DEFS AR_LITTLE_ENDIAN BINARY_FEATURE=1)
 
 if(WIN32)
-    target_compile_definitions(c_benchmark PRIVATE _WIN32)
-    if(MSVC)
-        target_compile_options(c_benchmark PRIVATE /W3 /Z7)
-    endif()
-else()
+    list(APPEND COMMON_DEFS _WIN32)
+endif()
+
+# ── Existing marker detection benchmark ──
+add_executable(c_benchmark ${AR_CORE_SOURCES} "main.c")
+target_compile_definitions(c_benchmark PRIVATE ${COMMON_DEFS})
+if(WIN32 AND MSVC)
+    target_compile_options(c_benchmark PRIVATE /W3 /Z7)
+elseif(NOT WIN32)
     target_link_libraries(c_benchmark m)
+endif()
+
+# ── KPM fixture generator ──
+add_executable(kpm_dump_fixtures ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} "kpm_dump_fixtures.cpp")
+target_compile_definitions(kpm_dump_fixtures PRIVATE ${COMMON_DEFS} HAVE_LIBJPEG)
+target_include_directories(kpm_dump_fixtures PRIVATE
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher"
+)
+if(WIN32 AND MSVC)
+    target_compile_options(kpm_dump_fixtures PRIVATE /W3 /Z7)
+elseif(NOT WIN32)
+    target_link_libraries(kpm_dump_fixtures m)
+endif()
+
+# ── KPM performance benchmark ──
+add_executable(kpm_bench ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} "kpm_bench.cpp")
+target_compile_definitions(kpm_bench PRIVATE ${COMMON_DEFS} HAVE_LIBJPEG)
+target_include_directories(kpm_bench PRIVATE
+    "${AR_LIB_SRC_DIR}/KPM/FreakMatcher"
+)
+if(WIN32 AND MSVC)
+    target_compile_options(kpm_bench PRIVATE /W3 /Z7)
+elseif(NOT WIN32)
+    target_link_libraries(kpm_bench m)
 endif()
