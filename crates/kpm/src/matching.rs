@@ -120,7 +120,7 @@ impl KpmHandle {
 
             // (d-cont) If the backend matched a page, compute pose.
             let matched_id = self.matcher.matched_id();
-            if matched_id > 0 {
+            if matched_id >= 0 {
                 let matched_page_no = self.page_ids[matched_id as usize];
 
                 // Find the result slot for this page.
