@@ -146,9 +146,6 @@ set(AR_CORE_SOURCES
 
     # ARUtil
     "${AR_LIB_SRC_DIR}/ARUtil/log.c"
-
-    # Stubs for file_utils symbols (cat, test_d, mkdir_p)
-    "${CMAKE_CURRENT_SOURCE_DIR}/stubs.c"
 )
 
 # KPM / FreakMatcher C++ sources
@@ -190,8 +187,14 @@ elseif(NOT WIN32)
     target_link_libraries(c_benchmark m)
 endif()
 
-# ── KPM fixture generator ──
-add_executable(kpm_dump_fixtures ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} "kpm_dump_fixtures.cpp")
+# ── KPM targets (fixture generator + benchmark) ──
+# These require libjpeg-9f (bootstrapped) and are NOT built by default.
+# Build manually with: cmake --build . --target kpm_dump_fixtures
+# Stubs provide file_utils symbols (cat, test_d, mkdir_p) that main.c
+# defines itself, so they are only added to the KPM targets.
+set(STUBS "${CMAKE_CURRENT_SOURCE_DIR}/stubs.c")
+
+add_executable(kpm_dump_fixtures EXCLUDE_FROM_ALL ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} ${STUBS} "kpm_dump_fixtures.cpp")
 target_compile_definitions(kpm_dump_fixtures PRIVATE ${COMMON_DEFS} HAVE_LIBJPEG)
 target_include_directories(kpm_dump_fixtures PRIVATE
     "${AR_LIB_SRC_DIR}/KPM/FreakMatcher"
@@ -203,7 +206,7 @@ elseif(NOT WIN32)
 endif()
 
 # ── KPM performance benchmark ──
-add_executable(kpm_bench ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} "kpm_bench.cpp")
+add_executable(kpm_bench EXCLUDE_FROM_ALL ${AR_CORE_SOURCES} ${KPM_SOURCES} ${JPEG_SOURCES} ${STUBS} "kpm_bench.cpp")
 target_compile_definitions(kpm_bench PRIVATE ${COMMON_DEFS} HAVE_LIBJPEG)
 target_include_directories(kpm_bench PRIVATE
     "${AR_LIB_SRC_DIR}/KPM/FreakMatcher"
