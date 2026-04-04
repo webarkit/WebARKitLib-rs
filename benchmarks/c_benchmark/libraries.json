@@ -5,5 +5,12 @@
       "type": "git",
       "url": "https://github.com/webarkit/WebARKitLib.git"
     }
+  },
+  {
+    "name": "jpeg-9f",
+    "source": {
+      "type": "archive",
+      "url": "https://www.ijg.org/files/jpegsrc.v9f.tar.gz"
+    }
   }
 ]
