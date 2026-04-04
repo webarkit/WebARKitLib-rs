@@ -708,4 +708,38 @@ mod tests {
             assert_eq!(pi.page_no, 99);
         }
     }
+
+    #[test]
+    fn test_load_pinball_fset3() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples")
+            .join("data")
+            .join("pinball.fset3");
+
+        let ds = KpmRefDataSet::load(&path).expect("failed to load pinball.fset3");
+
+        // The pinball marker has 4850 FREAK feature points.
+        assert_eq!(ds.num, 4850);
+        assert_eq!(ds.ref_point.len(), 4850);
+
+        // Single page with 9 image pyramid levels.
+        assert_eq!(ds.page_num, 1);
+        assert_eq!(ds.page_info.len(), 1);
+        assert_eq!(ds.page_info[0].image_num, 9);
+        assert_eq!(ds.page_info[0].image_info.len(), 9);
+
+        // All features should belong to the same page.
+        let page_no = ds.page_info[0].page_no;
+        assert!(
+            ds.ref_point.iter().all(|rp| rp.page_no == page_no),
+            "all features should have the same page_no"
+        );
+
+        // Descriptors should not be all zeros.
+        let first = &ds.ref_point[0];
+        assert!(
+            first.feature_vec.v.iter().any(|&b| b != 0),
+            "first descriptor should not be all zeros"
+        );
+    }
 }
