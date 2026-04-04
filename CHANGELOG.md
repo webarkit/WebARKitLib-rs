@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-04
+
+### Milestone 2 — KPM layer in pure Rust (FreakMatcher still C++)
+
+### 🐛 Bug Fixes
+
+- *(kpm)* Use >= 0 for matched_id check to accept db_id 0 (#43)
+- *(benchmark)* Exclude KPM targets from default build
+
+### 🚀 Features
+
+- *(kpm)* Port KpmRefDataSet I/O — generate, save, load, merge (#26)
+- *(kpm)* Port kpm_matching orchestration and add load_fset3 example (#27)
+- *(kpm)* Expose query accessors in C API and add set_ref_data_set (#36)
+- *(ar2)* Port AR2 imageSet and featureSet I/O to Rust (#37)
+- *(kpm)* Replace load_fset3 example with load_nft and add fset3 test
+- *(kpm)* Add regression test suite with C++ baseline validation (#28)
+
 ## [0.2.0] - 2026-04-02
 
 ### Milestone 1: Kpm C++ FFI Backend and Crate Scaffolding
