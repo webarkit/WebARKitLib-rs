@@ -18,17 +18,24 @@ byteorder = "1.5.0"
 log = "0.4.0"
 rand = "0.8.0"
 
+[build-dependencies]
+cc = "1"
+bindgen = "0.72.1"
+
 [features]
 simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41"]
 simd-image = []
 simd-pattern = []
 simd-wasm32 = []
 simd-x86-sse41 = []
+ffi-backend = []
+dual-mode = []
 
 [dev-dependencies]
 env_logger = "0.10.0"
 criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
+tempfile = "3"
 
 [[bench]]
 name = "marker_bench"
