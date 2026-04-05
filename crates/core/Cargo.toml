@@ -15,6 +15,7 @@ readme.workspace = true
 image = "0.25.0"
 imageproc = "0.25.0"
 byteorder = "1.5.0"
+jpeg-decoder = "0.3"
 log = "0.4.0"
 rand = "0.8.0"
 
