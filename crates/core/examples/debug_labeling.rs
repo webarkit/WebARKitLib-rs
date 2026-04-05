@@ -5,7 +5,7 @@
  *  Diagnostic tool to visualize the results of ar_labeling.
  */
 
-use image::{GenericImageView, ImageReader, Rgb, RgbImage};
+use image::{ImageReader, Rgb, RgbImage};
 use webarkitlib_rs::{
     labeling::{ar_labeling, ImageProcMode, LabelingMode},
     types::ARLabelInfo,
@@ -55,7 +55,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Found {} labels.", label_info.label_num);
 
     // Save as colorized image
-    let lxsize = width as usize + 2;
     let mut out_img = RgbImage::new(width, height);
 
     // Generate colors
@@ -68,9 +67,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         colors.push(Rgb([r as u8, g as u8, b as u8]));
     }
 
+    // The label_image uses the same dimensions as the input (no +2 padding).
+    // Border pixels (row/col 0 and last) are left as 0 by ar_labeling.
     for y in 0..height {
         for x in 0..width {
-            let p_idx = (y as usize + 1) * lxsize + (x as usize + 1);
+            let p_idx = y as usize * width as usize + x as usize;
             let label = label_info.label_image[p_idx] as usize;
             if label < colors.len() {
                 out_img.put_pixel(x, y, colors[label]);
