@@ -45,17 +45,17 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run -p webarkitlib-kpm --example load_nft
+//! cargo run -p webarkitlib-rs --example load_nft
 //! ```
 
 use std::path::Path;
-use webarkitlib_ar2::{AR2FeatureSetT, AR2ImageSetT};
-use webarkitlib_kpm::types::KpmRefDataSet;
+use webarkitlib_rs::ar2::{AR2FeatureSetT, AR2ImageSetT};
+use webarkitlib_rs::kpm::types::KpmRefDataSet;
 
 fn main() {
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
-        .join("data");
+        .join("Data");
     let marker_name = "pinball";
 
     println!("Loading NFT marker: '{}'", marker_name);

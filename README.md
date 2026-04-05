@@ -12,7 +12,7 @@
 This project aims to provide a pure-Rust implementation of the core ARToolKit algorithms, targeting both **native** systems and **WebAssembly (WASM)** for high-performance augmented reality in the browser.
 
 > [!NOTE]
-> This project is currently a **Work in Progress**. While the core marker detection and pose estimation are functional, we are continuously optimizing and expanding the feature set.
+> This project is currently a **Work in Progress**. Core marker detection and pose estimation are functional. KPM/NFT (Natural Feature Tracking) is in an early stage with partial Rust porting -- a fully idiomatic Rust KPM pipeline with a working example is the primary goal for v1.0.0.
 
 ## 🌟 Key Features
 
@@ -31,6 +31,22 @@ This project aims to provide a pure-Rust implementation of the core ARToolKit al
 - **Sub-millisecond Tracking**: Core detection loop is optimized for sub-millisecond execution on standard ARM/x86 hardware.
 
 ## 🚀 Getting Started
+
+### Add to Your Project
+
+Add `webarkitlib-rs` to your `Cargo.toml`:
+
+```toml
+[dependencies]
+webarkitlib-rs = "0.3"
+```
+
+To enable the C++ FFI backend for KPM (Natural Feature Tracking):
+
+```toml
+[dependencies]
+webarkitlib-rs = { version = "0.3", features = ["ffi-backend"] }
+```
 
 ### Native Rust Example
 
@@ -125,21 +141,31 @@ cargo bench -- --save-baseline milestone-20260307
 
 ## 🏗️ Project Structure
 
-- `crates/core`: The core AR engine (pure Rust).
-- `crates/wasm`: WASM bindings, dual-build scripts, and diagnostic web demo.
+The workspace contains two crates:
+
+- **`crates/core`** (`webarkitlib-rs`): The unified core AR engine (pure Rust), including:
+  - `ar2` module: NFT tracking algorithms, `.iset` / `.fset` marker I/O.
+  - `kpm` module: Keypoint Matching with pluggable backends (Rust + C++ FFI).
+  - Core modules: image processing, pattern matching, labeling, ICP, pose estimation.
+- **`crates/wasm`** (`webarkitlib-wasm`): WASM bindings, dual-build scripts, and diagnostic web demo.
 - `benchmarks`: C vs Rust performance comparison suite.
-- `examples`: Usage demonstrations for patterns and barcodes.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): Detailed technical overview of the library's design and SIMD optimizations.
 
 ## 🗺️ Roadmap
 
-### 🎯 Near-term Goals (v1.0.0+)
-- **Enhanced Documentation**: Expand API reference, integration walkthroughs for JS/TS, and provide detailed usage examples.
+### Completed Milestones
+
+- **M1 -- KPM/NFT Core (partial)**: Ported the initial KPM (Keypoint Matching) scaffolding -- binary feature types, matching orchestration, ICP-based pose refinement, and `.fset3` / `.iset` / `.fset` I/O. The C++ FreakMatcher FFI backend works but the full pipeline is not yet wired end-to-end.
+- **M2 -- AR2 I/O**: Ported AR2 image set (`.iset`) and feature set (`.fset`) binary I/O from C to Rust.
+- **M3 -- Architectural Consolidation**: Unified the workspace from 4 crates down to 2 (`webarkitlib-rs` + `webarkitlib-wasm`), with KPM and AR2 as submodules of the core crate.
+
+### 🎯 Short-term Goals (toward v1.0.0)
+- **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.
+- **Enhanced Documentation**: Expand API reference with complete module-level docs, integration walkthroughs for JS/TS, and detailed usage examples.
 - **WASM Memory Management**: Improve resource cleanup when switching engines or markers in long-running browser sessions.
 
-### 🔭 Long-term Vision
+### 🔭 Long-term Vision (post v1.0.0)
 - **Multi-Marker Support**: Port `arMulti` logic to enable tracking of multiple markers simultaneously.
-- **KPM/NFT (Natural Feature Tracking)**: Implement robust tracking of arbitrary images and surfaces.
 - **Advanced Video Abstraction**: Develop a cross-platform video handling layer to simplify integration with various input sources.
 
 ## 📜 Credits

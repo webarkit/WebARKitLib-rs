@@ -197,8 +197,7 @@ impl AR2ImageSetT {
         });
 
         // Generate downscaled layers via area-averaging.
-        for i in 1..num {
-            let target_dpi = dpi_values[i];
+        for &target_dpi in &dpi_values[1..num] {
             let layer = gen_image_layer(
                 &scales[0].img_bw,
                 base_xsize,

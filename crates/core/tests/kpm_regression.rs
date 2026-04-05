@@ -1,5 +1,5 @@
 /*
- *  regression.rs
+ *  kpm_regression.rs
  *  WebARKitLib-rs
  *
  *  This file is part of WebARKitLib-rs - WebARKit.
@@ -137,6 +137,16 @@ const CAM_MAT: [[f64; 4]; 3] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Helper: data directory
+// ---------------------------------------------------------------------------
+
+fn data_dir() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("Data")
+}
+
+// ---------------------------------------------------------------------------
 // Helper: absolute tolerance comparison for pose matrices
 // ---------------------------------------------------------------------------
 
@@ -163,12 +173,9 @@ fn assert_pose_near(label: &str, actual: &[[f32; 4]; 3], expected: &[[f32; 4]; 3
 /// produces the exact same structure the C++ code does.
 #[test]
 fn test_fset3_load_structure() {
-    use webarkitlib_kpm::types::KpmRefDataSet;
+    use webarkitlib_rs::kpm::types::KpmRefDataSet;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("data")
-        .join("pinball.fset3");
+    let path = data_dir().join("pinball.fset3");
 
     let ds = KpmRefDataSet::load(&path).expect("failed to load pinball.fset3");
 
@@ -226,8 +233,8 @@ fn test_fset3_load_structure() {
 #[ignore = "full FFI pipeline not yet wired end-to-end (issue #28)"]
 fn test_full_pipeline_pose() {
     use std::sync::Arc;
-    use webarkitlib_kpm::types::KpmRefDataSet;
-    use webarkitlib_kpm::{CppFreakMatcher, KpmHandle};
+    use webarkitlib_rs::kpm::types::KpmRefDataSet;
+    use webarkitlib_rs::kpm::{CppFreakMatcher, KpmHandle};
     use webarkitlib_rs::types::{ARParam, ARParamLT};
 
     // Load camera parameters.
@@ -244,10 +251,7 @@ fn test_full_pipeline_pose() {
         ARParam::load(std::io::BufReader::new(cam_file)).expect("failed to load camera_para.dat");
 
     // Load query image (JPEG → RGB → luma).
-    let img_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("data")
-        .join("pinball-demo.jpg");
+    let img_path = data_dir().join("pinball-demo.jpg");
     let jpeg_bytes = std::fs::read(&img_path).expect("failed to read pinball-demo.jpg");
     let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(&jpeg_bytes));
     let pixels = decoder.decode().expect("JPEG decode failed");
@@ -277,15 +281,12 @@ fn test_full_pipeline_pose() {
     let cparam_lt = Arc::new(ARParamLT::new_basic(cparam));
 
     // Load .fset3 reference data.
-    let fset3_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("data")
-        .join("pinball.fset3");
+    let fset3_path = data_dir().join("pinball.fset3");
     let mut ref_data_set = KpmRefDataSet::load(&fset3_path).expect("failed to load pinball.fset3");
 
     // Change all pages to page 0 (matches C++ setup).
     ref_data_set.change_page_no(
-        webarkitlib_kpm::ref_data_set::KPM_CHANGE_PAGE_NO_ALL_PAGES,
+        webarkitlib_rs::kpm::ref_data_set::KPM_CHANGE_PAGE_NO_ALL_PAGES,
         0,
     );
 
@@ -409,10 +410,7 @@ fn test_standalone_icp() {
 /// locations.
 #[test]
 fn test_luminance_conversion() {
-    let img_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("data")
-        .join("pinball-demo.jpg");
+    let img_path = data_dir().join("pinball-demo.jpg");
 
     let jpeg_bytes = std::fs::read(&img_path).expect("failed to read pinball-demo.jpg");
     let mut decoder = jpeg_decoder::Decoder::new(std::io::Cursor::new(&jpeg_bytes));
