@@ -28,13 +28,12 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Run cargo check
-      run: cargo check --workspace --exclude webarkitlib-kpm
-
+      run: cargo check --workspace
     - name: Run cargo test
-      run: cargo test --workspace --exclude webarkitlib-kpm
+      run: cargo test --workspace
 
     - name: Run cargo test with SIMD
-      run: cargo test --workspace --exclude webarkitlib-kpm --features simd
+      run: cargo test --workspace --features simd
 
   kpm-build:
     runs-on: ubuntu-latest
@@ -54,11 +53,8 @@ jobs:
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
 
-    - name: Build kpm crate (FFI backend)
-      run: cargo build -p webarkitlib-kpm --features ffi-backend
-
-    - name: Check kpm formatting
-      run: cargo fmt -p webarkitlib-kpm -- --check
+    - name: Build kpm backend (FFI backend)
+      run: cargo build -p webarkitlib-rs --features ffi-backend
 
   wasm-build:
     runs-on: ubuntu-latest
@@ -86,7 +82,7 @@ jobs:
   native-example:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -98,7 +94,7 @@ jobs:
   benchmarks:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
