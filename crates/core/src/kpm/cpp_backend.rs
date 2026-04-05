@@ -50,7 +50,9 @@
 //! every `unsafe` block carries a `// SAFETY:` comment explaining why
 //! the call is sound.
 
-use crate::kpm::backend::{FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult};
+use crate::kpm::backend::{
+    FeaturePoint, FreakMatcherBackend, KpmError, Match, Point3d, QueryResult,
+};
 use crate::kpm::kpm_ffi;
 use std::cell::UnsafeCell;
 
