@@ -1,8 +1,6 @@
 [workspace]
 members = [
     "crates/core",
-    "crates/ar2",
-    "crates/kpm",
     "crates/wasm",
 ]
 exclude = [

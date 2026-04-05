@@ -1,5 +1,5 @@
 /*
- *  pinball_io.rs
+ *  ar2_pinball_io.rs
  *  WebARKitLib-rs
  *
  *  This file is part of WebARKitLib-rs - WebARKit.
@@ -37,15 +37,12 @@
 //! Integration tests loading real NFT marker files (pinball).
 
 use std::path::PathBuf;
-use webarkitlib_ar2::{AR2FeatureSetT, AR2ImageSetT};
+use webarkitlib_rs::ar2::{AR2FeatureSetT, AR2ImageSetT};
 
 fn data_dir() -> PathBuf {
-    // Test data lives in the kpm crate's examples/data/ directory.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("kpm")
         .join("examples")
-        .join("data")
+        .join("Data")
 }
 
 #[test]
