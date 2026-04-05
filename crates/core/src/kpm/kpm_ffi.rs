@@ -1,5 +1,5 @@
 /*
- *  lib.rs
+ *  kpm_ffi.rs
  *  WebARKitLib-rs
  *
  *  This file is part of WebARKitLib-rs - WebARKit.
@@ -34,47 +34,23 @@
  *
  */
 
-//! # WebARKitLib-rs Core
+//! Raw bindgen-generated FFI bindings for `kpm_c_api.h`.
 //!
-//! `webarkitlib-rs` is the foundational library for the Rust port of WebARKitLib.
-//! It provides core computer vision algorithms for Augmented Reality, including:
-//! - Image processing and filtering
-//! - Thresholding and labeling
-//! - Marker detection and identification
-//! - Pose estimation and matrix calculations
+//! This module is only compiled when the **`ffi-backend`** feature is
+//! enabled. It re-exports all symbols produced by `bindgen` in
+//! `build.rs`, including the opaque [`KpmOpaqueHandle`] type and the
+//! four `extern "C"` functions: [`kpm_create`], [`kpm_destroy`],
+//! [`kpm_add_ref_image`], and [`kpm_query`].
 //!
-//! ## Performance and SIMD
-//!
-//! This crate includes high-performance SIMD optimizations for critical image processing
-//! paths (grayscale conversion, filtering, and pattern matching).
-//! - **SSE4.1** is supported for x86_64 targets.
-//! - **WASM SIMD** is supported for web targets.
-//!
-//! To enable these optimizations, compile with the `simd` feature:
-//! ```bash
-//! cargo build --release --features simd
-//! ```
-//! Detailed benchmark results can be found in `crates/core/benches/BENCHMARKS.md`.
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use webarkitlib_rs::marker::ar_detect_marker;
-//! // ... detection logic here
-//! ```
+//! **Do not call these functions directly** — use
+//! [`CppFreakMatcher`](crate::kpm::CppFreakMatcher) instead, which wraps
+//! them with safe Rust types and null-pointer guards.
 
-pub mod ar2;
-pub mod bch;
-pub mod filter;
-pub mod icp;
-pub mod image_proc;
-pub mod labeling;
-pub mod marker;
-pub mod math;
-pub mod matrix;
-pub mod param;
-pub mod pattern;
-pub mod pose;
-pub mod types;
-pub mod version;
-pub mod kpm;
+#[cfg(feature = "ffi-backend")]
+mod bindings {
+    #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
+    include!(concat!(env!("OUT_DIR"), "/kpm_bindings.rs"));
+}
+
+#[cfg(feature = "ffi-backend")]
+pub use bindings::*;
