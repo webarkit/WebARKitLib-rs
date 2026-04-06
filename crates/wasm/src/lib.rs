@@ -465,11 +465,7 @@ impl WasmNFTHandle {
     ///
     /// * `iset_bytes` — Contents of the `.iset` file (image pyramid).
     /// * `fset_bytes` — Contents of the `.fset` file (feature points).
-    pub fn load_nft_marker(
-        &mut self,
-        iset_bytes: &[u8],
-        fset_bytes: &[u8],
-    ) -> Result<(), JsValue> {
+    pub fn load_nft_marker(&mut self, iset_bytes: &[u8], fset_bytes: &[u8]) -> Result<(), JsValue> {
         // Build surface set from both .iset and .fset data.
         self.surface_set = ar2_read_surface_set_from_bytes(iset_bytes, fset_bytes)
             .map_err(|e| JsValue::from_str(&format!("Failed to load surface set: {}", e)))?;
@@ -545,12 +541,7 @@ impl WasmNFTHandle {
     /// # Returns
     ///
     /// An `NFTTrackingResult` with the tracking status and refined pose.
-    pub fn track(
-        &mut self,
-        frame: &[u8],
-        _width: i32,
-        _height: i32,
-    ) -> Result<JsValue, JsValue> {
+    pub fn track(&mut self, frame: &[u8], _width: i32, _height: i32) -> Result<JsValue, JsValue> {
         if !self.loaded {
             return Err(JsValue::from_str("NFT marker not loaded"));
         }

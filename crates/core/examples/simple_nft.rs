@@ -190,16 +190,15 @@ fn main() {
 
     let backend =
         CppFreakMatcher::new(width, height).expect("failed to create CppFreakMatcher backend");
-    let mut kpm_handle = KpmHandle::new(width, height, Some(param_lt_arc.clone()), Box::new(backend));
+    let mut kpm_handle =
+        KpmHandle::new(width, height, Some(param_lt_arc.clone()), Box::new(backend));
 
     kpm_handle
         .set_ref_data_set(ref_data)
         .expect("failed to set ref data set");
     println!("  Reference data loaded into KPM backend.");
 
-    kpm_handle
-        .kpm_matching(&luma)
-        .expect("kpm_matching failed");
+    kpm_handle.kpm_matching(&luma).expect("kpm_matching failed");
 
     let pose = kpm_handle.get_pose();
     match pose {
@@ -233,8 +232,8 @@ fn main() {
             ar2_handle.cparam_lt = Box::into_raw(param_lt_for_ar2);
 
             // Set up ICP handle.
-            let icp_handle_ptr = icp_create_handle(&param.mat)
-                .expect("failed to create ICP handle");
+            let icp_handle_ptr =
+                icp_create_handle(&param.mat).expect("failed to create ICP handle");
             ar2_handle.icp_handle = icp_handle_ptr;
 
             // Run AR2 tracking.
