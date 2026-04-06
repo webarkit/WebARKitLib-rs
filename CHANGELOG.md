@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.1] - 2026-04-06
+
+### Milestone 3 — Architectural consolidation
+
+### ⚙️ Miscellaneous Tasks
+
+- Update version to 0.3.0 in package.json and enhance release process in MAINTAINERS.md
+
+### 🎨 Styling
+
+- Fix cargo fmt issues in cpp_backend.rs and lib.rs
+
+### 🐛 Bug Fixes
+
+- *(example)* Fix index out of bounds panic in debug_labeling
+
+### 🚀 Features
+
+- *(readme)* Add Rust banner image to README.md
+
+### 🚜 Refactor
+
+- *(kpm)* Move kpm crate into core as submodule (M3-1)
+- *(ar2)* Move ar2 crate into core as submodule (M3-2)
+- *(workspace)* Consolidate ar2 and kpm into core crate (#45)
+- *(ci)* Update checkout action to v6 and streamline cargo commands
+- *(readme)* Enhance project documentation and add usage instructions
+- *(docs)* Update license information and improve module documentation in bch.rs, filter.rs, and pose.rs
+
 ## [0.3.0] - 2026-04-04
 
 ### Milestone 2 — KPM layer in pure Rust (FreakMatcher still C++)
