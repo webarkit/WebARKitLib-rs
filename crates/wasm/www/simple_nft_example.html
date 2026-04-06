@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebARKitLib.rs – NFT Tracking Example</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 16px;
+        }
+
+        .status {
+            font-weight: bold;
+            margin-bottom: 14px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            background: #e8f0fe;
+            color: #1a73e8;
+            border-left: 4px solid #1a73e8;
+        }
+
+        .status.error {
+            background: #fce8e6;
+            color: #c5221f;
+            border-left-color: #c5221f;
+        }
+
+        .status.success {
+            background: #e6f4ea;
+            color: #137333;
+            border-left-color: #137333;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            align-items: flex-end;
+            margin-bottom: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background: #1a73e8;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #1557b0;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+
+        #results {
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #1a73e8;
+            font-family: monospace;
+            font-size: 13px;
+            min-height: 100px;
+        }
+
+        .description {
+            margin-bottom: 16px;
+            color: #555;
+            line-height: 1.6;
+        }
+
+        .description code {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>WebARKitLib.rs – NFT Tracking Example</h1>
+
+        <div class="description">
+            <p>
+                This demo demonstrates <strong>AR2 Natural Feature Tracking</strong> running
+                entirely in Rust/WASM. The AR2 tracking engine uses template matching on
+                image pyramids to refine a camera pose.
+            </p>
+            <p>
+                The pipeline loads <code>.iset</code> (image pyramid) and <code>.fset</code>
+                (feature points) marker data, accepts an initial 3×4 camera pose, and runs
+                per-frame tracking to produce a refined pose.
+            </p>
+            <p>
+                <strong>Note:</strong> Full NFT detection (KPM) requires a pure-Rust FREAK
+                feature matcher (Phase C). This demo focuses on the <em>tracking</em> stage
+                which is already 100% Rust.
+            </p>
+        </div>
+
+        <div class="status" id="status">Status: Loading...</div>
+
+        <div class="controls">
+            <button id="btn-init" disabled>Initialize NFT</button>
+            <button id="btn-set-pose" disabled>Set Test Pose</button>
+            <button id="btn-track" disabled>Track Frame</button>
+            <button id="btn-reset" disabled>Reset Tracking</button>
+        </div>
+
+        <div id="canvas-container">
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div id="results">NFT tracking results will appear here...</div>
+    </div>
+
+    <script type="module">
+        // =====================================================================
+        // NFT Tracking Demo
+        // =====================================================================
+
+        const statusEl = document.getElementById('status');
+        const btnInit = document.getElementById('btn-init');
+        const btnSetPose = document.getElementById('btn-set-pose');
+        const btnTrack = document.getElementById('btn-track');
+        const btnReset = document.getElementById('btn-reset');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const resultsEl = document.getElementById('results');
+
+        let nftHandle = null;
+        let testImage = new Image();
+        let wasmModule = null;
+
+        // A known-good initial pose for the pinball marker
+        // (from the KPM detection step in the native example).
+        const TEST_POSE = [
+            0.9866, 0.1643, 0.0027, -181.9168,
+            0.1531, -0.9197, -0.3612, 64.6862,
+            -0.0563, 0.3568, -0.9325, 590.5905
+        ];
+
+        async function run() {
+            try {
+                statusEl.innerText = 'Status: Loading WASM module...';
+
+                // Load WASM module (standard build).
+                const modulePath = '../pkg/dist-std/webarkitlib_wasm.js';
+                const module = await import(modulePath);
+                wasmModule = module;
+
+                const init = module.default;
+                await init();
+                module.init_wasm();
+
+                statusEl.innerText = 'Status: WASM loaded. Loading test image...';
+
+                // Load test image for display.
+                testImage.src = 'assets/img.jpg';
+                await new Promise((resolve, reject) => {
+                    testImage.onload = resolve;
+                    testImage.onerror = () => reject(new Error('Failed to load test image'));
+                });
+
+                canvas.width = testImage.width;
+                canvas.height = testImage.height;
+                ctx.drawImage(testImage, 0, 0);
+
+                statusEl.innerText = 'Status: Ready. Click "Initialize NFT" to start.';
+                statusEl.className = 'status';
+                btnInit.disabled = false;
+
+            } catch (err) {
+                statusEl.innerText = `Status Error: ${err}`;
+                statusEl.className = 'status error';
+                console.error(err);
+            }
+        }
+
+        btnInit.onclick = async () => {
+            try {
+                statusEl.innerText = 'Status: Loading camera params and NFT marker data...';
+
+                // Fetch camera parameters.
+                const paramRes = await fetch('assets/camera_para.dat');
+                const paramData = new Uint8Array(await paramRes.arrayBuffer());
+
+                // Fetch NFT marker data.
+                const [isetRes, fsetRes] = await Promise.all([
+                    fetch('assets/pinball.iset'),
+                    fetch('assets/pinball.fset'),
+                ]);
+
+                const isetData = new Uint8Array(await isetRes.arrayBuffer());
+                const fsetData = new Uint8Array(await fsetRes.arrayBuffer());
+
+                console.log(`[NFT] Loaded: camera_para.dat (${paramData.length} bytes)`);
+                console.log(`[NFT] Loaded: pinball.iset (${isetData.length} bytes)`);
+                console.log(`[NFT] Loaded: pinball.fset (${fsetData.length} bytes)`);
+
+                // Create NFT handle.
+                const width = canvas.width;
+                const height = canvas.height;
+                nftHandle = new wasmModule.WasmNFTHandle(paramData, width, height);
+
+                // Load marker data.
+                nftHandle.load_nft_marker(isetData, fsetData);
+
+                const mw = nftHandle.get_marker_width();
+                const mh = nftHandle.get_marker_height();
+                const dpi = nftHandle.get_marker_dpi();
+
+                resultsEl.innerText =
+                    `NFT Handle initialized:\n` +
+                    `  Frame size: ${width}x${height}\n` +
+                    `  Marker: ${mw}x${mh} @ ${dpi} DPI\n` +
+                    `  Loaded: ✓\n\n` +
+                    `Click "Set Test Pose" to provide an initial pose,\n` +
+                    `then "Track Frame" to run AR2 tracking.`;
+
+                statusEl.innerText = 'Status: NFT marker loaded. Set a pose to begin tracking.';
+                statusEl.className = 'status success';
+                btnInit.disabled = true;
+                btnSetPose.disabled = false;
+                btnReset.disabled = false;
+
+            } catch (err) {
+                statusEl.innerText = `Status Error: ${err}`;
+                statusEl.className = 'status error';
+                console.error(err);
+            }
+        };
+
+        btnSetPose.onclick = () => {
+            if (!nftHandle) return;
+
+            try {
+                nftHandle.set_initial_pose(new Float32Array(TEST_POSE));
+
+                resultsEl.innerText =
+                    `Initial pose set (from KPM detection):\n\n` +
+                    formatMatrix(TEST_POSE) +
+                    `\nContinuity: ${nftHandle.get_cont_num()} frame(s)\n\n` +
+                    `Click "Track Frame" to run AR2 tracking refinement.`;
+
+                statusEl.innerText = 'Status: Initial pose set. Ready to track.';
+                statusEl.className = 'status success';
+                btnTrack.disabled = false;
+
+            } catch (err) {
+                statusEl.innerText = `Status Error: ${err}`;
+                statusEl.className = 'status error';
+                console.error(err);
+            }
+        };
+
+        btnTrack.onclick = () => {
+            if (!nftHandle) return;
+
+            // Get RGBA pixel data from the canvas.
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const rgba = new Uint8Array(imageData.data.buffer);
+
+            const startTime = performance.now();
+            const result = nftHandle.track(rgba, canvas.width, canvas.height);
+            const elapsed = performance.now() - startTime;
+
+            let output = `AR2 Tracking Result (${elapsed.toFixed(2)} ms):\n`;
+            output += `  Found:    ${result.found}\n`;
+            output += `  Error:    ${result.error.toFixed(4)}\n`;
+            output += `  ContNum:  ${result.cont_num}\n\n`;
+
+            if (result.found) {
+                output += `Refined 3×4 Pose Matrix:\n`;
+                output += formatMatrix(result.matrix);
+
+                statusEl.innerText = `Status: Tracking ✓ (error=${result.error.toFixed(4)}, ${elapsed.toFixed(1)}ms)`;
+                statusEl.className = 'status success';
+            } else {
+                output += `Tracking lost — not enough template matches.\n`;
+                output += `(This is expected for a single static image;\n`;
+                output += ` AR2 tracking needs multi-frame continuity.)\n`;
+                output += `\nThe initial pose from KPM is still valid.`;
+
+                statusEl.innerText = `Status: Tracking lost (expected for static image)`;
+                statusEl.className = 'status';
+            }
+
+            resultsEl.innerText = output;
+        };
+
+        btnReset.onclick = () => {
+            if (!nftHandle) return;
+
+            nftHandle.reset_tracking();
+            resultsEl.innerText = 'Tracking reset.\nSet a new pose to resume tracking.';
+            statusEl.innerText = 'Status: Tracking reset.';
+            statusEl.className = 'status';
+            btnTrack.disabled = true;
+        };
+
+        function formatMatrix(mat) {
+            let s = '';
+            for (let i = 0; i < 3; i++) {
+                s += `  [ ${mat[i * 4].toFixed(4).padStart(10)}, ${mat[i * 4 + 1].toFixed(4).padStart(10)}, ` +
+                    `${mat[i * 4 + 2].toFixed(4).padStart(10)}, ${mat[i * 4 + 3].toFixed(4).padStart(10)} ]\n`;
+            }
+            return s;
+        }
+
+        run();
+    </script>
+</body>
+
+</html>
