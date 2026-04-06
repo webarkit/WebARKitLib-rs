@@ -48,8 +48,8 @@
 use std::io::Cursor;
 use wasm_bindgen::prelude::*;
 use webarkitlib_rs::ar2::{
-    ar2_tracking, AR2FeatureCoord, AR2FeaturePoints, AR2FeatureSet, AR2FeatureSetT, AR2Handle,
-    AR2Image, AR2ImageSet, AR2ImageSetT, AR2Surface, AR2SurfaceSet, AR2_BLUR_IMAGE_MAX,
+    ar2_read_surface_set_from_bytes, ar2_surface_set_marker_info, ar2_tracking, AR2Handle,
+    AR2SurfaceSet,
 };
 use webarkitlib_rs::icp::icp_create_handle;
 use webarkitlib_rs::image_proc::{rgba_to_gray, ARImageProcInfo};
@@ -457,6 +457,10 @@ impl WasmNFTHandle {
 
     /// Load an NFT marker from .iset and .fset binary data.
     ///
+    /// This is the WASM equivalent of `ar2ReadSurfaceSet()` in the C API.
+    /// It internally loads both the image pyramid (.iset) and feature points
+    /// (.fset) and constructs the tracking surface set.
+    ///
     /// # Arguments
     ///
     /// * `iset_bytes` — Contents of the `.iset` file (image pyramid).
@@ -466,51 +470,30 @@ impl WasmNFTHandle {
         iset_bytes: &[u8],
         fset_bytes: &[u8],
     ) -> Result<(), JsValue> {
-        // Parse .iset
-        let io_image_set = AR2ImageSetT::from_bytes(iset_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Failed to load .iset: {}", e)))?;
+        // Build surface set from both .iset and .fset data.
+        self.surface_set = ar2_read_surface_set_from_bytes(iset_bytes, fset_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load surface set: {}", e)))?;
 
-        // Store marker dimensions.
-        if !io_image_set.scale.is_empty() {
-            self.marker_width = io_image_set.scale[0].xsize;
-            self.marker_height = io_image_set.scale[0].ysize;
-            self.marker_dpi = io_image_set.scale[0].dpi;
+        // Store marker dimensions from the surface set.
+        if let Some((w, h, dpi)) = ar2_surface_set_marker_info(&self.surface_set) {
+            self.marker_width = w;
+            self.marker_height = h;
+            self.marker_dpi = dpi;
         }
-
-        // Parse .fset
-        let io_feature_set = AR2FeatureSetT::from_bytes(fset_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Failed to load .fset: {}", e)))?;
-
-        // Convert I/O types to tracking types.
-        let tracking_image_set = convert_image_set_to_tracking(&io_image_set);
-        let tracking_feature_set = convert_feature_set_to_tracking(&io_feature_set);
-
-        // Build surface with identity transform.
-        let mut identity = [[0.0f32; 4]; 3];
-        identity[0][0] = 1.0;
-        identity[1][1] = 1.0;
-        identity[2][2] = 1.0;
-
-        let surface = AR2Surface {
-            image_set: Some(tracking_image_set),
-            feature_set: Some(tracking_feature_set),
-            trans: identity,
-            itrans: identity,
-        };
-
-        self.surface_set = AR2SurfaceSet {
-            surface: vec![surface],
-            ..Default::default()
-        };
 
         self.loaded = true;
 
+        let num_scales = self
+            .surface_set
+            .surface
+            .first()
+            .and_then(|s| s.feature_set.as_ref())
+            .map(|fs| fs.list.len())
+            .unwrap_or(0);
+
         let msg = format!(
             "[WebARKit NFT] Marker loaded: {}x{} @ {:.0} DPI, {} feature scales",
-            self.marker_width,
-            self.marker_height,
-            self.marker_dpi,
-            io_feature_set.num()
+            self.marker_width, self.marker_height, self.marker_dpi, num_scales
         );
         web_sys::console::log_1(&msg.into());
 
@@ -666,58 +649,4 @@ impl Drop for WasmNFTHandle {
             }
         }
     }
-}
-
-// ===========================================================================
-// Internal conversion helpers
-// ===========================================================================
-
-/// Convert an `AR2ImageSetT` (I/O type) to `AR2ImageSet` (tracking type).
-fn convert_image_set_to_tracking(io_set: &AR2ImageSetT) -> AR2ImageSet {
-    let mut scales = Vec::with_capacity(io_set.scale.len());
-
-    for io_img in &io_set.scale {
-        let mut blur_levels: Vec<Option<Vec<u8>>> = Vec::with_capacity(AR2_BLUR_IMAGE_MAX);
-        blur_levels.push(Some(io_img.img_bw.clone()));
-        for _ in 1..AR2_BLUR_IMAGE_MAX {
-            blur_levels.push(None);
-        }
-
-        scales.push(AR2Image {
-            img_bw_blur: blur_levels,
-            xsize: io_img.xsize,
-            ysize: io_img.ysize,
-            dpi: io_img.dpi,
-        });
-    }
-
-    AR2ImageSet { scale: scales }
-}
-
-/// Convert an `AR2FeatureSetT` (I/O type) to `AR2FeatureSet` (tracking type).
-fn convert_feature_set_to_tracking(io_set: &AR2FeatureSetT) -> AR2FeatureSet {
-    let mut list = Vec::with_capacity(io_set.list.len());
-
-    for io_fp in &io_set.list {
-        let coord: Vec<AR2FeatureCoord> = io_fp
-            .coord
-            .iter()
-            .map(|c| AR2FeatureCoord {
-                x: c.x,
-                y: c.y,
-                mx: c.mx,
-                my: c.my,
-                max_sim: c.max_sim,
-            })
-            .collect();
-
-        list.push(AR2FeaturePoints {
-            coord,
-            scale: io_fp.scale,
-            maxdpi: io_fp.maxdpi,
-            mindpi: io_fp.mindpi,
-        });
-    }
-
-    AR2FeatureSet { list }
 }

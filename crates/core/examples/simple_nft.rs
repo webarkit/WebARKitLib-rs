@@ -61,8 +61,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use webarkitlib_rs::ar2::{
-    ar2_tracking, AR2FeatureCoord, AR2FeaturePoints, AR2FeatureSet, AR2FeatureSetT, AR2Handle,
-    AR2Image, AR2ImageSet, AR2ImageSetT, AR2Surface, AR2SurfaceSet, AR2_BLUR_IMAGE_MAX,
+    ar2_read_surface_set, ar2_surface_set_marker_info, ar2_tracking, AR2Handle,
 };
 use webarkitlib_rs::icp::icp_create_handle;
 use webarkitlib_rs::kpm::types::KpmRefDataSet;
@@ -131,8 +130,16 @@ fn main() {
 
     // ---------------------------------------------------------------
     // Step 3: Load NFT marker data
+    //
+    // Following the nftSimple.c pattern:
+    //   1. Load .fset3 via kpmLoadRefDataSet()
+    //   2. Load surface set via ar2ReadSurfaceSet() which internally
+    //      loads both .iset and .fset from the base name.
+    //
+    // See: https://github.com/webarkit/artoolkit5/blob/66aa1cc12e1bdeb12ee6af5746dc4ff6f3ba34cb/examples/nftSimple/nftSimple.c#L420-L479
     // ---------------------------------------------------------------
     let marker_name = "pinball";
+    let marker_base = data_dir.join(marker_name);
     println!("\nStep 3: Loading NFT marker '{}'...", marker_name);
 
     // 3a: .fset3 (KPM reference data)
@@ -148,26 +155,29 @@ fn main() {
         ref_data.num, ref_data.page_num
     );
 
-    // 3b: .iset (image pyramid)
-    let iset_path = data_dir.join(format!("{}.iset", marker_name));
-    let image_set = AR2ImageSetT::load(&iset_path).expect("failed to load .iset");
-    let base = &image_set.scale[0];
+    // 3b: Load surface set (reads both .iset and .fset internally).
+    //   C++: surfaceSet = ar2ReadSurfaceSet(datasetPathname, "fset", NULL)
+    let mut surface_set =
+        ar2_read_surface_set(&marker_base).expect("failed to load surface set (.iset + .fset)");
+    if let Some((w, h, dpi)) = ar2_surface_set_marker_info(&surface_set) {
+        println!("  Surface set: marker {}x{} @ {:.0} DPI", w, h, dpi);
+    }
+    let total_features: usize = surface_set
+        .surface
+        .iter()
+        .filter_map(|s| s.feature_set.as_ref())
+        .flat_map(|fs| &fs.list)
+        .map(|fp| fp.coord.len())
+        .sum();
+    let num_scales = surface_set
+        .surface
+        .first()
+        .and_then(|s| s.image_set.as_ref())
+        .map(|is| is.scale.len())
+        .unwrap_or(0);
     println!(
-        "  .iset:  {} scales, base {}x{} @ {:.0} DPI",
-        image_set.num(),
-        base.xsize,
-        base.ysize,
-        base.dpi
-    );
-
-    // 3c: .fset (AR2 features)
-    let fset_path = data_dir.join(format!("{}.fset", marker_name));
-    let feature_set = AR2FeatureSetT::load(&fset_path).expect("failed to load .fset");
-    let total_features: usize = feature_set.list.iter().map(|fp| fp.num()).sum();
-    println!(
-        "  .fset:  {} scales, {} total features",
-        feature_set.num(),
-        total_features
+        "  Surface set: {} image scales, {} total features",
+        num_scales, total_features
     );
 
     // ---------------------------------------------------------------
@@ -205,34 +215,15 @@ fn main() {
 
             // ---------------------------------------------------------------
             // Step 5: AR2 Tracking — refine the pose
+            //
+            //   C++: ar2SetInitTrans(surfaceSet, trackingTrans);
+            //        ar2Tracking(ar2Handle, surfaceSet, buff, trackingTrans, &err);
             // ---------------------------------------------------------------
             println!("\nStep 5: Running AR2 tracking (pose refinement)...");
 
-            // Convert I/O types to tracking types.
-            let tracking_image_set = convert_image_set(&image_set);
-            let tracking_feature_set = convert_feature_set(&feature_set);
-
-            // Build surface with identity transform (single marker).
-            let mut identity = [[0.0f32; 4]; 3];
-            identity[0][0] = 1.0;
-            identity[1][1] = 1.0;
-            identity[2][2] = 1.0;
-
-            let surface = AR2Surface {
-                image_set: Some(tracking_image_set),
-                feature_set: Some(tracking_feature_set),
-                trans: identity,
-                itrans: identity,
-            };
-
-            let mut surface_set = AR2SurfaceSet {
-                surface: vec![surface],
-                trans1: *cam_pose,   // Initial pose from KPM
-                trans2: *cam_pose,
-                trans3: *cam_pose,
-                cont_num: 1,         // Mark as having one continuous frame
-                ..Default::default()
-            };
+            // Set initial pose from KPM detection.
+            //   C++: ar2SetInitTrans(surfaceSet[detectedPage], trackingTrans);
+            surface_set.set_init_trans(cam_pose);
 
             // Create AR2Handle with camera params and ICP.
             let mut ar2_handle = AR2Handle::new(width, height, ARPixelFormat::MONO);
@@ -300,62 +291,4 @@ fn main() {
     println!("\n========================================");
     println!("  Simple NFT example complete.");
     println!("========================================");
-}
-
-/// Convert an `AR2ImageSetT` (I/O type) to `AR2ImageSet` (tracking type).
-///
-/// The tracking module expects `AR2Image` with `img_bw_blur` containing
-/// multiple blur levels. We populate blur level 0 with the raw pixels
-/// and leave higher levels as `None`.
-fn convert_image_set(io_set: &AR2ImageSetT) -> AR2ImageSet {
-    let mut scales = Vec::with_capacity(io_set.scale.len());
-
-    for io_img in &io_set.scale {
-        let mut blur_levels: Vec<Option<Vec<u8>>> = Vec::with_capacity(AR2_BLUR_IMAGE_MAX);
-
-        // Level 0 = original image pixels.
-        blur_levels.push(Some(io_img.img_bw.clone()));
-
-        // Fill remaining levels with None.
-        for _ in 1..AR2_BLUR_IMAGE_MAX {
-            blur_levels.push(None);
-        }
-
-        scales.push(AR2Image {
-            img_bw_blur: blur_levels,
-            xsize: io_img.xsize,
-            ysize: io_img.ysize,
-            dpi: io_img.dpi,
-        });
-    }
-
-    AR2ImageSet { scale: scales }
-}
-
-/// Convert an `AR2FeatureSetT` (I/O type) to `AR2FeatureSet` (tracking type).
-fn convert_feature_set(io_set: &AR2FeatureSetT) -> AR2FeatureSet {
-    let mut list = Vec::with_capacity(io_set.list.len());
-
-    for io_fp in &io_set.list {
-        let coord: Vec<AR2FeatureCoord> = io_fp
-            .coord
-            .iter()
-            .map(|c| AR2FeatureCoord {
-                x: c.x,
-                y: c.y,
-                mx: c.mx,
-                my: c.my,
-                max_sim: c.max_sim,
-            })
-            .collect();
-
-        list.push(AR2FeaturePoints {
-            coord,
-            scale: io_fp.scale,
-            maxdpi: io_fp.maxdpi,
-            mindpi: io_fp.mindpi,
-        });
-    }
-
-    AR2FeatureSet { list }
 }

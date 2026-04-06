@@ -39,8 +39,11 @@
 //!
 //! Focus: 2D region tracking and feature matching for robust pose estimation.
 
+use crate::ar2::feature_set::AR2FeatureSetT;
+use crate::ar2::image_set::AR2ImageSetT;
 use crate::icp::ICPHandleT;
 use crate::types::{ARParamLT, ARPixelFormat, ARdouble};
+use std::path::Path;
 
 pub const AR2_TRACKING_6DOF: i32 = 1;
 pub const AR2_TRACKING_HOMOGRAPHY: i32 = 2;
@@ -157,6 +160,185 @@ impl Default for AR2SurfaceSet {
             prev_feature: vec![AR2TemplateCandidate::default(); AR2_SEARCH_FEATURE_MAX + 1],
         }
     }
+}
+
+impl AR2SurfaceSet {
+    /// Set the initial camera pose for tracking.
+    ///
+    /// Rust equivalent of `ar2SetInitTrans()` in the C API.
+    /// This sets `cont_num = 1` and stores the initial pose in `trans1`,
+    /// enabling `ar2_tracking()` to run.
+    pub fn set_init_trans(&mut self, trans: &[[f32; 4]; 3]) {
+        self.cont_num = 1;
+        self.trans1 = *trans;
+        self.prev_feature[0].flag = -1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ar2_read_surface_set — Rust equivalent of C `ar2ReadSurfaceSet()`
+// ---------------------------------------------------------------------------
+
+/// Read an NFT surface set from disk, given a base path name.
+///
+/// This is the Rust equivalent of the C function `ar2ReadSurfaceSet()` in
+/// `AR2/surface.c`. It loads both the `.iset` (image pyramid) and `.fset`
+/// (feature points) files from the given base name, constructs an
+/// `AR2SurfaceSet` with a single surface, and applies an identity transform.
+///
+/// This mirrors the strategy used in nftSimple.c:
+///
+/// ```c
+/// surfaceSet = ar2ReadSurfaceSet(markersNFT[i].datasetPathname, "fset", NULL);
+/// ```
+///
+/// # Arguments
+///
+/// * `basename` — Base file path without extension (e.g. `"Data/pinball"`).
+///   The function appends `.iset` and `.fset` to load both files.
+///
+/// # Example
+///
+/// ```no_run
+/// use webarkitlib_rs::ar2::ar2_read_surface_set;
+///
+/// let surface_set = ar2_read_surface_set("examples/Data/pinball").unwrap();
+/// assert_eq!(surface_set.surface.len(), 1);
+/// ```
+pub fn ar2_read_surface_set<P: AsRef<Path>>(
+    basename: P,
+) -> std::io::Result<AR2SurfaceSet> {
+    let base = basename.as_ref();
+
+    // Load .iset (image pyramid).
+    let iset_path = base.with_extension("iset");
+    let io_image_set = AR2ImageSetT::load(&iset_path)?;
+
+    // Load .fset (feature points).
+    let fset_path = base.with_extension("fset");
+    let io_feature_set = AR2FeatureSetT::load(&fset_path)?;
+
+    Ok(build_surface_set(&io_image_set, &io_feature_set))
+}
+
+/// Read an NFT surface set from in-memory byte slices.
+///
+/// This is the WASM-friendly variant of [`ar2_read_surface_set`] that
+/// accepts pre-fetched `.iset` and `.fset` data as byte slices instead
+/// of reading from the filesystem.
+///
+/// # Arguments
+///
+/// * `iset_bytes` — Contents of the `.iset` file (image pyramid).
+/// * `fset_bytes` — Contents of the `.fset` file (feature points).
+pub fn ar2_read_surface_set_from_bytes(
+    iset_bytes: &[u8],
+    fset_bytes: &[u8],
+) -> std::io::Result<AR2SurfaceSet> {
+    let io_image_set = AR2ImageSetT::from_bytes(iset_bytes)?;
+    let io_feature_set = AR2FeatureSetT::from_bytes(fset_bytes)?;
+    Ok(build_surface_set(&io_image_set, &io_feature_set))
+}
+
+/// Construct an `AR2SurfaceSet` from parsed I/O types.
+///
+/// Converts the I/O types (`AR2ImageSetT`, `AR2FeatureSetT`) to the
+/// tracking types (`AR2ImageSet`, `AR2FeatureSet`) and creates a
+/// single-surface set with an identity transform.
+fn build_surface_set(
+    io_image_set: &AR2ImageSetT,
+    io_feature_set: &AR2FeatureSetT,
+) -> AR2SurfaceSet {
+    let tracking_image_set = convert_image_set(io_image_set);
+    let tracking_feature_set = convert_feature_set(io_feature_set);
+
+    // Identity transform (single marker, marker-local = world).
+    let identity: [[f32; 4]; 3] = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ];
+
+    let surface = AR2Surface {
+        image_set: Some(tracking_image_set),
+        feature_set: Some(tracking_feature_set),
+        trans: identity,
+        itrans: identity,
+    };
+
+    AR2SurfaceSet {
+        surface: vec![surface],
+        ..Default::default()
+    }
+}
+
+/// Convert an `AR2ImageSetT` (I/O type) to `AR2ImageSet` (tracking type).
+///
+/// The tracking module expects `AR2Image` with `img_bw_blur` containing
+/// multiple blur levels. We populate blur level 0 with the raw pixels
+/// and leave higher levels as `None`.
+fn convert_image_set(io_set: &AR2ImageSetT) -> AR2ImageSet {
+    let mut scales = Vec::with_capacity(io_set.scale.len());
+
+    for io_img in &io_set.scale {
+        let mut blur_levels: Vec<Option<Vec<u8>>> = Vec::with_capacity(AR2_BLUR_IMAGE_MAX);
+
+        // Level 0 = original image pixels.
+        blur_levels.push(Some(io_img.img_bw.clone()));
+
+        // Fill remaining levels with None.
+        for _ in 1..AR2_BLUR_IMAGE_MAX {
+            blur_levels.push(None);
+        }
+
+        scales.push(AR2Image {
+            img_bw_blur: blur_levels,
+            xsize: io_img.xsize,
+            ysize: io_img.ysize,
+            dpi: io_img.dpi,
+        });
+    }
+
+    AR2ImageSet { scale: scales }
+}
+
+/// Convert an `AR2FeatureSetT` (I/O type) to `AR2FeatureSet` (tracking type).
+fn convert_feature_set(io_set: &AR2FeatureSetT) -> AR2FeatureSet {
+    let mut list = Vec::with_capacity(io_set.list.len());
+
+    for io_fp in &io_set.list {
+        let coord: Vec<AR2FeatureCoord> = io_fp
+            .coord
+            .iter()
+            .map(|c| AR2FeatureCoord {
+                x: c.x,
+                y: c.y,
+                mx: c.mx,
+                my: c.my,
+                max_sim: c.max_sim,
+            })
+            .collect();
+
+        list.push(AR2FeaturePoints {
+            coord,
+            scale: io_fp.scale,
+            maxdpi: io_fp.maxdpi,
+            mindpi: io_fp.mindpi,
+        });
+    }
+
+    AR2FeatureSet { list }
+}
+
+/// Get the marker dimensions from an `AR2SurfaceSet`.
+///
+/// Returns `(width, height, dpi)` from the first surface's image set
+/// at scale 0, or `None` if the surface set is empty or has no image data.
+pub fn ar2_surface_set_marker_info(surface_set: &AR2SurfaceSet) -> Option<(i32, i32, f32)> {
+    let surface = surface_set.surface.first()?;
+    let image_set = surface.image_set.as_ref()?;
+    let base = image_set.scale.first()?;
+    Some((base.xsize, base.ysize, base.dpi))
 }
 
 pub struct AR2Handle {
