@@ -22,6 +22,7 @@ Cargo.lock
 # Benchmarking and Example Artifacts
 benchmarks/c_benchmark/src/
 benchmarks/c_benchmark/build/
+benchmarks/c_benchmark/archives/
 benchmarks/data/hiro.raw
 benchmarks/data/*.png
 crates/core/examples/Data/found.jpg

@@ -381,9 +381,10 @@ impl KpmRefDataSet {
             w.write_i32::<LittleEndian>(pi.page_no)?;
             w.write_i32::<LittleEndian>(pi.image_num)?;
             for ii in &pi.image_info {
-                w.write_i32::<LittleEndian>(ii.image_no)?;
+                // C++ KpmImageInfo layout: { int width; int height; int imageNo; }
                 w.write_i32::<LittleEndian>(ii.width)?;
                 w.write_i32::<LittleEndian>(ii.height)?;
+                w.write_i32::<LittleEndian>(ii.image_no)?;
             }
         }
 
@@ -449,10 +450,14 @@ impl KpmRefDataSet {
 
             let mut image_info = Vec::with_capacity(image_num as usize);
             for _ in 0..image_num {
+                // C++ KpmImageInfo layout: { int width; int height; int imageNo; }
+                let width = r.read_i32::<LittleEndian>()?;
+                let height = r.read_i32::<LittleEndian>()?;
+                let image_no = r.read_i32::<LittleEndian>()?;
                 image_info.push(KpmImageInfo {
-                    image_no: r.read_i32::<LittleEndian>()?,
-                    width: r.read_i32::<LittleEndian>()?,
-                    height: r.read_i32::<LittleEndian>()?,
+                    image_no,
+                    width,
+                    height,
                 });
             }
 

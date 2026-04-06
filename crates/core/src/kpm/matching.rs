@@ -119,6 +119,9 @@ impl KpmHandle {
             }
 
             // (d-cont) If the backend matched a page, compute pose.
+            // IMPORTANT: matched_db_id is 0-based. The C++ uses -1 as the
+            // "no match" sentinel. Do NOT use `> 0` — db_id 0 is valid and
+            // is the normal case for any single-marker database.
             let matched_id = self.matcher.matched_id();
             if matched_id >= 0 {
                 let matched_page_no = self.page_ids[matched_id as usize];
