@@ -205,9 +205,7 @@ impl AR2SurfaceSet {
 /// let surface_set = ar2_read_surface_set("examples/Data/pinball").unwrap();
 /// assert_eq!(surface_set.surface.len(), 1);
 /// ```
-pub fn ar2_read_surface_set<P: AsRef<Path>>(
-    basename: P,
-) -> std::io::Result<AR2SurfaceSet> {
+pub fn ar2_read_surface_set<P: AsRef<Path>>(basename: P) -> std::io::Result<AR2SurfaceSet> {
     let base = basename.as_ref();
 
     // Load .iset (image pyramid).
