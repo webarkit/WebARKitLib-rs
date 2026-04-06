@@ -207,7 +207,7 @@
                 statusEl.innerText = 'Status: WASM loaded. Loading test image...';
 
                 // Load test image for display.
-                testImage.src = 'assets/img.jpg';
+                testImage.src = 'assets/pinball-demo.jpg';
                 await new Promise((resolve, reject) => {
                     testImage.onload = resolve;
                     testImage.onerror = () => reject(new Error('Failed to load test image'));
