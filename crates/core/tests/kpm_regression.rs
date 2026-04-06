@@ -518,7 +518,10 @@ fn test_matched_db_id_zero_finds_pose() {
     // Load single-page .fset3 — all features will be under db_id = 0..N.
     let fset3_path = data_dir().join("pinball.fset3");
     let mut ref_data_set = KpmRefDataSet::load(&fset3_path).expect("failed to load pinball.fset3");
-    assert_eq!(ref_data_set.page_num, 1, "pinball.fset3 must be single-page");
+    assert_eq!(
+        ref_data_set.page_num, 1,
+        "pinball.fset3 must be single-page"
+    );
 
     // Assign page 0 — this is the scenario that triggered issue #43.
     ref_data_set.change_page_no(
