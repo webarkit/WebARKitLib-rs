@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-04-07
+
+### Milestone 4 — KPM pipeline correctness
+
+### 🐛 Bug Fixes
+
+- Fset3 KpmImageInfo field order and enable full pipeline test
+- Improve assertion formatting in test_matched_db_id_zero_finds_pose
+- Formatting style causing CI failure
+- Gate simple_nft example behind ffi-backend feature
+- Formatting in the new surface.rs file
+
+### 🚀 Features
+
+- Add simple_nft example demonstrating KPM detection → AR2 tracking pipeline
+- Add WasmNFTHandle for AR2 tracking in WASM and NFT demo page
+- Add pinball demo image and update simple NFT example to use it
+
+### 🚜 Refactor
+
+- Add ar2_read_surface_set to match C++ nftSimple pattern
+- Extract surface types and functions into new ar2/surface.rs
+
 ## [0.3.1] - 2026-04-06
 
 ### Milestone 3 — Architectural consolidation
