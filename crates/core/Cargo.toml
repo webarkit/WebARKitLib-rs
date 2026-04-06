@@ -38,6 +38,10 @@ criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3"
 
+[[example]]
+name = "simple_nft"
+required-features = ["ffi-backend"]
+
 [[bench]]
 name = "marker_bench"
 harness = false
