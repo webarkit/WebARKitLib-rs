@@ -47,6 +47,11 @@
 
 use std::io::Cursor;
 use wasm_bindgen::prelude::*;
+use webarkitlib_rs::ar2::{
+    ar2_tracking, AR2FeatureCoord, AR2FeaturePoints, AR2FeatureSet, AR2FeatureSetT, AR2Handle,
+    AR2Image, AR2ImageSet, AR2ImageSetT, AR2Surface, AR2SurfaceSet, AR2_BLUR_IMAGE_MAX,
+};
+use webarkitlib_rs::icp::icp_create_handle;
 use webarkitlib_rs::image_proc::{rgba_to_gray, ARImageProcInfo};
 use webarkitlib_rs::marker::ar_detect_marker;
 use webarkitlib_rs::pattern::ar_patt_load_from_buffer;
@@ -351,4 +356,368 @@ pub struct MarkerResult {
 pub struct PoseResult {
     pub matrix: Vec<f32>,
     pub icp_error: f32,
+}
+
+// ===========================================================================
+// WasmNFTHandle — NFT (Natural Feature Tracking) for WASM
+// ===========================================================================
+
+/// NFT tracking result returned to JavaScript.
+#[derive(serde::Serialize)]
+pub struct NFTTrackingResult {
+    /// Whether tracking succeeded this frame.
+    pub found: bool,
+    /// 3×4 camera pose matrix (12 floats, row-major).
+    pub matrix: Vec<f32>,
+    /// Reprojection error (lower is better).
+    pub error: f32,
+    /// Number of continuous tracking frames.
+    pub cont_num: i32,
+}
+
+/// WebAssembly handle for NFT (Natural Feature Tracking).
+///
+/// This handle manages the AR2 tracking pipeline, which uses template
+/// matching on image pyramids to refine an initial camera pose. The
+/// initial pose can be provided from JavaScript (e.g. from a separate
+/// KPM detection step or a prior frame).
+///
+/// ## Usage from JavaScript
+///
+/// ```js
+/// const nft = new WasmNFTHandle(cameraParamBytes, width, height);
+/// nft.load_nft_marker(isetBytes, fsetBytes);
+/// nft.set_initial_pose(matrix12Floats);
+/// const result = nft.track(rgbaFrame, width, height);
+/// if (result.found) {
+///     // Use result.matrix (3x4 pose)
+/// }
+/// ```
+#[wasm_bindgen]
+pub struct WasmNFTHandle {
+    ar2_handle: AR2Handle,
+    surface_set: AR2SurfaceSet,
+    /// Marker base width from .iset scale[0].
+    marker_width: i32,
+    /// Marker base height from .iset scale[0].
+    marker_height: i32,
+    /// Marker DPI from .iset scale[0].
+    marker_dpi: f32,
+    /// Whether NFT marker data has been loaded.
+    loaded: bool,
+}
+
+#[wasm_bindgen]
+impl WasmNFTHandle {
+    /// Create a new NFT tracking handle.
+    ///
+    /// # Arguments
+    ///
+    /// * `param_bytes` — Camera parameter file contents (`camera_para.dat`).
+    /// * `width` — Camera frame width in pixels.
+    /// * `height` — Camera frame height in pixels.
+    #[wasm_bindgen(constructor)]
+    pub fn new(param_bytes: &[u8], width: i32, height: i32) -> Result<WasmNFTHandle, JsValue> {
+        let cursor = Cursor::new(param_bytes);
+        let mut param = ARParam::load(cursor)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
+
+        // Scale camera parameters to match the requested frame size
+        // (equivalent to arParamChangeSize).
+        let sx = width as f64 / param.xsize as f64;
+        let sy = height as f64 / param.ysize as f64;
+        for col in 0..4 {
+            param.mat[0][col] *= sx;
+            param.mat[1][col] *= sy;
+        }
+        param.xsize = width;
+        param.ysize = height;
+
+        // Create AR2Handle.
+        let mut ar2_handle = AR2Handle::new(width, height, ARPixelFormat::MONO);
+
+        // Set up camera parameters.
+        let param_lt = Box::new(ARParamLT::new_basic(param.clone()));
+        ar2_handle.cparam_lt = Box::into_raw(param_lt);
+
+        // Set up ICP handle.
+        let icp_handle_ptr = icp_create_handle(&param.mat)
+            .map_err(|e| JsValue::from_str(&format!("Failed to create ICP handle: {}", e)))?;
+        ar2_handle.icp_handle = icp_handle_ptr;
+
+        Ok(WasmNFTHandle {
+            ar2_handle,
+            surface_set: AR2SurfaceSet::default(),
+            marker_width: 0,
+            marker_height: 0,
+            marker_dpi: 0.0,
+            loaded: false,
+        })
+    }
+
+    /// Load an NFT marker from .iset and .fset binary data.
+    ///
+    /// # Arguments
+    ///
+    /// * `iset_bytes` — Contents of the `.iset` file (image pyramid).
+    /// * `fset_bytes` — Contents of the `.fset` file (feature points).
+    pub fn load_nft_marker(
+        &mut self,
+        iset_bytes: &[u8],
+        fset_bytes: &[u8],
+    ) -> Result<(), JsValue> {
+        // Parse .iset
+        let io_image_set = AR2ImageSetT::from_bytes(iset_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load .iset: {}", e)))?;
+
+        // Store marker dimensions.
+        if !io_image_set.scale.is_empty() {
+            self.marker_width = io_image_set.scale[0].xsize;
+            self.marker_height = io_image_set.scale[0].ysize;
+            self.marker_dpi = io_image_set.scale[0].dpi;
+        }
+
+        // Parse .fset
+        let io_feature_set = AR2FeatureSetT::from_bytes(fset_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load .fset: {}", e)))?;
+
+        // Convert I/O types to tracking types.
+        let tracking_image_set = convert_image_set_to_tracking(&io_image_set);
+        let tracking_feature_set = convert_feature_set_to_tracking(&io_feature_set);
+
+        // Build surface with identity transform.
+        let mut identity = [[0.0f32; 4]; 3];
+        identity[0][0] = 1.0;
+        identity[1][1] = 1.0;
+        identity[2][2] = 1.0;
+
+        let surface = AR2Surface {
+            image_set: Some(tracking_image_set),
+            feature_set: Some(tracking_feature_set),
+            trans: identity,
+            itrans: identity,
+        };
+
+        self.surface_set = AR2SurfaceSet {
+            surface: vec![surface],
+            ..Default::default()
+        };
+
+        self.loaded = true;
+
+        let msg = format!(
+            "[WebARKit NFT] Marker loaded: {}x{} @ {:.0} DPI, {} feature scales",
+            self.marker_width,
+            self.marker_height,
+            self.marker_dpi,
+            io_feature_set.num()
+        );
+        web_sys::console::log_1(&msg.into());
+
+        Ok(())
+    }
+
+    /// Set the initial camera pose for tracking.
+    ///
+    /// The pose is a 3×4 matrix provided as 12 floats in row-major order:
+    /// `[r00, r01, r02, tx, r10, r11, r12, ty, r20, r21, r22, tz]`
+    ///
+    /// This must be called before `track()` can succeed, typically using
+    /// a pose obtained from KPM detection.
+    pub fn set_initial_pose(&mut self, pose: &[f32]) -> Result<(), JsValue> {
+        if pose.len() != 12 {
+            return Err(JsValue::from_str(
+                "Pose must be 12 floats (3x4 matrix, row-major)",
+            ));
+        }
+        if !self.loaded {
+            return Err(JsValue::from_str(
+                "NFT marker not loaded — call load_nft_marker first",
+            ));
+        }
+
+        let mut mat = [[0.0f32; 4]; 3];
+        for r in 0..3 {
+            for c in 0..4 {
+                mat[r][c] = pose[r * 4 + c];
+            }
+        }
+
+        self.surface_set.trans1 = mat;
+        self.surface_set.trans2 = mat;
+        self.surface_set.trans3 = mat;
+        self.surface_set.cont_num = 1;
+
+        Ok(())
+    }
+
+    /// Run one frame of AR2 tracking.
+    ///
+    /// # Arguments
+    ///
+    /// * `frame` — RGBA pixel data of the camera frame.
+    /// * `width` — Frame width in pixels.
+    /// * `height` — Frame height in pixels.
+    ///
+    /// # Returns
+    ///
+    /// An `NFTTrackingResult` with the tracking status and refined pose.
+    pub fn track(
+        &mut self,
+        frame: &[u8],
+        _width: i32,
+        _height: i32,
+    ) -> Result<JsValue, JsValue> {
+        if !self.loaded {
+            return Err(JsValue::from_str("NFT marker not loaded"));
+        }
+
+        if self.surface_set.cont_num <= 0 {
+            return Ok(serde_wasm_bindgen::to_value(&NFTTrackingResult {
+                found: false,
+                matrix: vec![0.0; 12],
+                error: -1.0,
+                cont_num: 0,
+            })
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?);
+        }
+
+        // Convert RGBA to grayscale.
+        let luma = rgba_to_gray(frame);
+
+        let mut trans = self.surface_set.trans1;
+        let mut err = 0.0f32;
+
+        match ar2_tracking(
+            &mut self.ar2_handle,
+            &mut self.surface_set,
+            &luma,
+            &mut trans,
+            &mut err,
+        ) {
+            Ok(()) => {
+                // Flatten 3x4 to 12 floats.
+                let mut flat = vec![0.0f32; 12];
+                for r in 0..3 {
+                    for c in 0..4 {
+                        flat[r * 4 + c] = trans[r][c];
+                    }
+                }
+
+                Ok(serde_wasm_bindgen::to_value(&NFTTrackingResult {
+                    found: true,
+                    matrix: flat,
+                    error: err,
+                    cont_num: self.surface_set.cont_num,
+                })
+                .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?)
+            }
+            Err(_code) => Ok(serde_wasm_bindgen::to_value(&NFTTrackingResult {
+                found: false,
+                matrix: vec![0.0; 12],
+                error: err,
+                cont_num: self.surface_set.cont_num,
+            })
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?),
+        }
+    }
+
+    /// Get the marker width from the loaded .iset data.
+    pub fn get_marker_width(&self) -> i32 {
+        self.marker_width
+    }
+
+    /// Get the marker height from the loaded .iset data.
+    pub fn get_marker_height(&self) -> i32 {
+        self.marker_height
+    }
+
+    /// Get the marker DPI from the loaded .iset data.
+    pub fn get_marker_dpi(&self) -> f32 {
+        self.marker_dpi
+    }
+
+    /// Check whether an NFT marker has been loaded.
+    pub fn is_loaded(&self) -> bool {
+        self.loaded
+    }
+
+    /// Get the current tracking continuity count.
+    pub fn get_cont_num(&self) -> i32 {
+        self.surface_set.cont_num
+    }
+
+    /// Reset tracking state (forces re-detection).
+    pub fn reset_tracking(&mut self) {
+        self.surface_set.cont_num = 0;
+    }
+}
+
+impl Drop for WasmNFTHandle {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.ar2_handle.cparam_lt.is_null() {
+                let _ = Box::from_raw(self.ar2_handle.cparam_lt);
+                self.ar2_handle.cparam_lt = std::ptr::null_mut();
+            }
+            if !self.ar2_handle.icp_handle.is_null() {
+                let _ = Box::from_raw(self.ar2_handle.icp_handle);
+                self.ar2_handle.icp_handle = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
+// ===========================================================================
+// Internal conversion helpers
+// ===========================================================================
+
+/// Convert an `AR2ImageSetT` (I/O type) to `AR2ImageSet` (tracking type).
+fn convert_image_set_to_tracking(io_set: &AR2ImageSetT) -> AR2ImageSet {
+    let mut scales = Vec::with_capacity(io_set.scale.len());
+
+    for io_img in &io_set.scale {
+        let mut blur_levels: Vec<Option<Vec<u8>>> = Vec::with_capacity(AR2_BLUR_IMAGE_MAX);
+        blur_levels.push(Some(io_img.img_bw.clone()));
+        for _ in 1..AR2_BLUR_IMAGE_MAX {
+            blur_levels.push(None);
+        }
+
+        scales.push(AR2Image {
+            img_bw_blur: blur_levels,
+            xsize: io_img.xsize,
+            ysize: io_img.ysize,
+            dpi: io_img.dpi,
+        });
+    }
+
+    AR2ImageSet { scale: scales }
+}
+
+/// Convert an `AR2FeatureSetT` (I/O type) to `AR2FeatureSet` (tracking type).
+fn convert_feature_set_to_tracking(io_set: &AR2FeatureSetT) -> AR2FeatureSet {
+    let mut list = Vec::with_capacity(io_set.list.len());
+
+    for io_fp in &io_set.list {
+        let coord: Vec<AR2FeatureCoord> = io_fp
+            .coord
+            .iter()
+            .map(|c| AR2FeatureCoord {
+                x: c.x,
+                y: c.y,
+                mx: c.mx,
+                my: c.my,
+                max_sim: c.max_sim,
+            })
+            .collect();
+
+        list.push(AR2FeaturePoints {
+            coord,
+            scale: io_fp.scale,
+            maxdpi: io_fp.maxdpi,
+            mindpi: io_fp.mindpi,
+        });
+    }
+
+    AR2FeatureSet { list }
 }
