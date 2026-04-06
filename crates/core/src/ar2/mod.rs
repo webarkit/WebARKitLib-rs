@@ -41,22 +41,28 @@
 //! | Sub-module       | Purpose |
 //! |------------------|---------|
 //! | [`tracking`]     | Runtime tracking structs and algorithms (ported from AR2) |
+//! | [`surface`]      | Surface set loading and helpers (ported from `AR2/surface.c`) |
 //! | [`image_set`]    | `.iset` image pyramid I/O (ported from `AR2/imageSet.c`) |
 //! | [`feature_set`]  | `.fset` feature point I/O (ported from `AR2/featureSet.c`) |
 //!
 //! ## Backward compatibility
 //!
-//! All public items from [`tracking`] are re-exported at this module level,
-//! so existing code using `webarkitlib_rs::ar2::AR2Handle` continues to work.
+//! All public items from [`tracking`] and [`surface`] are re-exported at this
+//! module level, so existing code using e.g. `webarkitlib_rs::ar2::AR2Handle`
+//! or `webarkitlib_rs::ar2::ar2_read_surface_set` continues to work.
 
 pub mod feature_set;
 pub mod image_set;
+pub mod surface;
 pub mod tracking;
 
 // Re-export everything from tracking for backward compatibility.
 // Before this consolidation, ar2.rs *was* the tracking module,
 // so all its public items lived at crate::ar2::*.
 pub use self::tracking::*;
+
+// Re-export everything from surface for backward compatibility.
+pub use self::surface::*;
 
 // Convenience re-exports from the I/O sub-modules.
 pub use feature_set::AR2FeatureSetT;
