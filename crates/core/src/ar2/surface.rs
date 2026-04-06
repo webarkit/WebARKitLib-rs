@@ -43,8 +43,8 @@
 use crate::ar2::feature_set::AR2FeatureSetT;
 use crate::ar2::image_set::AR2ImageSetT;
 use crate::ar2::tracking::{
-    AR2FeatureCoord, AR2FeaturePoints, AR2FeatureSet, AR2Image, AR2ImageSet,
-    AR2TemplateCandidate, AR2_BLUR_IMAGE_MAX, AR2_SEARCH_FEATURE_MAX,
+    AR2FeatureCoord, AR2FeaturePoints, AR2FeatureSet, AR2Image, AR2ImageSet, AR2TemplateCandidate,
+    AR2_BLUR_IMAGE_MAX, AR2_SEARCH_FEATURE_MAX,
 };
 use std::path::Path;
 
