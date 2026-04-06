@@ -33,7 +33,7 @@
  *  Author(s): Walter Perdan @kalwalt https://github.com/kalwalt
  *
  */
-
+//! # Pose Estimation - core functions for estimating the pose of AR markers in 3D space.
 use crate::icp::{
     icp_create_handle, icp_delete_handle, icp_get_init_xw2xc_from_planar_data, icp_point,
     ICP2DCoordT, ICP3DCoordT, ICPDataT,
