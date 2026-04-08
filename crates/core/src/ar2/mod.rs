@@ -51,6 +51,7 @@
 //! module level, so existing code using e.g. `webarkitlib_rs::ar2::AR2Handle`
 //! or `webarkitlib_rs::ar2::ar2_read_surface_set` continues to work.
 
+pub mod feature_map;
 pub mod feature_set;
 pub mod image_set;
 pub mod surface;
@@ -65,5 +66,6 @@ pub use self::tracking::*;
 pub use self::surface::*;
 
 // Convenience re-exports from the I/O sub-modules.
+pub use feature_map::ar2_gen_feature_map;
 pub use feature_set::AR2FeatureSetT;
 pub use image_set::AR2ImageSetT;

@@ -279,7 +279,7 @@ fn parse_jfif_dpi(jpeg_data: &[u8]) -> Option<f32> {
 /// Generate a downscaled image layer via area-averaging.
 ///
 /// Ported from `ar2GenImageLayer2` in the C source.
-fn gen_image_layer(
+pub(crate) fn gen_image_layer(
     src: &[u8],
     src_xsize: i32,
     src_ysize: i32,
