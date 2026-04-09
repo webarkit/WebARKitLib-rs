@@ -63,8 +63,8 @@
 //!   [u8 × xsize*ysize]  raw grayscale pixels
 //! ```
 
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::{self, Cursor, Read};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::path::Path;
 
 /// A single image scale in the pyramid.
@@ -198,7 +198,7 @@ impl AR2ImageSetT {
 
         // Generate downscaled layers via area-averaging.
         for &target_dpi in &dpi_values[1..num] {
-            let layer = gen_image_layer(
+            let layer = gen_image_layer2(
                 &scales[0].img_bw,
                 base_xsize,
                 base_ysize,
@@ -242,6 +242,68 @@ impl AR2ImageSetT {
 
         Ok(AR2ImageSetT { scale: scales })
     }
+
+    /// Save the image set to an `.iset` file on disk.
+    ///
+    /// Writes the **legacy (ARToolKit v4.x) raw pixel format** so that the
+    /// resulting file is readable by both the Rust [`load()`](Self::load)
+    /// and the C/C++ `ar2LoadImageSet()` functions.
+    ///
+    /// ## Binary layout (little-endian)
+    ///
+    /// ```text
+    /// [i32 LE]  num_scales          — number of pyramid levels
+    /// For each scale:
+    ///   [i32 LE]  xsize             — width in pixels
+    ///   [i32 LE]  ysize             — height in pixels
+    ///   [f32 LE]  dpi               — resolution in dots-per-inch
+    ///   [u8 × xsize*ysize]          — raw grayscale pixels (row-major)
+    /// ```
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        let mut w = BufWriter::new(file);
+        self.write_to(&mut w)?;
+        w.flush()
+    }
+
+    /// Serialize the image set into an in-memory byte vector.
+    ///
+    /// Uses the same legacy binary format as [`save()`](Self::save).
+    pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.write_to(&mut buf)?;
+        Ok(buf)
+    }
+
+    /// Write the image set to any [`Write`] implementor.
+    ///
+    /// This is the shared serialization core used by both [`save()`](Self::save)
+    /// and [`to_bytes()`](Self::to_bytes). The field ordering mirrors
+    /// [`read_legacy_format()`] so that `write_to` → `read_legacy_format` is a
+    /// lossless roundtrip.
+    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        if self.scale.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "image set has no scales to write",
+            ));
+        }
+
+        // Number of scales.
+        writer.write_i32::<LittleEndian>(self.scale.len() as i32)?;
+
+        for img in &self.scale {
+            // Per-scale header.
+            writer.write_i32::<LittleEndian>(img.xsize)?;
+            writer.write_i32::<LittleEndian>(img.ysize)?;
+            writer.write_f32::<LittleEndian>(img.dpi)?;
+
+            // Raw grayscale pixel data.
+            writer.write_all(&img.img_bw)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Parse JFIF APP0 marker to extract DPI.
@@ -276,10 +338,102 @@ fn parse_jfif_dpi(jpeg_data: &[u8]) -> Option<f32> {
     }
 }
 
-/// Generate a downscaled image layer via area-averaging.
+/// Generate a downscaled image layer from a colour or grayscale source.
 ///
-/// Ported from `ar2GenImageLayer2` in the C source.
-pub(crate) fn gen_image_layer(
+/// Ported from `ar2GenImageLayer1` in the C source. This is the entry-point
+/// variant that handles colour-to-grayscale conversion during downscale.
+///
+/// # Arguments
+///
+/// * `src` — Raw pixel data. Length must be `src_xsize * src_ysize * nc`.
+/// * `src_xsize` — Source image width in pixels.
+/// * `src_ysize` — Source image height in pixels.
+/// * `nc` — Number of colour channels: `1` for grayscale, `3` for RGB.
+/// * `src_dpi` — Source resolution in dots-per-inch.
+/// * `target_dpi` — Desired output resolution in dots-per-inch.
+///
+/// For `nc == 3` the RGB channels are averaged to produce a single grayscale
+/// value per pixel. For `nc == 1` the behaviour is identical to
+/// [`gen_image_layer2()`].
+pub(crate) fn gen_image_layer1(
+    src: &[u8],
+    src_xsize: i32,
+    src_ysize: i32,
+    nc: i32,
+    src_dpi: f32,
+    target_dpi: f32,
+) -> AR2ImageT {
+    let scale = target_dpi / src_dpi;
+    let dst_xsize = ((src_xsize as f32) * scale + 0.5) as i32;
+    let dst_ysize = ((src_ysize as f32) * scale + 0.5) as i32;
+
+    if dst_xsize <= 0 || dst_ysize <= 0 {
+        return AR2ImageT {
+            img_bw: Vec::new(),
+            xsize: 0,
+            ysize: 0,
+            dpi: target_dpi,
+        };
+    }
+
+    let mut dst = vec![0u8; (dst_xsize * dst_ysize) as usize];
+    let inv_scale = src_dpi / target_dpi;
+    let nc_u = nc as usize;
+
+    for dy in 0..dst_ysize {
+        for dx in 0..dst_xsize {
+            let sx_start = (dx as f32 * inv_scale) as i32;
+            let sy_start = (dy as f32 * inv_scale) as i32;
+            let sx_end = (((dx + 1) as f32) * inv_scale).ceil() as i32;
+            let sy_end = (((dy + 1) as f32) * inv_scale).ceil() as i32;
+
+            let sx_end = sx_end.min(src_xsize);
+            let sy_end = sy_end.min(src_ysize);
+
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            for sy in sy_start..sy_end {
+                for sx in sx_start..sx_end {
+                    let base = ((sy * src_xsize + sx) as usize) * nc_u;
+                    // Sum all channels (for nc=1 this is just the grayscale
+                    // value; for nc=3 we sum R+G+B).
+                    for ch in 0..nc_u {
+                        sum += src[base + ch] as u32;
+                    }
+                    count += 1;
+                }
+            }
+
+            // Divide by count * nc to average across both pixels and channels,
+            // producing a single grayscale value.
+            let divisor = count * (nc as u32);
+            dst[(dy * dst_xsize + dx) as usize] = if divisor > 0 { (sum / divisor) as u8 } else { 0 };
+        }
+    }
+
+    AR2ImageT {
+        img_bw: dst,
+        xsize: dst_xsize,
+        ysize: dst_ysize,
+        dpi: target_dpi,
+    }
+}
+
+/// Generate a downscaled image layer from an already-grayscale source via
+/// area-averaging.
+///
+/// Ported from `ar2GenImageLayer2` in the C source. Unlike
+/// [`gen_image_layer1()`] this function assumes the input is already
+/// single-channel grayscale and does not perform colour conversion.
+///
+/// # Arguments
+///
+/// * `src` — Grayscale pixel data. Length must be `src_xsize * src_ysize`.
+/// * `src_xsize` — Source image width in pixels.
+/// * `src_ysize` — Source image height in pixels.
+/// * `src_dpi` — Source resolution in dots-per-inch.
+/// * `target_dpi` — Desired output resolution in dots-per-inch.
+pub(crate) fn gen_image_layer2(
     src: &[u8],
     src_xsize: i32,
     src_ysize: i32,
@@ -358,15 +512,43 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_image_layer_halves() {
+    fn test_gen_image_layer2_halves() {
         // 4x4 white image at 200 DPI → 2x2 at 100 DPI.
         let src = vec![255u8; 16];
-        let layer = gen_image_layer(&src, 4, 4, 200.0, 100.0);
+        let layer = gen_image_layer2(&src, 4, 4, 200.0, 100.0);
         assert_eq!(layer.xsize, 2);
         assert_eq!(layer.ysize, 2);
         assert_eq!(layer.dpi, 100.0);
         assert_eq!(layer.img_bw.len(), 4);
         assert!(layer.img_bw.iter().all(|&v| v == 255));
+    }
+
+    /// Test gen_image_layer1 with RGB input: average R+G+B per pixel.
+    #[test]
+    fn test_gen_image_layer1_rgb() {
+        // 4×4 RGB image (12 bytes per row, 48 bytes total).
+        // Each pixel: R=60, G=120, B=180 → grayscale avg = (60+120+180)/3 = 120.
+        let mut src = Vec::new();
+        for _ in 0..(4 * 4) {
+            src.extend_from_slice(&[60u8, 120, 180]);
+        }
+        let layer = gen_image_layer1(&src, 4, 4, 3, 200.0, 100.0);
+        assert_eq!(layer.xsize, 2);
+        assert_eq!(layer.ysize, 2);
+        assert_eq!(layer.dpi, 100.0);
+        assert_eq!(layer.img_bw.len(), 4);
+        // Each output pixel averages 4 source pixels that are each 120 gray.
+        assert!(layer.img_bw.iter().all(|&v| v == 120));
+    }
+
+    /// Test gen_image_layer1 with grayscale (nc=1) behaves like layer2.
+    #[test]
+    fn test_gen_image_layer1_grayscale() {
+        let src = vec![200u8; 16];
+        let layer = gen_image_layer1(&src, 4, 4, 1, 200.0, 100.0);
+        assert_eq!(layer.xsize, 2);
+        assert_eq!(layer.ysize, 2);
+        assert!(layer.img_bw.iter().all(|&v| v == 200));
     }
 
     #[test]
@@ -386,5 +568,45 @@ mod tests {
         assert_eq!(set.scale[0].ysize, 2);
         assert_eq!(set.scale[0].dpi, 100.0);
         assert_eq!(set.scale[0].img_bw, vec![10, 20, 30, 40]);
+    }
+
+    /// Roundtrip test: build → save() → load() → compare.
+    ///
+    /// Verifies that the save/load cycle is lossless for a 2-level image
+    /// pyramid written in legacy raw format.
+    #[test]
+    fn test_image_set_save_load_roundtrip() {
+        // Level 0: 8×8 at 200 DPI — checkerboard pattern.
+        let mut pixels_0 = vec![0u8; 64];
+        for y in 0..8i32 {
+            for x in 0..8i32 {
+                pixels_0[(y * 8 + x) as usize] = if (x + y) % 2 == 0 { 200 } else { 50 };
+            }
+        }
+
+        // Level 1: 4×4 at 100 DPI — gradient.
+        let mut pixels_1 = vec![0u8; 16];
+        for i in 0..16 {
+            pixels_1[i] = (i as u8) * 16;
+        }
+
+        let original = AR2ImageSetT {
+            scale: vec![
+                AR2ImageT { img_bw: pixels_0, xsize: 8, ysize: 8, dpi: 200.0 },
+                AR2ImageT { img_bw: pixels_1, xsize: 4, ysize: 4, dpi: 100.0 },
+            ],
+        };
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        original.save(tmp.path()).unwrap();
+        let loaded = AR2ImageSetT::load(tmp.path()).unwrap();
+
+        assert_eq!(loaded.num(), original.num());
+        for (orig, load) in original.scale.iter().zip(loaded.scale.iter()) {
+            assert_eq!(load.xsize, orig.xsize);
+            assert_eq!(load.ysize, orig.ysize);
+            assert_eq!(load.dpi, orig.dpi);
+            assert_eq!(load.img_bw, orig.img_bw);
+        }
     }
 }
