@@ -41,7 +41,7 @@
 //! [`AR2FeatureSetT`].
 
 use super::feature_set::{AR2FeatureCoordT, AR2FeaturePointsT, AR2FeatureSetT};
-use super::image_set::gen_image_layer;
+use super::image_set::gen_image_layer2;
 
 // ---------------------------------------------------------------------------
 // Constants (from AR2/config.h)
@@ -121,7 +121,7 @@ fn build_pyramid(image: &[u8], xsize: i32, ysize: i32, dpi: f32) -> Vec<PyramidL
         if next_w < MIN_PYRAMID_DIM || next_h < MIN_PYRAMID_DIM {
             break;
         }
-        let layer = gen_image_layer(image, xsize, ysize, dpi, next_dpi);
+        let layer = gen_image_layer2(image, xsize, ysize, dpi, next_dpi);
         levels.push(PyramidLevel {
             data: layer.img_bw,
             width: layer.xsize,
