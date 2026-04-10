@@ -276,10 +276,10 @@ fn gen_feature_map_for_level(
             let p = |di: isize, dj: isize| -> f32 {
                 image[((j as isize + dj) as usize) * w + ((i as isize + di) as usize)] as f32
             };
-            let dx = (p(1, -1) - p(-1, -1) + p(1, 0) - p(-1, 0) + p(1, 1) - p(-1, 1))
-                / (3.0 * 256.0);
-            let dy = (p(1, 1) - p(1, -1) + p(0, 1) - p(0, -1) + p(-1, 1) - p(-1, -1))
-                / (3.0 * 256.0);
+            let dx =
+                (p(1, -1) - p(-1, -1) + p(1, 0) - p(-1, 0) + p(1, 1) - p(-1, 1)) / (3.0 * 256.0);
+            let dy =
+                (p(1, 1) - p(1, -1) + p(0, 1) - p(0, -1) + p(-1, 1) - p(-1, -1)) / (3.0 * 256.0);
             grad[idx] = ((dx * dx + dy * dy) / 2.0).sqrt();
         }
     }
@@ -291,11 +291,7 @@ fn gen_feature_map_for_level(
         for i in 1..(w - 1) {
             let idx = j * w + i;
             let g = grad[idx];
-            if g > grad[idx - 1]
-                && g > grad[idx + 1]
-                && g > grad[idx - w]
-                && g > grad[idx + w]
-            {
+            if g > grad[idx - 1] && g > grad[idx + 1] && g > grad[idx - w] && g > grad[idx + w] {
                 let k = ((g * 1000.0) as usize).min(999);
                 hist[k] += 1;
                 sum += 1;
@@ -325,10 +321,7 @@ fn gen_feature_map_for_level(
             let g = grad[idx];
 
             // NMS check
-            if g <= grad[idx - 1]
-                || g <= grad[idx + 1]
-                || g <= grad[idx - w]
-                || g <= grad[idx + w]
+            if g <= grad[idx - 1] || g <= grad[idx + 1] || g <= grad[idx - w] || g <= grad[idx + w]
             {
                 continue;
             }
@@ -340,12 +333,11 @@ fn gen_feature_map_for_level(
             let ci = i as i32;
             let cj = j as i32;
 
-            let vlen = match make_template(
-                image, xsize, ysize, ci, cj, ts1, ts2, sd_thresh, &mut tmpl,
-            ) {
-                Some(v) => v,
-                None => continue,
-            };
+            let vlen =
+                match make_template(image, xsize, ysize, ci, cj, ts1, ts2, sd_thresh, &mut tmpl) {
+                    Some(v) => v,
+                    None => continue,
+                };
 
             let mut max = -1.0f32;
             let mut early_exit = false;
@@ -452,9 +444,9 @@ fn select_features(
                 if i == 0 && j == 0 {
                     continue;
                 }
-                if let Some(sim) = get_similarity(
-                    image, xsize, ysize, &tmpl, vlen, ts1, ts2, cx + i, cy + j,
-                ) {
+                if let Some(sim) =
+                    get_similarity(image, xsize, ysize, &tmpl, vlen, ts1, ts2, cx + i, cy + j)
+                {
                     if sim < local_min {
                         local_min = sim;
                         if local_min < min_sim_thresh && local_min < min_sim {
@@ -535,7 +527,9 @@ pub fn ar2_gen_feature_map(
 ) -> Result<AR2FeatureSetT, Ar2Error> {
     // Validate inputs
     if image.is_empty() || xsize <= 0 || ysize <= 0 {
-        return Err(Ar2Error::InvalidInput("image is empty or has zero dimensions"));
+        return Err(Ar2Error::InvalidInput(
+            "image is empty or has zero dimensions",
+        ));
     }
     if image.len() != (xsize as usize) * (ysize as usize) {
         return Err(Ar2Error::InvalidInput(
@@ -615,8 +609,7 @@ mod tests {
     #[test]
     #[ignore] // Heavy computation — run explicitly with `cargo test -- --ignored`
     fn test_feature_map_produces_points() {
-        let img = image::open("examples/Data/pinball.jpg")
-            .expect("failed to open test image");
+        let img = image::open("examples/Data/pinball.jpg").expect("failed to open test image");
         let gray = img.to_luma8();
         let w = gray.width() as i32;
         let h = gray.height() as i32;
@@ -647,7 +640,11 @@ mod tests {
         let mut data = vec![0u8; (w * h) as usize];
         for y in 0..h {
             for x in 0..w {
-                data[(y * w + x) as usize] = if ((x / 4) + (y / 4)) % 2 == 0 { 200 } else { 50 };
+                data[(y * w + x) as usize] = if ((x / 4) + (y / 4)) % 2 == 0 {
+                    200
+                } else {
+                    50
+                };
             }
         }
 
@@ -670,11 +667,17 @@ mod tests {
         let levels = build_pyramid(&data, w as i32, h as i32, 200.0);
         // 200 → 100 → 50 → 25 (at 25 DPI: 128*25/200 = 16 ≥ 8)
         // → 12.5 (128*12.5/200 = 8 ≥ 8) → 6.25 (128*6.25/200 = 4 < 8, stop)
-        assert!(levels.len() >= 3, "should have at least 3 levels, got {}", levels.len());
+        assert!(
+            levels.len() >= 3,
+            "should have at least 3 levels, got {}",
+            levels.len()
+        );
         assert_eq!(levels[0].width, w as i32);
         assert_eq!(levels[0].height, h as i32);
         for i in 1..levels.len() {
-            assert!(levels[i].width < levels[i - 1].width || levels[i].height < levels[i - 1].height);
+            assert!(
+                levels[i].width < levels[i - 1].width || levels[i].height < levels[i - 1].height
+            );
         }
     }
 
@@ -682,7 +685,7 @@ mod tests {
     fn test_make_template_out_of_bounds() {
         let data = vec![100u8; 10 * 10];
         let mut tmpl = vec![0.0f32; 529]; // (11+11+1)^2 = 529
-        // Centre at (0,0) with ts1=11 → out of bounds
+                                          // Centre at (0,0) with ts1=11 → out of bounds
         assert!(make_template(&data, 10, 10, 0, 0, 11, 11, 0.0, &mut tmpl).is_none());
     }
 }

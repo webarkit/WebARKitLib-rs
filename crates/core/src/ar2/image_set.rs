@@ -407,7 +407,11 @@ pub(crate) fn gen_image_layer1(
             // Divide by count * nc to average across both pixels and channels,
             // producing a single grayscale value.
             let divisor = count * (nc as u32);
-            dst[(dy * dst_xsize + dx) as usize] = if divisor > 0 { (sum / divisor) as u8 } else { 0 };
+            dst[(dy * dst_xsize + dx) as usize] = if divisor > 0 {
+                (sum / divisor) as u8
+            } else {
+                0
+            };
         }
     }
 
@@ -592,8 +596,18 @@ mod tests {
 
         let original = AR2ImageSetT {
             scale: vec![
-                AR2ImageT { img_bw: pixels_0, xsize: 8, ysize: 8, dpi: 200.0 },
-                AR2ImageT { img_bw: pixels_1, xsize: 4, ysize: 4, dpi: 100.0 },
+                AR2ImageT {
+                    img_bw: pixels_0,
+                    xsize: 8,
+                    ysize: 8,
+                    dpi: 200.0,
+                },
+                AR2ImageT {
+                    img_bw: pixels_1,
+                    xsize: 4,
+                    ysize: 4,
+                    dpi: 100.0,
+                },
             ],
         };
 
