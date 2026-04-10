@@ -303,9 +303,27 @@ mod tests {
             list: vec![
                 AR2FeaturePointsT {
                     coord: vec![
-                        AR2FeatureCoordT { x: 10, y: 20, mx: 3.528, my: 16.933, max_sim: 0.42 },
-                        AR2FeatureCoordT { x: 55, y: 80, mx: 19.403, my: 10.795, max_sim: 0.37 },
-                        AR2FeatureCoordT { x: 100, y: 5, mx: 35.278, my: 19.261, max_sim: 0.51 },
+                        AR2FeatureCoordT {
+                            x: 10,
+                            y: 20,
+                            mx: 3.528,
+                            my: 16.933,
+                            max_sim: 0.42,
+                        },
+                        AR2FeatureCoordT {
+                            x: 55,
+                            y: 80,
+                            mx: 19.403,
+                            my: 10.795,
+                            max_sim: 0.37,
+                        },
+                        AR2FeatureCoordT {
+                            x: 100,
+                            y: 5,
+                            mx: 35.278,
+                            my: 19.261,
+                            max_sim: 0.51,
+                        },
                     ],
                     scale: 0,
                     maxdpi: 200.0,
@@ -313,9 +331,27 @@ mod tests {
                 },
                 AR2FeaturePointsT {
                     coord: vec![
-                        AR2FeatureCoordT { x: 5, y: 10, mx: 1.764, my: 8.467, max_sim: 0.55 },
-                        AR2FeatureCoordT { x: 25, y: 40, mx: 8.819, my: 5.397, max_sim: 0.48 },
-                        AR2FeatureCoordT { x: 50, y: 2, mx: 17.639, my: 9.631, max_sim: 0.60 },
+                        AR2FeatureCoordT {
+                            x: 5,
+                            y: 10,
+                            mx: 1.764,
+                            my: 8.467,
+                            max_sim: 0.55,
+                        },
+                        AR2FeatureCoordT {
+                            x: 25,
+                            y: 40,
+                            mx: 8.819,
+                            my: 5.397,
+                            max_sim: 0.48,
+                        },
+                        AR2FeatureCoordT {
+                            x: 50,
+                            y: 2,
+                            mx: 17.639,
+                            my: 9.631,
+                            max_sim: 0.60,
+                        },
                     ],
                     scale: 1,
                     maxdpi: 100.0,
@@ -350,7 +386,11 @@ mod tests {
         let original = AR2FeatureSetT {
             list: vec![AR2FeaturePointsT {
                 coord: vec![AR2FeatureCoordT {
-                    x: 42, y: 99, mx: 7.5, my: 12.3, max_sim: 0.65,
+                    x: 42,
+                    y: 99,
+                    mx: 7.5,
+                    my: 12.3,
+                    max_sim: 0.65,
                 }],
                 scale: 0,
                 maxdpi: 150.0,
