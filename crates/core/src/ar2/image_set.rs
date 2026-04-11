@@ -63,9 +63,15 @@
 //!   [u8 × xsize*ysize]  raw grayscale pixels
 //! ```
 
+use super::Ar2Error;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::path::Path;
+
+/// Minimum image dimension used by KPM for feature detection.
+///
+/// Matches `KPM_MINIMUM_IMAGE_SIZE` in `markerCreator.cpp`.
+const KPM_MINIMUM_IMAGE_SIZE: i32 = 28;
 
 /// A single image scale in the pyramid.
 #[derive(Debug, Clone)]
@@ -306,6 +312,136 @@ impl AR2ImageSetT {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Image set generation
+// ---------------------------------------------------------------------------
+
+/// Compute the list of DPI values for an AR2 image pyramid.
+///
+/// Ports `setDPI()` from `markerCreator.cpp`. Steps DPI levels from
+/// `dpi_min` up to `dpi_max = dpi` using cube-root-of-2 increments
+/// (`× 2^(1/3)` ≈ 1.2599), matching the C tool exactly so that the
+/// generated `.iset` files are interoperable with C-generated markers.
+///
+/// # Returns
+///
+/// A `Vec<f32>` of DPI values ordered **highest to lowest** (index 0 =
+/// source DPI, last index = minimum DPI). Always contains at least one entry.
+pub(crate) fn compute_dpi_levels(dpi: f32, xsize: i32, ysize: i32) -> Vec<f32> {
+    let min_dim = xsize.min(ysize) as f32;
+
+    // Minimum DPI: truncated to 3 decimal places, matching C's
+    // `truncf(...* 1000.0) / 1000.0`.
+    let dpi_min = ((KPM_MINIMUM_IMAGE_SIZE as f32 / min_dim) * dpi * 1000.0).trunc() / 1000.0;
+    let dpi_min = dpi_min.max(1.0); // safety floor
+    let dpi_max = dpi;
+
+    let cube_root_2 = 2.0f32.powf(1.0 / 3.0);
+
+    // Count how many levels are needed (ports C's dpi_num loop).
+    //
+    // C code (simplified):
+    //   for (i = 1;; i++) { dpiWork *= 2^(1/3); if (dpiWork >= dpiMax*0.95) break; }
+    //   dpi_num = i + 1;
+    let dpi_num = if (dpi_min - dpi_max).abs() < 1e-4 {
+        1
+    } else {
+        let mut dpi_work = dpi_min;
+        let mut i: usize = 1;
+        loop {
+            dpi_work *= cube_root_2;
+            if dpi_work >= dpi_max * 0.95 {
+                break;
+            }
+            i += 1;
+        }
+        i + 1
+    };
+
+    // Build the list from lowest DPI upward, then reverse so index 0 is
+    // the highest DPI — matching C's `dpi_list[0]` = highest.
+    let mut levels: Vec<f32> = Vec::with_capacity(dpi_num);
+    let mut dpi_work = dpi_min;
+    for _ in 0..dpi_num {
+        levels.push(dpi_work);
+        dpi_work *= cube_root_2;
+        if dpi_work >= dpi_max * 0.95 {
+            dpi_work = dpi_max;
+        }
+    }
+    levels.reverse();
+    levels
+}
+
+/// Generate an AR2 image pyramid from a raw pixel buffer.
+///
+/// Ports C's `ar2GenImageSet()` from `AR2/imageSet.c`. Builds a
+/// multi-resolution pyramid by downscaling the source image to each DPI
+/// level computed by [`compute_dpi_levels()`], using area-averaging.
+///
+/// # Arguments
+///
+/// * `image` — Raw pixel data. Length must be `xsize * ysize * nc`.
+/// * `xsize`  — Image width in pixels.
+/// * `ysize`  — Image height in pixels.
+/// * `nc`     — Number of colour channels: `1` for grayscale, `3` for RGB.
+/// * `dpi`    — Source image resolution in dots-per-inch.
+///
+/// # Returns
+///
+/// An [`AR2ImageSetT`] whose `scale` vector is ordered highest-to-lowest DPI,
+/// with all layers in grayscale (1 byte per pixel). The returned set is ready
+/// to be written with [`AR2ImageSetT::save()`] to produce a `.iset` file
+/// compatible with both the Rust loader and C's `ar2LoadImageSet()`.
+///
+/// # Errors
+///
+/// Returns [`Ar2Error::InvalidInput`] if:
+/// - `image` is empty or dimensions are non-positive,
+/// - `image.len() != xsize * ysize * nc`,
+/// - `nc` is not 1 or 3,
+/// - `dpi` is not positive.
+pub fn ar2_gen_image_set(
+    image: &[u8],
+    xsize: i32,
+    ysize: i32,
+    nc: i32,
+    dpi: f32,
+) -> Result<AR2ImageSetT, Ar2Error> {
+    if image.is_empty() || xsize <= 0 || ysize <= 0 {
+        return Err(Ar2Error::InvalidInput(
+            "image is empty or has zero dimensions",
+        ));
+    }
+    let expected = (xsize as usize) * (ysize as usize) * (nc as usize);
+    if image.len() != expected {
+        return Err(Ar2Error::InvalidInput(
+            "image buffer length does not match xsize * ysize * nc",
+        ));
+    }
+    if nc != 1 && nc != 3 {
+        return Err(Ar2Error::InvalidInput(
+            "nc must be 1 (grayscale) or 3 (RGB)",
+        ));
+    }
+    if dpi <= 0.0 {
+        return Err(Ar2Error::InvalidInput("dpi must be positive"));
+    }
+
+    let dpi_levels = compute_dpi_levels(dpi, xsize, ysize);
+
+    // Build each level from the original source using gen_image_layer1,
+    // which handles colour-to-grayscale conversion (nc parameter) and
+    // area-averaging downscale — matching C's `ar2GenImageSet` loop.
+    let mut scales = Vec::with_capacity(dpi_levels.len());
+    for &target_dpi in &dpi_levels {
+        let layer = gen_image_layer1(image, xsize, ysize, nc, dpi, target_dpi);
+        scales.push(layer);
+    }
+
+    Ok(AR2ImageSetT { scale: scales })
+}
+
 /// Parse JFIF APP0 marker to extract DPI.
 ///
 /// JFIF APP0 structure (after SOI 0xFFD8):
@@ -495,6 +631,103 @@ pub(crate) fn gen_image_layer2(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Verify cube-root-of-2 stepping for a known input.
+    ///
+    /// 800×600 @ 72 DPI:
+    ///   dpi_min = trunc((28/600)*72*1000)/1000 = trunc(3360)/1000 = 3.36
+    ///   Levels step from 3.36 up to 72 by ×2^(1/3).
+    #[test]
+    fn test_compute_dpi_levels_standard() {
+        let levels = compute_dpi_levels(72.0, 800, 600);
+        // Must have at least 2 levels (dpi_max and dpi_min differ)
+        assert!(
+            levels.len() >= 2,
+            "expected ≥ 2 levels, got {}",
+            levels.len()
+        );
+        // Index 0 must be the highest DPI (= source DPI)
+        assert!(
+            (levels[0] - 72.0).abs() < 0.5,
+            "highest level should be ~72 dpi, got {}",
+            levels[0]
+        );
+        // Last entry must be the lowest DPI
+        let last = *levels.last().unwrap();
+        assert!(
+            last < levels[0],
+            "lowest level should be < highest, got {} vs {}",
+            last,
+            levels[0]
+        );
+        // Each level should be strictly decreasing
+        for i in 1..levels.len() {
+            assert!(
+                levels[i] < levels[i - 1],
+                "levels not monotonically decreasing at index {}: {} >= {}",
+                i,
+                levels[i],
+                levels[i - 1]
+            );
+        }
+    }
+
+    /// Single-level case: when image is tiny, dpi_min ≈ dpi_max → 1 level.
+    #[test]
+    fn test_compute_dpi_levels_single() {
+        // 28×28 @ 72 DPI: dpi_min = trunc((28/28)*72*1000)/1000 = 72.0 = dpi_max
+        let levels = compute_dpi_levels(72.0, 28, 28);
+        assert_eq!(levels.len(), 1);
+        assert!((levels[0] - 72.0).abs() < 1e-3);
+    }
+
+    /// Verify ar2_gen_image_set produces the right number of scales and
+    /// correct pixel dimensions at each level.
+    #[test]
+    fn test_ar2_gen_image_set_dimensions() {
+        // 64×64 grayscale @ 72 DPI
+        let src = vec![128u8; 64 * 64];
+        let set = ar2_gen_image_set(&src, 64, 64, 1, 72.0).expect("gen failed");
+        let levels = compute_dpi_levels(72.0, 64, 64);
+        assert_eq!(set.num(), levels.len(), "scale count must match dpi_levels");
+        // Each level must have positive dimensions
+        for (i, img) in set.scale.iter().enumerate() {
+            assert!(
+                img.xsize > 0 && img.ysize > 0,
+                "level {} has zero dimensions",
+                i
+            );
+            assert_eq!(
+                img.img_bw.len(),
+                (img.xsize * img.ysize) as usize,
+                "level {} pixel buffer size mismatch",
+                i
+            );
+            assert!(
+                (img.dpi - levels[i]).abs() < 1e-3,
+                "level {} DPI mismatch: {} vs {}",
+                i,
+                img.dpi,
+                levels[i]
+            );
+        }
+    }
+
+    /// ar2_gen_image_set with RGB input (nc=3) must produce grayscale output.
+    #[test]
+    fn test_ar2_gen_image_set_rgb_to_grayscale() {
+        // 8×8 RGB: each pixel R=60, G=120, B=180 → avg = 120
+        let mut src = Vec::new();
+        for _ in 0..(8 * 8) {
+            src.extend_from_slice(&[60u8, 120, 180]);
+        }
+        let set = ar2_gen_image_set(&src, 8, 8, 3, 72.0).expect("gen failed");
+        // Level 0 (full resolution) — all pixels should be 120
+        assert!(
+            set.scale[0].img_bw.iter().all(|&v| v == 120),
+            "grayscale conversion incorrect"
+        );
+    }
 
     #[test]
     fn test_parse_jfif_dpi_120() {

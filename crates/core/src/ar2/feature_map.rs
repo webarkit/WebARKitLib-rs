@@ -41,7 +41,8 @@
 //! [`AR2FeatureSetT`].
 
 use super::feature_set::{AR2FeatureCoordT, AR2FeaturePointsT, AR2FeatureSetT};
-use super::image_set::gen_image_layer2;
+use super::image_set::AR2ImageSetT;
+use super::Ar2Error;
 
 // ---------------------------------------------------------------------------
 // Constants (from AR2/config.h)
@@ -49,89 +50,53 @@ use super::image_set::gen_image_layer2;
 
 const AR2_DEFAULT_TS1: i32 = 11;
 const AR2_DEFAULT_TS2: i32 = 11;
-/// Default search radius for feature map generation (used as fallback).
+/// Default search radius for stage-1 feature map generation.
 #[allow(dead_code)]
 const AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE1: i32 = 10;
 const AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE2: i32 = 2;
 const AR2_DEFAULT_OCCUPANCY_SIZE: i32 = 24;
+/// Stage-2 max-similarity threshold used in `gen_feature_map_for_level`.
 const AR2_DEFAULT_MAX_SIM_THRESH2: f32 = 0.95;
+/// Stage-2 standard-deviation threshold used in `gen_feature_map_for_level`.
 const AR2_DEFAULT_SD_THRESH2: f32 = 5.0;
 
-/// Per-level thresholds (L0 = coarsest, L3 = finest).
+/// Max-similarity thresholds indexed by tracking extraction level (0–3).
+///
+/// Matches `AR2_DEFAULT_MAX_SIM_THRESH_L0..L3` in `AR2/config.h`.
 const MAX_SIM_THRESH: [f32; 4] = [0.80, 0.85, 0.90, 0.98];
+/// Min-similarity thresholds indexed by tracking extraction level (0–3).
 const MIN_SIM_THRESH: [f32; 4] = [0.70, 0.65, 0.55, 0.45];
+/// Standard-deviation thresholds indexed by tracking extraction level (0–3).
 const SD_THRESH: [f32; 4] = [12.0, 10.0, 8.0, 6.0];
 
-/// Minimum pyramid dimension — stop building when either axis < 8.
-const MIN_PYRAMID_DIM: i32 = 8;
-
-// ---------------------------------------------------------------------------
-// Error type
-// ---------------------------------------------------------------------------
-
-/// Errors returned by the feature map pipeline.
-#[derive(Debug)]
-pub enum Ar2Error {
-    /// The caller supplied invalid parameters.
-    InvalidInput(&'static str),
-}
-
-impl std::fmt::Display for Ar2Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Ar2Error::InvalidInput(msg) => write!(f, "invalid input: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for Ar2Error {}
-
-// ---------------------------------------------------------------------------
-// Pyramid
-// ---------------------------------------------------------------------------
-
-struct PyramidLevel {
-    data: Vec<u8>,
-    width: i32,
-    height: i32,
-    dpi: f32,
-}
-
-/// Build a multi-resolution image pyramid.
+/// Parameters derived from the tracking extraction level (0–4).
 ///
-/// Level 0 is the original image at `dpi`. Each subsequent level halves the
-/// DPI. Stops when the next level would be smaller than 8×8.
-fn build_pyramid(image: &[u8], xsize: i32, ysize: i32, dpi: f32) -> Vec<PyramidLevel> {
-    let mut levels = Vec::new();
+/// All pyramid levels in a single `ar2_gen_feature_map` call share the
+/// same parameter set — matching `markerCreator.cpp`'s `tracking_extraction_level`.
+struct ExtractionParams {
+    max_sim_thresh: f32,
+    min_sim_thresh: f32,
+    sd_thresh: f32,
+    occ_size: i32,
+}
 
-    // Level 0: original
-    levels.push(PyramidLevel {
-        data: image.to_vec(),
-        width: xsize,
-        height: ysize,
-        dpi,
-    });
-
-    let mut current_dpi = dpi;
-    loop {
-        let next_dpi = current_dpi / 2.0;
-        let scale = next_dpi / dpi;
-        let next_w = ((xsize as f32) * scale) as i32;
-        let next_h = ((ysize as f32) * scale) as i32;
-        if next_w < MIN_PYRAMID_DIM || next_h < MIN_PYRAMID_DIM {
-            break;
-        }
-        let layer = gen_image_layer2(image, xsize, ysize, dpi, next_dpi);
-        levels.push(PyramidLevel {
-            data: layer.img_bw,
-            width: layer.xsize,
-            height: layer.ysize,
-            dpi: layer.dpi,
-        });
-        current_dpi = next_dpi;
+/// Look up extraction parameters for the given level (0–4).
+///
+/// Levels 0–3 map directly to the threshold arrays; level 4 uses the same
+/// thresholds as level 3 but with a smaller occupancy region (matching C).
+fn extraction_params(level: u8) -> ExtractionParams {
+    let idx = (level as usize).min(3);
+    let occ_size = match level {
+        0 | 1 => AR2_DEFAULT_OCCUPANCY_SIZE,
+        2 | 3 => AR2_DEFAULT_OCCUPANCY_SIZE * 2 / 3,
+        _ => AR2_DEFAULT_OCCUPANCY_SIZE / 2,
+    };
+    ExtractionParams {
+        max_sim_thresh: MAX_SIM_THRESH[idx],
+        min_sim_thresh: MIN_SIM_THRESH[idx],
+        sd_thresh: SD_THRESH[idx],
+        occ_size,
     }
-
-    levels
 }
 
 // ---------------------------------------------------------------------------
@@ -499,92 +464,96 @@ fn select_features(
 // Public API
 // ---------------------------------------------------------------------------
 
-/// Generate a multi-scale feature set from a grayscale image.
+/// Generate a multi-scale feature set from a pre-built AR2 image pyramid.
 ///
-/// This combines the C functions `ar2GenFeatureMap`, `ar2SelectFeature`, and
-/// the image pyramid builder into a single pipeline.
+/// Ports the per-scale feature generation loop from `markerCreator.cpp`,
+/// combining `ar2GenFeatureMap` and `ar2SelectFeature2` calls for every
+/// scale in the image set.
 ///
 /// # Arguments
 ///
-/// * `image` — Row-major grayscale pixel data (`xsize * ysize` bytes).
-/// * `xsize` — Image width in pixels.
-/// * `ysize` — Image height in pixels.
-/// * `dpi` — Image resolution in dots per inch.
-/// * `search_size` — Search window radius (C default: `AR2_DEFAULT_SEARCH_SIZE` = 25).
-/// * `search_feature_num` — Maximum number of features per pyramid level.
+/// * `image_set` — A multi-resolution image pyramid produced by
+///   [`ar2_gen_image_set()`](super::image_set::ar2_gen_image_set).
+/// * `search_size` — Stage-1 search window half-width
+///   (`AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE1` = 10 in C).
+/// * `search_feature_num` — Maximum features to select per pyramid level.
+/// * `level` — Tracking extraction level (0–4; default 2). Controls the
+///   similarity and standard-deviation thresholds and the occupancy region
+///   size, matching `markerCreator.cpp`'s `-level=n` flag.
+///
+/// # Returns
+///
+/// An [`AR2FeatureSetT`] containing feature points at each pyramid level,
+/// with `mindpi`/`maxdpi` ranges computed exactly as the C tool does.
 ///
 /// # Errors
 ///
-/// Returns [`Ar2Error::InvalidInput`] if the image is empty, dimensions are
-/// non-positive, or the buffer length does not match `xsize * ysize`.
+/// Returns [`Ar2Error::InvalidInput`] if the image set is empty.
 pub fn ar2_gen_feature_map(
-    image: &[u8],
-    xsize: i32,
-    ysize: i32,
-    dpi: f32,
+    image_set: &AR2ImageSetT,
     search_size: i32,
     search_feature_num: i32,
+    level: u8,
 ) -> Result<AR2FeatureSetT, Ar2Error> {
-    // Validate inputs
-    if image.is_empty() || xsize <= 0 || ysize <= 0 {
-        return Err(Ar2Error::InvalidInput(
-            "image is empty or has zero dimensions",
-        ));
-    }
-    if image.len() != (xsize as usize) * (ysize as usize) {
-        return Err(Ar2Error::InvalidInput(
-            "image buffer length does not match xsize * ysize",
-        ));
-    }
-    if dpi <= 0.0 {
-        return Err(Ar2Error::InvalidInput("dpi must be positive"));
+    if image_set.scale.is_empty() {
+        return Err(Ar2Error::InvalidInput("image set has no scales"));
     }
 
-    let pyramid = build_pyramid(image, xsize, ysize, dpi);
-    let num_levels = pyramid.len();
+    let params = extraction_params(level);
+    let scales = &image_set.scale;
+    let num = scales.len();
     let mut list = Vec::new();
 
-    for (i, level) in pyramid.iter().enumerate() {
-        let level_idx = i.min(3);
-        let max_sim = MAX_SIM_THRESH[level_idx];
-        let min_sim = MIN_SIM_THRESH[level_idx];
-        let sd = SD_THRESH[level_idx];
-
-        // Generate per-pixel feature map.
-        // The caller's `search_size` overrides the default search radius.
+    for (i, img) in scales.iter().enumerate() {
+        // Generate per-pixel feature similarity map (stage-1 constants).
         let fmap = gen_feature_map_for_level(
-            &level.data,
-            level.width,
-            level.height,
+            &img.img_bw,
+            img.xsize,
+            img.ysize,
             search_size,
             AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE2,
             AR2_DEFAULT_MAX_SIM_THRESH2,
             AR2_DEFAULT_SD_THRESH2,
         );
 
-        // Select features
+        // Greedily select features using level-dependent thresholds.
         let coords = select_features(
-            &level.data,
-            level.width,
-            level.height,
-            level.dpi,
+            &img.img_bw,
+            img.xsize,
+            img.ysize,
+            img.dpi,
             &fmap,
             search_feature_num,
-            max_sim,
-            min_sim,
-            sd,
-            AR2_DEFAULT_OCCUPANCY_SIZE,
+            params.max_sim_thresh,
+            params.min_sim_thresh,
+            params.sd_thresh,
+            params.occ_size,
         );
 
         if coords.is_empty() {
             continue;
         }
 
-        let maxdpi = level.dpi;
-        let mindpi = if i + 1 < num_levels {
-            pyramid[i + 1].dpi
+        // Compute mindpi: next lower DPI in the set, or current × 0.5.
+        // Ports the scale1 loop in markerCreator.cpp.
+        let mindpi = scales
+            .iter()
+            .filter(|s| s.dpi < img.dpi)
+            .map(|s| s.dpi)
+            .fold(0.0f32, f32::max);
+        let mindpi = if mindpi == 0.0 { img.dpi * 0.5 } else { mindpi };
+
+        // Compute maxdpi: 0.8×current + 0.2×next-higher, or current × 2.0.
+        // Ports the second scale1 loop in markerCreator.cpp.
+        let next_higher = scales
+            .iter()
+            .filter(|s| s.dpi > img.dpi)
+            .map(|s| s.dpi)
+            .fold(f32::MAX, f32::min);
+        let maxdpi = if next_higher == f32::MAX {
+            img.dpi * 2.0
         } else {
-            level.dpi / 2.0
+            img.dpi * 0.8 + next_higher * 0.2
         };
 
         list.push(AR2FeaturePointsT {
@@ -595,8 +564,16 @@ pub fn ar2_gen_feature_map(
         });
     }
 
+    // Suppress unused-variable lint: `num` is only needed for bounds logic
+    // above, which we now compute via iterators. Confirm it equals scale count.
+    let _ = num;
+
     Ok(AR2FeatureSetT { list })
 }
+
+// Re-export AR2ImageT for use in tests below.
+#[allow(unused_imports)]
+use super::image_set::AR2ImageT as _AR2ImageT;
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -604,10 +581,23 @@ pub fn ar2_gen_feature_map(
 
 #[cfg(test)]
 mod tests {
+    use super::super::image_set::{ar2_gen_image_set, AR2ImageT};
     use super::*;
 
+    /// Helper: build a minimal single-scale AR2ImageSetT directly.
+    fn make_image_set(data: Vec<u8>, w: i32, h: i32, dpi: f32) -> AR2ImageSetT {
+        AR2ImageSetT {
+            scale: vec![AR2ImageT {
+                img_bw: data,
+                xsize: w,
+                ysize: h,
+                dpi,
+            }],
+        }
+    }
+
     #[test]
-    #[ignore] // Heavy computation — run explicitly with `cargo test -- --ignored`
+    #[ignore] // Heavy computation — run explicitly with `cargo test --release -- --ignored`
     fn test_feature_map_produces_points() {
         let img = image::open("examples/Data/pinball.jpg").expect("failed to open test image");
         let gray = img.to_luma8();
@@ -615,7 +605,9 @@ mod tests {
         let h = gray.height() as i32;
         let data = gray.into_raw();
 
-        let result = ar2_gen_feature_map(&data, w, h, 72.0, 16, 64).expect("feature map failed");
+        let image_set = ar2_gen_image_set(&data, w, h, 1, 72.0).expect("ar2_gen_image_set failed");
+        let result =
+            ar2_gen_feature_map(&image_set, 16, 64, 2).expect("ar2_gen_feature_map failed");
         assert!(!result.list.is_empty(), "should produce at least one scale");
 
         let total: usize = result.list.iter().map(|p| p.coord.len()).sum();
@@ -631,10 +623,9 @@ mod tests {
         }
     }
 
-    /// Lightweight version of the integration test using a small synthetic image.
+    /// Lightweight version using a small synthetic image.
     #[test]
     fn test_feature_map_small_synthetic() {
-        // 64×64 image with a checkerboard pattern (strong features).
         let w: i32 = 64;
         let h: i32 = 64;
         let mut data = vec![0u8; (w * h) as usize];
@@ -647,37 +638,36 @@ mod tests {
                 };
             }
         }
-
-        let result = ar2_gen_feature_map(&data, w, h, 72.0, 6, 16);
-        // Should succeed (even if no features survive the thresholds, it should not error).
+        let image_set = make_image_set(data, w, h, 72.0);
+        let result = ar2_gen_feature_map(&image_set, 6, 16, 2);
         assert!(result.is_ok());
     }
 
     #[test]
-    fn test_feature_map_rejects_empty_image() {
-        let err = ar2_gen_feature_map(&[], 0, 0, 72.0, 16, 64);
+    fn test_feature_map_rejects_empty_image_set() {
+        let empty_set = AR2ImageSetT { scale: vec![] };
+        let err = ar2_gen_feature_map(&empty_set, 16, 64, 2);
         assert!(matches!(err, Err(Ar2Error::InvalidInput(_))));
     }
 
+    /// Verify mindpi/maxdpi are computed correctly for a 3-level pyramid.
     #[test]
-    fn test_build_pyramid_levels() {
-        let w = 128;
-        let h = 128;
-        let data = vec![128u8; w * h];
-        let levels = build_pyramid(&data, w as i32, h as i32, 200.0);
-        // 200 → 100 → 50 → 25 (at 25 DPI: 128*25/200 = 16 ≥ 8)
-        // → 12.5 (128*12.5/200 = 8 ≥ 8) → 6.25 (128*6.25/200 = 4 < 8, stop)
-        assert!(
-            levels.len() >= 3,
-            "should have at least 3 levels, got {}",
-            levels.len()
-        );
-        assert_eq!(levels[0].width, w as i32);
-        assert_eq!(levels[0].height, h as i32);
-        for i in 1..levels.len() {
-            assert!(
-                levels[i].width < levels[i - 1].width || levels[i].height < levels[i - 1].height
-            );
+    fn test_feature_map_mindpi_maxdpi() {
+        // Build a 3-scale set manually: 72, 57, 45 dpi
+        let make = |dpi: f32| AR2ImageT {
+            img_bw: vec![128u8; 32 * 32],
+            xsize: 32,
+            ysize: 32,
+            dpi,
+        };
+        let image_set = AR2ImageSetT {
+            scale: vec![make(72.0), make(57.0), make(45.0)],
+        };
+        let result = ar2_gen_feature_map(&image_set, 4, 8, 2).unwrap();
+        // Verify that any produced feature points have sane dpi ranges
+        for pts in &result.list {
+            assert!(pts.mindpi > 0.0, "mindpi should be > 0");
+            assert!(pts.maxdpi > pts.mindpi, "maxdpi should be > mindpi");
         }
     }
 

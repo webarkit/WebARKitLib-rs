@@ -57,6 +57,34 @@ pub mod image_set;
 pub mod surface;
 pub mod tracking;
 
+// ---------------------------------------------------------------------------
+// Shared error type
+// ---------------------------------------------------------------------------
+
+/// Errors returned by the AR2 generation pipeline.
+///
+/// Defined here (rather than in `feature_map` or `image_set`) to avoid a
+/// circular module dependency: both sub-modules produce this error type.
+#[derive(Debug)]
+pub enum Ar2Error {
+    /// The caller supplied invalid parameters.
+    InvalidInput(&'static str),
+}
+
+impl std::fmt::Display for Ar2Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ar2Error::InvalidInput(msg) => write!(f, "invalid input: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for Ar2Error {}
+
+// ---------------------------------------------------------------------------
+// Re-exports
+// ---------------------------------------------------------------------------
+
 // Re-export everything from tracking for backward compatibility.
 // Before this consolidation, ar2.rs *was* the tracking module,
 // so all its public items lived at crate::ar2::*.
@@ -68,4 +96,4 @@ pub use self::surface::*;
 // Convenience re-exports from the I/O sub-modules.
 pub use feature_map::ar2_gen_feature_map;
 pub use feature_set::AR2FeatureSetT;
-pub use image_set::AR2ImageSetT;
+pub use image_set::{ar2_gen_image_set, AR2ImageSetT};
