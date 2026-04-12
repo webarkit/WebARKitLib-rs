@@ -371,6 +371,91 @@ impl FreakMatcherBackend for CppFreakMatcher {
         &self.cached_query_points
     }
 
+    fn extract_features(
+        &mut self,
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<(Vec<FeaturePoint>, Vec<u8>), KpmError> {
+        self.check_ptr()?;
+
+        let expected = width * height;
+        if image.len() < expected {
+            return Err(KpmError::InvalidInput(format!(
+                "buffer too small: got {} bytes, need {expected}",
+                image.len()
+            )));
+        }
+
+        // Step 1: count-only call (NULL output arrays).
+        // SAFETY: `self.ptr` is valid. Passing null output pointers is the
+        // documented "count only" mode defined in kpm_c_api.h.
+        let count = unsafe {
+            kpm_ffi::kpm_extract_features(
+                self.ptr,
+                image.as_ptr(),
+                width as i32,
+                height as i32,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+
+        if count < 0 {
+            return Err(KpmError::InternalError(
+                "kpm_extract_features failed".to_string(),
+            ));
+        }
+        if count == 0 {
+            return Ok((vec![], vec![]));
+        }
+
+        let n = count as usize;
+        let mut xs = vec![0.0f32; n];
+        let mut ys = vec![0.0f32; n];
+        let mut angles = vec![0.0f32; n];
+        let mut scales = vec![0.0f32; n];
+        let mut maxima = vec![0i32; n];
+        let mut descs = vec![0u8; n * 96];
+
+        // Step 2: fill all output arrays.
+        // SAFETY: `self.ptr` is valid. All output buffers have exactly `n`
+        // elements / n*96 bytes. FREAK extraction is deterministic on the
+        // same image, so the count cannot increase between the two calls.
+        unsafe {
+            kpm_ffi::kpm_extract_features(
+                self.ptr,
+                image.as_ptr(),
+                width as i32,
+                height as i32,
+                xs.as_mut_ptr(),
+                ys.as_mut_ptr(),
+                angles.as_mut_ptr(),
+                scales.as_mut_ptr(),
+                maxima.as_mut_ptr(),
+                descs.as_mut_ptr(),
+                n as i32,
+            );
+        }
+
+        let points = (0..n)
+            .map(|i| FeaturePoint {
+                x: xs[i],
+                y: ys[i],
+                angle: angles[i],
+                scale: scales[i],
+                maxima: maxima[i] != 0,
+            })
+            .collect();
+
+        Ok((points, descs))
+    }
+
     fn get_3d_feature_points(&self, image_id: usize) -> &[Point3d] {
         // SAFETY: No other thread can access `self` concurrently — the struct
         // is `Send` but not `Sync`, and all `&mut self` methods are exclusive.

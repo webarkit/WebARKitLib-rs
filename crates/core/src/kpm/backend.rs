@@ -234,6 +234,28 @@ pub trait FreakMatcherBackend: Send {
     ///
     /// Returns an empty slice if not available.
     fn get_3d_feature_points(&self, image_id: usize) -> &[Point3d];
+
+    /// Extract FREAK features and descriptors from a grayscale image
+    /// **without** storing them in the database.
+    ///
+    /// Returns `(points, descriptors)` where `descriptors.len() == points.len() * 96`.
+    /// Returns `Ok((vec![], vec![]))` if no features were detected.
+    ///
+    /// Use this to obtain the full feature data (2D coords, angle, scale,
+    /// maxima, 96-byte descriptor) needed to build a complete
+    /// [`KpmRefDataSet`](crate::kpm::types::KpmRefDataSet).
+    ///
+    /// # Arguments
+    ///
+    /// * `image`  — grayscale pixel data (one byte per pixel, row-major).
+    /// * `width`  — image width in pixels.
+    /// * `height` — image height in pixels.
+    fn extract_features(
+        &mut self,
+        image: &[u8],
+        width: usize,
+        height: usize,
+    ) -> Result<(Vec<FeaturePoint>, Vec<u8>), KpmError>;
 }
 
 #[cfg(test)]

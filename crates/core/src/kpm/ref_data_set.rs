@@ -283,20 +283,26 @@ impl KpmRefDataSet {
             resized = compressed;
         }
 
-        // 3. Feed into the backend for feature extraction.
-        matcher.add_image(&resized, xsize2, ysize2, image_no as usize)?;
-
-        // 4. Retrieve detected feature points from the backend.
-        let points = matcher.query_feature_points().to_vec();
+        // 3. Extract FREAK features and descriptors (no database storage).
+        //    Fix for issue #51: the previous code called add_image() then
+        //    query_feature_points(), but query_feature_points() returns the
+        //    query-side cache (populated only by query(), not add_image()).
+        //    extract_features() returns the actual reference features with
+        //    their full 96-byte descriptors.
+        let (points, descriptors) = matcher.extract_features(&resized, xsize2, ysize2)?;
         let num = points.len();
 
-        // 5. Compute scale factor and offset for 3D coordinate conversion.
+        // 4. Compute scale factor and pixel-to-mm offset.
+        //    Formula matches the original C++ kpmRefDataSet.cpp (kpmGenRefDataSet):
+        //      coord3D.x = (x * scale + half_scale) / dpi * 25.4  [mm, top-left origin]
+        //      coord3D.y = ((ysize - half_scale) - y * scale) / dpi * 25.4
+        //    where x/y are in the resized image and ysize is the ORIGINAL height.
         let scale = proc_mode.scale_factor();
         let half_scale = scale / 2.0;
 
-        // 6. Build ref_point array.
+        // 5. Build ref_point array with real descriptors.
         let mut ref_point = Vec::with_capacity(num);
-        for pt in &points {
+        for (i, pt) in points.iter().enumerate() {
             let mut y = pt.y;
             if comp_mode == KpmCompMode::CompY {
                 y *= 2.0;
@@ -305,6 +311,10 @@ impl KpmRefDataSet {
             let coord3d_x = (pt.x * scale + half_scale) / dpi * MM_PER_INCH;
             let coord3d_y = ((ysize as f32 - half_scale) - pt.y * scale) / dpi * MM_PER_INCH;
 
+            let desc_start = i * FREAK_SUB_DIMENSION;
+            let mut v = [0u8; FREAK_SUB_DIMENSION];
+            v.copy_from_slice(&descriptors[desc_start..desc_start + FREAK_SUB_DIMENSION]);
+
             ref_point.push(KpmRefData {
                 coord2d: KpmCoord2D { x: pt.x, y },
                 coord3d: KpmCoord2D {
@@ -312,7 +322,7 @@ impl KpmRefDataSet {
                     y: coord3d_y,
                 },
                 feature_vec: FreakFeature {
-                    v: [0u8; FREAK_SUB_DIMENSION], // descriptors not exposed via trait yet
+                    v,
                     angle: pt.angle,
                     scale: pt.scale,
                     maxima: if pt.maxima { 1 } else { 0 },
@@ -322,7 +332,7 @@ impl KpmRefDataSet {
             });
         }
 
-        // 7. Build page info.
+        // 6. Build page info.
         let page_info = vec![KpmPageInfo {
             page_no,
             image_num: 1,

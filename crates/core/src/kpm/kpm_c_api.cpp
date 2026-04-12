@@ -240,4 +240,45 @@ int kpm_matched_id(KpmOpaqueHandle* handle) {
     return handle->db->matchedId();
 }
 
+int kpm_extract_features(KpmOpaqueHandle* handle,
+                         const unsigned char* image, int w, int h,
+                         float* x_out, float* y_out,
+                         float* angle_out, float* scale_out,
+                         int* maxima_out,
+                         unsigned char* desc_out,
+                         int max_features) {
+    if (!handle || !handle->db || !image || w <= 0 || h <= 0) {
+        return -1;
+    }
+
+    std::vector<vision::FeaturePoint> featurePoints;
+    std::vector<unsigned char> descriptors;
+    handle->db->computeFreakFeaturesAndDescriptors(
+        const_cast<unsigned char*>(image),
+        static_cast<size_t>(w), static_cast<size_t>(h),
+        featurePoints, descriptors);
+
+    int count = static_cast<int>(featurePoints.size());
+
+    // Count-only mode: caller passes NULL for output arrays.
+    if (x_out == nullptr) {
+        return count;
+    }
+
+    int n = (count < max_features) ? count : max_features;
+    for (int i = 0; i < n; i++) {
+        x_out[i]      = featurePoints[i].x;
+        y_out[i]      = featurePoints[i].y;
+        angle_out[i]  = featurePoints[i].angle;
+        scale_out[i]  = featurePoints[i].scale;
+        maxima_out[i] = featurePoints[i].maxima ? 1 : 0;
+    }
+    if (desc_out && !descriptors.empty()) {
+        std::memcpy(desc_out, descriptors.data(),
+                    static_cast<size_t>(n) * 96);
+    }
+
+    return n;
+}
+
 } // extern "C"

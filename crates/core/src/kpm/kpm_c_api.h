@@ -95,6 +95,28 @@ int kpm_get_3d_feature_points(KpmOpaqueHandle* handle, int image_id,
 /* Return the matched image ID from the most recent query, or -1. */
 int kpm_matched_id(KpmOpaqueHandle* handle);
 
+/* ---- Feature extraction without database storage (#51) ---- */
+
+/* Extract FREAK features and descriptors from an image without storing them.
+ *
+ * If x_out is NULL: returns the feature count and ignores all output arrays.
+ * If x_out is not NULL: fills at most min(count, max_features) entries into
+ *   each output array and returns the actual feature count.
+ *
+ * Output array sizes (when x_out != NULL):
+ *   x_out / y_out / angle_out / scale_out: max_features floats each.
+ *   maxima_out: max_features ints.
+ *   desc_out:   max_features * 96 unsigned chars.
+ *
+ * Returns feature count (>= 0) on success, -1 on error. */
+int kpm_extract_features(KpmOpaqueHandle* handle,
+                         const unsigned char* image, int w, int h,
+                         float* x_out, float* y_out,
+                         float* angle_out, float* scale_out,
+                         int* maxima_out,
+                         unsigned char* desc_out,
+                         int max_features);
+
 #ifdef __cplusplus
 }
 #endif

@@ -390,6 +390,15 @@ mod tests {
         fn get_3d_feature_points(&self, _image_id: usize) -> &[Point3d] {
             todo!()
         }
+
+        fn extract_features(
+            &mut self,
+            _image: &[u8],
+            _width: usize,
+            _height: usize,
+        ) -> Result<(Vec<FeaturePoint>, Vec<u8>), KpmError> {
+            todo!()
+        }
     }
 
     #[test]
