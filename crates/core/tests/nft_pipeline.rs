@@ -169,10 +169,7 @@ fn test_compare_with_c_generated_pinball_marker() {
     let ref_fset = AR2FeatureSetT::load("examples/Data/pinball.fset")
         .expect("failed to load reference pinball.fset");
 
-    assert!(
-        !ref_iset.scale.is_empty(),
-        "reference .iset has no scales"
-    );
+    assert!(!ref_iset.scale.is_empty(), "reference .iset has no scales");
 
     // Run Rust feature extraction on the C-generated image pyramid.
     //

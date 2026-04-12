@@ -60,7 +60,6 @@
 //! | `<output>.fset3` | KPM/FREAK keypoints (`ffi-backend` only) |
 
 use clap::Parser;
-use std::io::Write as _;
 use std::path::Path;
 use std::time::Instant;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
@@ -135,6 +134,7 @@ fn main() {
     // -----------------------------------------------------------------------
     #[cfg(not(feature = "ffi-backend"))]
     {
+        use std::io::Write as _;
         if !cli.yes {
             eprintln!();
             eprintln!(
@@ -266,7 +266,10 @@ fn main() {
             match result {
                 Ok(ref_data) => {
                     combined = Some(match combined.take() {
-                        Some(existing) => existing.merge(ref_data),
+                        Some(mut existing) => {
+                            existing.merge(ref_data);
+                            existing
+                        }
                         None => ref_data,
                     });
                 }
