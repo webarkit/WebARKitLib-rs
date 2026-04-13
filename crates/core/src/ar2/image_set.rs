@@ -73,6 +73,13 @@ use std::path::Path;
 /// Matches `KPM_MINIMUM_IMAGE_SIZE` in `markerCreator.cpp`.
 const KPM_MINIMUM_IMAGE_SIZE: i32 = 28;
 
+/// Default JPEG quality for `.iset` file encoding.
+///
+/// Matches `AR2_DEFAULT_JPEG_IMAGE_QUALITY` in the C source (`imageSet.c`).
+/// Value 80 provides a good balance between file size (~300 KB for typical
+/// markers) and visual fidelity.
+const AR2_DEFAULT_JPEG_IMAGE_QUALITY: u8 = 80;
+
 /// A single image scale in the pyramid.
 #[derive(Debug, Clone)]
 pub struct AR2ImageT {
@@ -251,43 +258,100 @@ impl AR2ImageSetT {
 
     /// Save the image set to an `.iset` file on disk.
     ///
-    /// Writes the **legacy (ARToolKit v4.x) raw pixel format** so that the
-    /// resulting file is readable by both the Rust [`load()`](Self::load)
-    /// and the C/C++ `ar2LoadImageSet()` functions.
+    /// Writes the **JPEG-compressed format** matching the C++
+    /// `ar2WriteImageSet()`: only the base scale (highest DPI) is stored
+    /// as an embedded JPEG; lower scales are regenerated at load time.
+    /// This produces files ~30× smaller than the raw pixel format.
     ///
-    /// ## Binary layout (little-endian)
+    /// The JPEG quality defaults to 80, matching `AR2_DEFAULT_JPEG_IMAGE_QUALITY`.
+    ///
+    /// ## Binary layout
     ///
     /// ```text
-    /// [i32 LE]  num_scales          — number of pyramid levels
-    /// For each scale:
-    ///   [i32 LE]  xsize             — width in pixels
-    ///   [i32 LE]  ysize             — height in pixels
-    ///   [f32 LE]  dpi               — resolution in dots-per-inch
-    ///   [u8 × xsize*ysize]          — raw grayscale pixels (row-major)
+    /// [i32 LE]           num          — number of scales
+    /// [bytes]            JPEG data    — grayscale JPEG of scale[0] with DPI in JFIF
+    /// [f32 LE × (num-1)] DPI values   — for scales 1..num-1
     /// ```
     pub fn save<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
         let file = std::fs::File::create(path)?;
         let mut w = BufWriter::new(file);
-        self.write_to(&mut w)?;
+        self.write_jpeg_to(&mut w, AR2_DEFAULT_JPEG_IMAGE_QUALITY)?;
+        w.flush()
+    }
+
+    /// Save the image set using the **legacy raw pixel format**.
+    ///
+    /// This produces larger files but is lossless. Useful for debugging
+    /// or when exact pixel values must be preserved.
+    pub fn save_raw<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
+        let file = std::fs::File::create(path)?;
+        let mut w = BufWriter::new(file);
+        self.write_raw_to(&mut w)?;
         w.flush()
     }
 
     /// Serialize the image set into an in-memory byte vector.
     ///
-    /// Uses the same legacy binary format as [`save()`](Self::save).
+    /// Uses the JPEG-compressed format. See [`save()`](Self::save).
     pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
         let mut buf = Vec::new();
-        self.write_to(&mut buf)?;
+        self.write_jpeg_to(&mut buf, AR2_DEFAULT_JPEG_IMAGE_QUALITY)?;
         Ok(buf)
     }
 
-    /// Write the image set to any [`Write`] implementor.
+    /// Serialize the image set as raw pixels into an in-memory byte vector.
     ///
-    /// This is the shared serialization core used by both [`save()`](Self::save)
-    /// and [`to_bytes()`](Self::to_bytes). The field ordering mirrors
-    /// [`read_legacy_format()`] so that `write_to` → `read_legacy_format` is a
-    /// lossless roundtrip.
-    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+    /// Uses the legacy format. See [`save_raw()`](Self::save_raw).
+    pub fn to_bytes_raw(&self) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        self.write_raw_to(&mut buf)?;
+        Ok(buf)
+    }
+
+    /// Write the image set in JPEG-compressed format.
+    ///
+    /// Matches the C++ `ar2WriteImageSet()` format: `num(i32)` +
+    /// JPEG blob (scale 0 with DPI embedded in JFIF) + trailing
+    /// DPI values (`f32 × (num-1)`).
+    fn write_jpeg_to<W: Write>(&self, writer: &mut W, quality: u8) -> io::Result<()> {
+        if self.scale.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "image set has no scales to write",
+            ));
+        }
+
+        let num = self.scale.len();
+        let base = &self.scale[0];
+
+        // 1. Write number of scales.
+        writer.write_i32::<LittleEndian>(num as i32)?;
+
+        // 2. Encode scale[0] as grayscale JPEG and embed DPI in JFIF header.
+        let jpeg_data = encode_grayscale_jpeg(
+            &base.img_bw,
+            base.xsize as u32,
+            base.ysize as u32,
+            base.dpi,
+            quality,
+        )?;
+        writer.write_all(&jpeg_data)?;
+
+        // 3. Write DPI values for scales 1..num-1.
+        for img in &self.scale[1..] {
+            writer.write_f32::<LittleEndian>(img.dpi)?;
+        }
+
+        Ok(())
+    }
+
+    /// Write the image set in legacy raw pixel format.
+    ///
+    /// This is the shared serialization core for [`save_raw()`](Self::save_raw)
+    /// and [`to_bytes_raw()`](Self::to_bytes_raw). The field ordering mirrors
+    /// [`read_legacy_format()`] so that `write_raw_to` → `read_legacy_format`
+    /// is a lossless roundtrip.
+    fn write_raw_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         if self.scale.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -440,6 +504,73 @@ pub fn ar2_gen_image_set(
     }
 
     Ok(AR2ImageSetT { scale: scales })
+}
+
+/// Encode grayscale pixels as a JPEG with DPI embedded in the JFIF header.
+///
+/// This mirrors the C `jpgwrite()` function from `AR2/jpeg.c`, which:
+/// 1. Encodes the grayscale image as a JPEG at the given quality level.
+/// 2. Sets the JFIF APP0 density fields to the specified DPI so that
+///    `ar2LoadImageSet()` (and our [`parse_jfif_dpi()`]) can recover
+///    the resolution at load time.
+///
+/// # JFIF density patch
+///
+/// The JFIF APP0 header has this layout after `SOI (0xFFD8)`:
+///
+/// ```text
+/// offset 2:  FF E0           — APP0 marker
+/// offset 4:  <length:2>      — segment length
+/// offset 6:  "JFIF\0"        — identifier (5 bytes)
+/// offset 11: <version:2>     — e.g. 1.1
+/// offset 13: <units:1>       — 0=no units, 1=DPI, 2=dots/cm
+/// offset 14: <Xdensity:2>    — big-endian u16
+/// offset 16: <Ydensity:2>    — big-endian u16
+/// ```
+///
+/// We patch bytes 13–17 to set `units=1` and `X/Y density = dpi`.
+fn encode_grayscale_jpeg(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    dpi: f32,
+    quality: u8,
+) -> io::Result<Vec<u8>> {
+    use image::codecs::jpeg::JpegEncoder;
+    use image::ColorType;
+
+    let mut jpeg_buf: Vec<u8> = Vec::new();
+    {
+        let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
+        encoder
+            .encode(pixels, width, height, ColorType::L8.into())
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+    }
+
+    // Patch the JFIF APP0 header to embed DPI.
+    // Ensure we have a valid JFIF header to patch.
+    if jpeg_buf.len() >= 18
+        && jpeg_buf[0] == 0xFF
+        && jpeg_buf[1] == 0xD8
+        && jpeg_buf[2] == 0xFF
+        && jpeg_buf[3] == 0xE0
+        && &jpeg_buf[6..11] == b"JFIF\0"
+    {
+        let dpi_u16 = (dpi as u16).max(1);
+        let dpi_bytes = dpi_u16.to_be_bytes();
+        jpeg_buf[13] = 1; // units = DPI
+        jpeg_buf[14] = dpi_bytes[0]; // X density high byte
+        jpeg_buf[15] = dpi_bytes[1]; // X density low byte
+        jpeg_buf[16] = dpi_bytes[0]; // Y density high byte
+        jpeg_buf[17] = dpi_bytes[1]; // Y density low byte
+    } else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "JPEG encoder did not produce a valid JFIF header; cannot embed DPI",
+        ));
+    }
+
+    Ok(jpeg_buf)
 }
 
 /// Parse JFIF APP0 marker to extract DPI.
@@ -807,12 +938,12 @@ mod tests {
         assert_eq!(set.scale[0].img_bw, vec![10, 20, 30, 40]);
     }
 
-    /// Roundtrip test: build → save() → load() → compare.
+    /// Roundtrip test: build → save_raw() → load() → compare.
     ///
     /// Verifies that the save/load cycle is lossless for a 2-level image
     /// pyramid written in legacy raw format.
     #[test]
-    fn test_image_set_save_load_roundtrip() {
+    fn test_image_set_save_raw_load_roundtrip() {
         // Level 0: 8×8 at 200 DPI — checkerboard pattern.
         let mut pixels_0 = vec![0u8; 64];
         for y in 0..8i32 {
@@ -845,7 +976,7 @@ mod tests {
         };
 
         let tmp = tempfile::NamedTempFile::new().unwrap();
-        original.save(tmp.path()).unwrap();
+        original.save_raw(tmp.path()).unwrap();
         let loaded = AR2ImageSetT::load(tmp.path()).unwrap();
 
         assert_eq!(loaded.num(), original.num());
@@ -855,5 +986,96 @@ mod tests {
             assert_eq!(load.dpi, orig.dpi);
             assert_eq!(load.img_bw, orig.img_bw);
         }
+    }
+
+    /// JPEG roundtrip test: build → save() → load() → compare dimensions/DPI.
+    ///
+    /// JPEG is lossy so pixel values won't match exactly, but dimensions,
+    /// DPI, and scale count must be preserved. Pixel values are checked
+    /// within a tolerance of ±5.
+    #[test]
+    fn test_image_set_save_jpeg_load_roundtrip() {
+        // 16×16 gradient at 150 DPI — single scale for simplicity.
+        let mut pixels = vec![0u8; 256];
+        for i in 0..256 {
+            pixels[i] = i as u8;
+        }
+
+        let original = AR2ImageSetT {
+            scale: vec![AR2ImageT {
+                img_bw: pixels.clone(),
+                xsize: 16,
+                ysize: 16,
+                dpi: 150.0,
+            }],
+        };
+
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        original.save(tmp.path()).unwrap();
+        let loaded = AR2ImageSetT::load(tmp.path()).unwrap();
+
+        assert_eq!(loaded.num(), 1);
+        assert_eq!(loaded.scale[0].xsize, 16);
+        assert_eq!(loaded.scale[0].ysize, 16);
+        assert!((loaded.scale[0].dpi - 150.0).abs() < 0.01);
+
+        // Check pixels within tolerance (JPEG is lossy).
+        for (orig, loaded) in pixels.iter().zip(loaded.scale[0].img_bw.iter()) {
+            let diff = (*orig as i16 - *loaded as i16).unsigned_abs();
+            assert!(
+                diff <= 5,
+                "pixel difference too large: orig={}, loaded={}, diff={}",
+                orig,
+                loaded,
+                diff
+            );
+        }
+    }
+
+    /// Verify encode_grayscale_jpeg embeds DPI correctly in JFIF header.
+    #[test]
+    fn test_encode_grayscale_jpeg_dpi() {
+        let pixels = vec![128u8; 8 * 8];
+        let jpeg = encode_grayscale_jpeg(&pixels, 8, 8, 220.0, 80).unwrap();
+
+        // Verify JPEG SOI marker.
+        assert_eq!(jpeg[0], 0xFF);
+        assert_eq!(jpeg[1], 0xD8);
+
+        // Verify DPI was embedded.
+        let dpi = parse_jfif_dpi(&jpeg);
+        assert_eq!(dpi, Some(220.0));
+    }
+
+    /// Multi-scale JPEG roundtrip: verifies trailing DPI values are preserved.
+    #[test]
+    fn test_image_set_jpeg_multiscale_roundtrip() {
+        let original = AR2ImageSetT {
+            scale: vec![
+                AR2ImageT {
+                    img_bw: vec![100u8; 16 * 16],
+                    xsize: 16,
+                    ysize: 16,
+                    dpi: 200.0,
+                },
+                AR2ImageT {
+                    img_bw: vec![100u8; 8 * 8],
+                    xsize: 8,
+                    ysize: 8,
+                    dpi: 100.0,
+                },
+            ],
+        };
+
+        let bytes = original.to_bytes().unwrap();
+        let loaded = AR2ImageSetT::from_bytes(&bytes).unwrap();
+
+        assert_eq!(loaded.num(), 2);
+        // Scale 0: from JPEG decode.
+        assert_eq!(loaded.scale[0].xsize, 16);
+        assert_eq!(loaded.scale[0].ysize, 16);
+        assert!((loaded.scale[0].dpi - 200.0).abs() < 0.01);
+        // Scale 1: regenerated from scale 0 at trailing DPI.
+        assert!((loaded.scale[1].dpi - 100.0).abs() < 0.01);
     }
 }
