@@ -530,10 +530,6 @@ pub fn ar2_gen_feature_map(
             params.occ_size,
         );
 
-        if coords.is_empty() {
-            continue;
-        }
-
         // Compute mindpi: next lower DPI in the set, or current × 0.5.
         // Ports the scale1 loop in markerCreator.cpp.
         let mindpi = scales
