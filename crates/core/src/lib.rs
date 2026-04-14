@@ -42,6 +42,20 @@
 //! - Thresholding and labeling
 //! - Marker detection and identification
 //! - Pose estimation and matrix calculations
+//! - NFT (Natural Feature Tracking) marker generation pipeline
+//!
+//! ## NFT Marker Generation
+//!
+//! The [`ar2`] module provides a complete pipeline for generating NFT marker files
+//! compatible with ARnft and the C++ NFT-Marker-Creator-App:
+//!
+//! - [`ar2::ar2_gen_image_set`] — builds a multi-resolution image pyramid (`.iset`)
+//! - [`ar2::ar2_gen_feature_map`] — extracts gradient-based features at each pyramid level (`.fset`)
+//! - [`ar2::AR2ImageSetT::save`] — writes the image pyramid as a JPEG-compressed `.iset` file
+//!   matching `ar2WriteImageSet()` format (~300 KB vs ~10 MB raw)
+//! - [`kpm::KpmRefDataSet::generate`] — extracts FREAK descriptors for KPM recognition (`.fset3`)
+//!
+//! See the `nft_marker_gen` example for a complete end-to-end usage.
 //!
 //! ## Performance and SIMD
 //!
