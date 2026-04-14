@@ -13,11 +13,11 @@ readme.workspace = true
 
 [dependencies]
 image = "0.25.0"
-imageproc = "0.25.0"
+imageproc = "0.26.0"
 byteorder = "1.5.0"
 jpeg-decoder = "0.3"
 log = "0.4.0"
-rand = "0.8.0"
+rand = "0.9"
 
 [build-dependencies]
 cc = "1"
@@ -34,7 +34,7 @@ dual-mode = []
 
 [dev-dependencies]
 chrono = "0.4"
-env_logger = "0.10.0"
+env_logger = "0.11"
 criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3"

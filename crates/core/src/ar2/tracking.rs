@@ -887,8 +887,8 @@ pub fn ar2_select_template(
         }
 
         use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let idx = available[rng.gen_range(0..available.len())];
+        let mut rng = rand::rng();
+        let idx = available[rng.random_range(0..available.len())];
         candidate[idx].flag = 1;
         idx as i32
     }
