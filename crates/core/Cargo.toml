@@ -33,6 +33,7 @@ ffi-backend = []
 dual-mode = []
 
 [dev-dependencies]
+chrono = "0.4"
 env_logger = "0.10.0"
 criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
