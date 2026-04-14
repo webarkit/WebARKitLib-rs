@@ -58,6 +58,32 @@ cargo run --example simple
 
 This example loads a camera parameter file, a marker (pattern or barcode), and a sample image, performing detection and outputting the 3D pose extrinsics.
 
+#### NFT Marker Generation Example
+
+Generate NFT (Natural Feature Tracking) marker files compatible with ARnft and NFT-Marker-Creator-App:
+
+```bash
+cargo run --features ffi-backend --example nft_marker_gen -- \
+  --input path/to/image.jpg \
+  --output path/to/output_name \
+  --dpi 220
+```
+
+This produces three files:
+- **`output_name.iset`** — JPEG-compressed image pyramid (~300 KB, matches C++ `ar2WriteImageSet()` format)
+- **`output_name.fset`** — Feature map with one entry per pyramid level
+- **`output_name.fset3`** — FREAK descriptors for KPM-based recognition
+
+**Options:**
+
+| Flag | Long form | Description | Default |
+|------|-----------|-------------|---------|
+| `-i` | `--input` | Path to the source image (JPEG/PNG) | required |
+| `-o` | `--output` | Output base path (without extension) | required |
+| `-d` | `--dpi` | Source image resolution in DPI | required |
+| `-l` | `--level` | Tracking extraction level (0–4) | `2` |
+| `-n` | `--search-feature-num` | Max features per pyramid level | `250` |
+
 #### Barcode Detection Example
 
 A unified, parameterized barcode example is available for testing all supported matrix code types:
@@ -144,8 +170,8 @@ cargo bench -- --save-baseline milestone-20260307
 The workspace contains two crates:
 
 - **`crates/core`** (`webarkitlib-rs`): The unified core AR engine (pure Rust), including:
-  - `ar2` module: NFT tracking algorithms, `.iset` / `.fset` marker I/O.
-  - `kpm` module: Keypoint Matching with pluggable backends (Rust + C++ FFI).
+  - `ar2` module: NFT marker generation pipeline — image pyramid (`ar2_gen_image_set`), feature map (`ar2_gen_feature_map`), JPEG-compressed `.iset` save, `.fset` / `.fset3` I/O.
+  - `kpm` module: Keypoint Matching with pluggable backends (Rust + C++ FFI), FREAK descriptor extraction.
   - Core modules: image processing, pattern matching, labeling, ICP, pose estimation.
 - **`crates/wasm`** (`webarkitlib-wasm`): WASM bindings, dual-build scripts, and diagnostic web demo.
 - `benchmarks`: C vs Rust performance comparison suite.
@@ -158,6 +184,11 @@ The workspace contains two crates:
 - **M1 -- KPM/NFT Core (partial)**: Ported the initial KPM (Keypoint Matching) scaffolding -- binary feature types, matching orchestration, ICP-based pose refinement, and `.fset3` / `.iset` / `.fset` I/O. The C++ FreakMatcher FFI backend works but the full pipeline is not yet wired end-to-end.
 - **M2 -- AR2 I/O**: Ported AR2 image set (`.iset`) and feature set (`.fset`) binary I/O from C to Rust.
 - **M3 -- Architectural Consolidation**: Unified the workspace from 4 crates down to 2 (`webarkitlib-rs` + `webarkitlib-wasm`), with KPM and AR2 as submodules of the core crate.
+- **M4 -- Working NFT Marker Generator**: End-to-end `nft_marker_gen` example producing `.iset` / `.fset` / `.fset3` files fully compatible with ARnft and NFT-Marker-Creator-App, including:
+  - JPEG-compressed `.iset` save matching C++ `ar2WriteImageSet()` format (~300 KB vs ~10 MB raw)
+  - All pyramid levels included in `.fset` (including 0-feature levels), matching C++ output exactly
+  - FREAK descriptor extraction via `kpm_extract_features` C API (7000+ features per marker)
+  - Detailed step-by-step logging with timestamps and per-level statistics
 
 ### 🎯 Short-term Goals (toward v1.0.0)
 - **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.
