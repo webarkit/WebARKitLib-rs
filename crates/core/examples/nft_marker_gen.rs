@@ -59,6 +59,7 @@
 //! | `<output>.fset` | AR2 feature points per scale (always generated) |
 //! | `<output>.fset3` | KPM/FREAK keypoints (`ffi-backend` only) |
 
+use chrono::Local;
 use clap::Parser;
 use std::path::Path;
 use std::time::Instant;
@@ -128,6 +129,7 @@ fn file_kb(path: &Path) -> String {
 fn main() {
     let cli = Cli::parse();
     let start = Instant::now();
+    let start_time = Local::now();
 
     // -----------------------------------------------------------------------
     // Warn the user if .fset3 won't be generated (no ffi-backend).
@@ -156,6 +158,16 @@ fn main() {
     }
 
     // -----------------------------------------------------------------------
+    // Header
+    // -----------------------------------------------------------------------
+    println!("--");
+    println!(
+        "Generator started at {}",
+        start_time.format("%Y-%m-%d %H:%M:%S %z")
+    );
+    println!();
+
+    // -----------------------------------------------------------------------
     // Load input image as RGB.
     // -----------------------------------------------------------------------
     let img = image::open(&cli.input).unwrap_or_else(|e| {
@@ -165,11 +177,14 @@ fn main() {
     let rgb = img.to_rgb8();
     let w = rgb.width() as i32;
     let h = rgb.height() as i32;
+    let nc = 3;
     let pixels = rgb.into_raw(); // nc=3, length = w * h * 3
 
+    println!("Tracking Extraction Level = {}", cli.level);
+    println!();
     println!(
-        "Input:  {:?}  ({}×{}  {:.1} dpi  level {})",
-        cli.input, w, h, cli.dpi, cli.level
+        "Input:  {:?}  (xsize={}, ysize={}, channels={}, dpi={:.1})",
+        cli.input, w, h, nc, cli.dpi
     );
     println!("Output: {:?}.*", cli.output);
     println!();
@@ -177,12 +192,22 @@ fn main() {
     // -----------------------------------------------------------------------
     // Step 1: build image pyramid → .iset
     // -----------------------------------------------------------------------
-    let image_set = ar2_gen_image_set(&pixels, w, h, 3, cli.dpi).unwrap_or_else(|e| {
+    println!("Generating ImageSet...");
+    let step_start = Instant::now();
+
+    let image_set = ar2_gen_image_set(&pixels, w, h, nc, cli.dpi).unwrap_or_else(|e| {
         eprintln!("Error: ar2_gen_image_set failed: {}", e);
         std::process::exit(1);
     });
 
+    // Print DPI levels.
+    for (i, scale) in image_set.scale.iter().enumerate() {
+        println!("  Image DPI ({}): {:.6}", image_set.num() - i, scale.dpi);
+    }
+    println!();
+
     let iset_path = cli.output.with_extension("iset");
+    println!("Saving to {:?}...", iset_path);
     image_set.save(&iset_path).unwrap_or_else(|e| {
         eprintln!("Error: failed to save {:?}: {}", iset_path, e);
         std::process::exit(1);
@@ -191,43 +216,56 @@ fn main() {
     let first_dpi = image_set.scale.first().map_or(0.0, |s| s.dpi);
     let last_dpi = image_set.scale.last().map_or(0.0, |s| s.dpi);
     println!(
-        "[iset]  {} levels: {:.1} → {:.1} dpi   (saved {:?}, {})",
+        "  Done. {} levels: {:.1} -> {:.1} dpi  ({}, {:.1}s)",
         image_set.num(),
         first_dpi,
         last_dpi,
-        iset_path,
-        file_kb(&iset_path)
+        file_kb(&iset_path),
+        step_start.elapsed().as_secs_f64()
     );
+    println!();
 
     // -----------------------------------------------------------------------
     // Step 2: generate AR2 features → .fset
     // -----------------------------------------------------------------------
+    println!("Generating FeatureList...");
+    let step_start = Instant::now();
+
     // search_size = AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE1 = 10 (from C config.h)
     let feature_set = ar2_gen_feature_map(&image_set, 10, 250, cli.level).unwrap_or_else(|e| {
         eprintln!("Error: ar2_gen_feature_map failed: {}", e);
         std::process::exit(1);
     });
 
+    // Print per-level feature counts.
+    for pts in &feature_set.list {
+        let scale_img = &image_set.scale[pts.scale as usize];
+        println!(
+            "  {:.6} dpi ({}x{}): {} features selected",
+            scale_img.dpi,
+            scale_img.xsize,
+            scale_img.ysize,
+            pts.coord.len()
+        );
+    }
+    println!();
+
     let fset_path = cli.output.with_extension("fset");
+    println!("Saving FeatureSet to {:?}...", fset_path);
     feature_set.save(&fset_path).unwrap_or_else(|e| {
         eprintln!("Error: failed to save {:?}: {}", fset_path, e);
         std::process::exit(1);
     });
 
-    let counts: Vec<String> = feature_set
-        .list
-        .iter()
-        .map(|p| p.coord.len().to_string())
-        .collect();
     let total_features: usize = feature_set.list.iter().map(|p| p.coord.len()).sum();
     println!(
-        "[fset]  {} levels: {} features ({})   (saved {:?}, {})",
+        "  Done. {} levels, {} features total  ({}, {:.1}s)",
         feature_set.num(),
         total_features,
-        counts.join(" / "),
-        fset_path,
-        file_kb(&fset_path)
+        file_kb(&fset_path),
+        step_start.elapsed().as_secs_f64()
     );
+    println!();
 
     // -----------------------------------------------------------------------
     // Step 3: generate KPM/FREAK keypoints → .fset3  (ffi-backend only)
@@ -236,6 +274,9 @@ fn main() {
     {
         use webarkitlib_rs::kpm::types::KpmRefDataSet;
         use webarkitlib_rs::kpm::{CppFreakMatcher, KpmCompMode, KpmError, KpmProcMode};
+
+        println!("Generating FeatureSet3...");
+        let step_start = Instant::now();
 
         let fset3_path = cli.output.with_extension("fset3");
         let mut combined: Option<KpmRefDataSet> = None;
@@ -265,6 +306,10 @@ fn main() {
 
             match result {
                 Ok(ref_data) => {
+                    println!(
+                        "  ({}, {}) {:.6} dpi: Freak features - {}",
+                        scale.xsize, scale.ysize, scale.dpi, ref_data.num
+                    );
                     combined = Some(match combined.take() {
                         Some(mut existing) => {
                             existing.merge(ref_data);
@@ -274,7 +319,10 @@ fn main() {
                     });
                 }
                 Err(KpmError::InvalidInput(_)) => {
-                    // Scale too small — skip silently.
+                    println!(
+                        "  ({}, {}) {:.6} dpi: Freak features - 0 (scale too small)",
+                        scale.xsize, scale.ysize, scale.dpi
+                    );
                 }
                 Err(e) => {
                     eprintln!(
@@ -284,7 +332,9 @@ fn main() {
                 }
             }
         }
+        println!();
 
+        println!("Saving FeatureSet3 to {:?}...", fset3_path);
         if let Some(ref_data) = combined {
             let total_kpm = ref_data.num as usize;
             ref_data.save(&fset3_path).unwrap_or_else(|e| {
@@ -292,10 +342,10 @@ fn main() {
                 std::process::exit(1);
             });
             println!(
-                "[fset3] {} FREAK features   (saved {:?}, {})",
+                "  Done. {} FREAK features total  ({}, {:.1}s)",
                 total_kpm,
-                fset3_path,
-                file_kb(&fset3_path)
+                file_kb(&fset3_path),
+                step_start.elapsed().as_secs_f64()
             );
         } else {
             eprintln!("Warning: no KPM features extracted — .fset3 not written.");
@@ -308,6 +358,14 @@ fn main() {
     // -----------------------------------------------------------------------
     // Done
     // -----------------------------------------------------------------------
+    let finish_time = Local::now();
+    let elapsed = start.elapsed().as_secs_f64();
     println!();
-    println!("Done in {:.1}s", start.elapsed().as_secs_f64());
+    println!(
+        "Generator finished at {}",
+        finish_time.format("%Y-%m-%d %H:%M:%S %z")
+    );
+    println!("--");
+    println!();
+    println!("NFTMarkerGenerator took {:.6} seconds to execute", elapsed);
 }
