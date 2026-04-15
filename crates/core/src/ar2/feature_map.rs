@@ -43,6 +43,7 @@
 use super::feature_set::{AR2FeatureCoordT, AR2FeaturePointsT, AR2FeatureSetT};
 use super::image_set::AR2ImageSetT;
 use super::Ar2Error;
+use rayon::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Constants (from AR2/config.h)
@@ -162,6 +163,11 @@ fn make_template(
 /// patch centred at `(cx, cy)`.
 ///
 /// Returns `None` if the patch is out of bounds or has zero variance.
+///
+/// `sx` (sum of u8 values) and `sxx` (sum of squared u8 values) are
+/// accumulated as `u64` and converted to `f32` only at the end. This avoids
+/// f32-rounding loss once `sxx` grows past 2^24 (which happens easily on
+/// 23×23 patches of saturated pixels — max `sxx ≈ 34 M`).
 fn get_similarity(
     image: &[u8],
     xsize: i32,
@@ -180,21 +186,27 @@ fn get_similarity(
     let patch_size = (ts1 + ts2 + 1) as usize;
     let n = (patch_size * patch_size) as f32;
 
-    let mut sx: f32 = 0.0;
-    let mut sxx: f32 = 0.0;
+    // `sx` and `sxx` are sums over u8 values (and their squares) and are
+    // accumulated as integers to avoid f32 rounding when `sxx` grows past
+    // 2^24. Kept in sync with the SIMD kernel so both paths are bit-equal.
+    let mut sx_i: u64 = 0;
+    let mut sxx_i: u64 = 0;
     let mut sxy: f32 = 0.0;
     let mut idx = 0;
 
     for j in -ts1..=ts2 {
         let row = ((cy + j) * xsize + (cx - ts1)) as usize;
         for i in 0..patch_size {
-            let p = image[row + i] as f32;
-            sx += p;
-            sxx += p * p;
-            sxy += p * template[idx];
+            let p_u = image[row + i] as u64;
+            sx_i += p_u;
+            sxx_i += p_u * p_u;
+            sxy += (p_u as f32) * template[idx];
             idx += 1;
         }
     }
+
+    let sx = sx_i as f32;
+    let sxx = sxx_i as f32;
 
     let vlen2_sq = sxx - sx * sx / n;
     if vlen2_sq <= 0.0 {
@@ -277,10 +289,20 @@ fn gen_feature_map_for_level(
 
     // Stage 3: For each pixel passing NMS + threshold, compute template
     // similarity in the annular search region.
+    //
+    // Parallelised across pyramid rows via Rayon. Each row of `fmap` is
+    // written only by its own thread; `image`, `grad`, and the template-area
+    // are read-only, so this is a pure data-parallel kernel.
     let mut fmap = vec![1.0f32; total];
-    let mut tmpl = vec![0.0f32; template_area];
 
-    for j in 1..(h - 1) {
+    fmap.par_chunks_mut(w).enumerate().for_each(|(j, row_out)| {
+        if j == 0 || j >= h - 1 {
+            return;
+        }
+
+        // Per-thread template buffer — allocated once per row.
+        let mut tmpl = vec![0.0f32; template_area];
+
         for i in 1..(w - 1) {
             let idx = j * w + i;
             let g = grad[idx];
@@ -327,9 +349,9 @@ fn gen_feature_map_for_level(
                     break;
                 }
             }
-            fmap[idx] = max;
+            row_out[i] = max;
         }
-    }
+    });
 
     fmap
 }
@@ -674,4 +696,5 @@ mod tests {
                                           // Centre at (0,0) with ts1=11 → out of bounds
         assert!(make_template(&data, 10, 10, 0, 0, 11, 11, 0.0, &mut tmpl).is_none());
     }
+
 }
