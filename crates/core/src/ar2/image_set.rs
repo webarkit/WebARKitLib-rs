@@ -65,6 +65,7 @@
 
 use super::Ar2Error;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use rayon::prelude::*;
 use std::io::{self, BufWriter, Cursor, Read, Write};
 use std::path::Path;
 
@@ -497,11 +498,12 @@ pub fn ar2_gen_image_set(
     // Build each level from the original source using gen_image_layer1,
     // which handles colour-to-grayscale conversion (nc parameter) and
     // area-averaging downscale — matching C's `ar2GenImageSet` loop.
-    let mut scales = Vec::with_capacity(dpi_levels.len());
-    for &target_dpi in &dpi_levels {
-        let layer = gen_image_layer1(image, xsize, ysize, nc, dpi, target_dpi);
-        scales.push(layer);
-    }
+    // Levels are independent (each downscales from the original), so we
+    // build them in parallel with Rayon.
+    let scales: Vec<_> = dpi_levels
+        .par_iter()
+        .map(|&target_dpi| gen_image_layer1(image, xsize, ysize, nc, dpi, target_dpi))
+        .collect();
 
     Ok(AR2ImageSetT { scale: scales })
 }
