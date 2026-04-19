@@ -67,8 +67,7 @@ fn bench_ar2_gen_feature_map(c: &mut Criterion) {
     let h = gray.height() as i32;
     let data = gray.into_raw();
 
-    let image_set =
-        ar2_gen_image_set(&data, w, h, 1, 72.0).expect("ar2_gen_image_set failed");
+    let image_set = ar2_gen_image_set(&data, w, h, 1, 72.0).expect("ar2_gen_image_set failed");
 
     let mut group = c.benchmark_group("ar2_gen_feature_map");
     group.sample_size(10);
