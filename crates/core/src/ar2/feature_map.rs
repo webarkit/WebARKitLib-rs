@@ -696,5 +696,4 @@ mod tests {
                                           // Centre at (0,0) with ts1=11 → out of bounds
         assert!(make_template(&data, 10, 10, 0, 0, 11, 11, 0.0, &mut tmpl).is_none());
     }
-
 }
