@@ -42,7 +42,7 @@ We use `git-cliff` to parse the conventional commits and update the historical c
 npx git-cliff -u --prepend CHANGELOG.md
 ```
 
-### Step 4: Commit evrything
+### Step 4: Commit everything
 
 Commit the version bump, the changelog update and the updated wasm package. Following the Conventional Commits format, read the [CONTRIBUTING.md](CONTRIBUTING.md) file for more details on how to write a good commit message.
 

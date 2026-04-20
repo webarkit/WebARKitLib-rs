@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.3] - 2026-04-27
+
+### Milestone 5 — NFT marker creation pipeline
+
+### ⚡ Performance
+
+- *(ar2)* Parallelize feature_map Stage 3 with Rayon (1.49x full-image)
+- *(ar2)* SIMD get_similarity (SSE4.1+AVX2) + parallel pyramid (1.70x total)
+
+### 🎨 Styling
+
+- *(ar2)* Apply cargo fmt
+- Fix cargo fmt in feature_map_bench and feature_map tests
+
+### 🐛 Bug Fixes
+
+- *(nft_marker_gen)* Fix merge() in-place return + scoped Write import + add reference image
+- *(kpm)* Fix generate() producing 0 FREAK features in .fset3 (#51)
+- *(ar2)* Include all pyramid levels in fset even when 0 features detected
+
+### 📚 Documentation
+
+- Update README and lib.rs with NFT marker generation pipeline
+- Add SIMD/parallel build instructions and per-step timing
+- Clarify WASM section — npm package vs local demo build
+
+### 🚀 Features
+
+- *(ar2)* Port ar2GenFeatureMap into feature_map.rs
+- *(ar2)* Add .iset and .fset write support + rename gen_image_layer
+- *(ar2)* Add ar2_gen_image_set, refactor ar2_gen_feature_map, add nft_marker_gen example (#49)
+- *(ar2)* Add JPEG compression to .iset save matching C++ ar2WriteImageSet
+- *(nft_marker_gen)* Improve logging to match NFT-Marker-Creator-App
+
+### 🚜 Refactor
+
+- *(nft_pipeline)* Improve documentation and isolate feature extraction comparison with C-generated markers
+
 ## [0.3.2] - 2026-04-07
 
 ### Milestone 4 — KPM pipeline correctness
