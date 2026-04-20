@@ -10,6 +10,11 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
+exclude = [
+    "examples/Data/",
+    "benches/",
+    "tests/",
+]
 
 [dependencies]
 image = "0.25.0"
