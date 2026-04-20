@@ -25,11 +25,12 @@ cc = "1"
 bindgen = "0.72.1"
 
 [features]
-simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41"]
+simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41", "simd-x86-avx2"]
 simd-image = []
 simd-pattern = []
 simd-wasm32 = []
 simd-x86-sse41 = []
+simd-x86-avx2 = []
 ffi-backend = []
 dual-mode = []
 

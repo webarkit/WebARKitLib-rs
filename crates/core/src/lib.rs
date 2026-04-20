@@ -60,14 +60,36 @@
 //! ## Performance and SIMD
 //!
 //! This crate includes high-performance SIMD optimizations for critical image processing
-//! paths (grayscale conversion, filtering, and pattern matching).
-//! - **SSE4.1** is supported for x86_64 targets.
-//! - **WASM SIMD** is supported for web targets.
+//! paths (grayscale conversion, filtering, pattern matching, and NFT feature correlation).
 //!
-//! To enable these optimizations, compile with the `simd` feature:
+//! ### SIMD feature flags
+//!
+//! | Feature | What it accelerates |
+//! |---|---|
+//! | `simd-x86-sse41` | `get_similarity` correlation kernel (SSE4.1 intrinsics) |
+//! | `simd-x86-avx2` | `get_similarity` correlation kernel (AVX2+FMA intrinsics, fastest) |
+//! | `simd-image` | Grayscale conversion and image processing |
+//! | `simd-pattern` | Pattern matching correlation |
+//! | `simd-wasm32` | WASM SIMD for web targets |
+//! | `simd` | Umbrella — enables all of the above |
+//!
+//! SIMD dispatch is automatic at runtime: AVX2+FMA → SSE4.1 → scalar fallback.
+//!
+//! ### Rayon parallelism
+//!
+//! Rayon is always enabled (no feature flag). The NFT pipeline parallelizes:
+//! - **Image pyramid generation** — each pyramid level is built in parallel
+//! - **Stage-3 feature scoring** — row-level parallelism via `par_chunks_mut`
+//!
+//! ### Recommended build for NFT marker generation (x86_64)
+//!
 //! ```bash
-//! cargo build --release --features simd
+//! cargo run --release --features "ffi-backend,simd-x86-sse41,simd-x86-avx2" \
+//!     --example nft_marker_gen -- --input marker.jpg --output marker --dpi 220
 //! ```
+//!
+//! > **Always use `--release`** — debug builds are 5–10× slower.
+//!
 //! Detailed benchmark results can be found in `crates/core/benches/BENCHMARKS.md`.
 //!
 //! ## Example
