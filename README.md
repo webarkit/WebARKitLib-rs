@@ -131,22 +131,33 @@ cargo run --example barcode -- -m 5x5 -t 120 -i path/to/marker.jpg
 | `-t` | `--threshold` | Fixed labeling threshold (0–255). When omitted, sweeps 60–180 in steps of 20 | *(auto-sweep)* |
 | `-i` | `--image` | Path to the input image | bundled 3x3 marker image |
 
-### WebAssembly (WASM) Demo
+### WebAssembly (WASM)
 
 The WASM port allows you to run the AR engine directly in most modern browsers.
 
-1. **Build the modules**:
-   Use the npm script to generate both Standard and SIMD bundles (works on all platforms):
+#### Using the npm package
+
+For integration into your own project, install the pre-built package from npm — no local build required:
+
+```bash
+npm install @webarkit/webarkitlib-wasm
+```
+
+See [@webarkit/webarkitlib-wasm](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm) for API documentation and usage examples.
+
+#### Running the bundled demos
+
+The `crates/wasm/www` folder contains interactive web demos. To run them you need to build the WASM modules locally:
+
+1. **Build the modules** (generates both Standard and SIMD bundles):
    ```bash
    npm run build:wasm
    ```
    > **Alternatively**, download the pre-built `wasm-package` artifact from the latest [CI run](https://github.com/webarkit/WebARKitLib-rs/actions) and extract its contents into `crates/wasm/pkg/`.
 
-2. **Run the demo**:
-   The `www` folder contains two web demos. Serve it with any local HTTP server:
+2. **Serve the demo**:
    ```bash
    cd crates/wasm/www
-   # Serve using any local HTTP server, e.g.:
    npx serve .
    ```
    - **`simple.html`** – static image demo with engine selector and threshold visualization.
