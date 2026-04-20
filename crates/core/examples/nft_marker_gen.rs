@@ -200,6 +200,8 @@ fn main() {
         std::process::exit(1);
     });
 
+    let gen_elapsed = step_start.elapsed().as_secs_f64();
+
     // Print DPI levels.
     for (i, scale) in image_set.scale.iter().enumerate() {
         println!("  Image DPI ({}): {:.6}", image_set.num() - i, scale.dpi);
@@ -208,19 +210,26 @@ fn main() {
 
     let iset_path = cli.output.with_extension("iset");
     println!("Saving to {:?}...", iset_path);
+    let save_start = Instant::now();
     image_set.save(&iset_path).unwrap_or_else(|e| {
         eprintln!("Error: failed to save {:?}: {}", iset_path, e);
         std::process::exit(1);
     });
+    let save_elapsed = save_start.elapsed().as_secs_f64();
 
     let first_dpi = image_set.scale.first().map_or(0.0, |s| s.dpi);
     let last_dpi = image_set.scale.last().map_or(0.0, |s| s.dpi);
     println!(
-        "  Done. {} levels: {:.1} -> {:.1} dpi  ({}, {:.1}s)",
+        "  Done. {} levels: {:.1} -> {:.1} dpi  ({})",
         image_set.num(),
         first_dpi,
         last_dpi,
         file_kb(&iset_path),
+    );
+    println!(
+        "  Pyramid generation: {:.1}s | Save: {:.1}s | Total: {:.1}s",
+        gen_elapsed,
+        save_elapsed,
         step_start.elapsed().as_secs_f64()
     );
     println!();
@@ -237,6 +246,8 @@ fn main() {
         std::process::exit(1);
     });
 
+    let gen_elapsed = step_start.elapsed().as_secs_f64();
+
     // Print per-level feature counts.
     for pts in &feature_set.list {
         let scale_img = &image_set.scale[pts.scale as usize];
@@ -252,17 +263,24 @@ fn main() {
 
     let fset_path = cli.output.with_extension("fset");
     println!("Saving FeatureSet to {:?}...", fset_path);
+    let save_start = Instant::now();
     feature_set.save(&fset_path).unwrap_or_else(|e| {
         eprintln!("Error: failed to save {:?}: {}", fset_path, e);
         std::process::exit(1);
     });
+    let save_elapsed = save_start.elapsed().as_secs_f64();
 
     let total_features: usize = feature_set.list.iter().map(|p| p.coord.len()).sum();
     println!(
-        "  Done. {} levels, {} features total  ({}, {:.1}s)",
+        "  Done. {} levels, {} features total  ({})",
         feature_set.num(),
         total_features,
         file_kb(&fset_path),
+    );
+    println!(
+        "  Feature extraction: {:.1}s | Save: {:.1}s | Total: {:.1}s",
+        gen_elapsed,
+        save_elapsed,
         step_start.elapsed().as_secs_f64()
     );
     println!();
@@ -334,17 +352,26 @@ fn main() {
         }
         println!();
 
+        let gen_elapsed = step_start.elapsed().as_secs_f64();
+
         println!("Saving FeatureSet3 to {:?}...", fset3_path);
         if let Some(ref_data) = combined {
             let total_kpm = ref_data.num as usize;
+            let save_start = Instant::now();
             ref_data.save(&fset3_path).unwrap_or_else(|e| {
                 eprintln!("Error: failed to save {:?}: {}", fset3_path, e);
                 std::process::exit(1);
             });
+            let save_elapsed = save_start.elapsed().as_secs_f64();
             println!(
-                "  Done. {} FREAK features total  ({}, {:.1}s)",
+                "  Done. {} FREAK features total  ({})",
                 total_kpm,
                 file_kb(&fset3_path),
+            );
+            println!(
+                "  FREAK extraction: {:.1}s | Save: {:.1}s | Total: {:.1}s",
+                gen_elapsed,
+                save_elapsed,
                 step_start.elapsed().as_secs_f64()
             );
         } else {
