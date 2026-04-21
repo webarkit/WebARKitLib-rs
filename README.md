@@ -194,6 +194,27 @@ fn main() {
 
 Produces `[info] ...`, `[warning] ...`, `[error] ...`, `[debug] ...` — matching the C output exactly. Release-info messages (`arlog_rel!`) print unprefixed.
 
+### Verbose mode
+
+For richer output (timestamp + originating module), use the verbose initializer:
+
+```rust
+fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default_verbose();
+    // ... your application
+}
+```
+
+Produces a single bracketed header per line:
+
+```text
+[info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] hello
+[warning - 2026-04-21T14:23:45Z - webarkitlib_rs::ar2] low mem
+[error - 2026-04-21T14:23:45Z - webarkitlib_rs::kpm] bad fd
+```
+
+Filtering still respects `RUST_LOG`; only the formatting changes. `arlog_rel!` messages stay prefix-free in verbose mode too. On `wasm32`, use `ar_log_init_wasm_verbose()`, which raises the level to `Debug` (browser DevTools renders the timestamp and source location natively).
+
 ### Controlling verbosity
 
 Set via environment variable (honored by the default helper):

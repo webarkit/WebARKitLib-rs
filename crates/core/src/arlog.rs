@@ -75,7 +75,28 @@
 //!
 //! Produces output like `[info] hello`, `[warning] low mem`, `[error] bad fd`.
 //!
-//! Examples that call `ar_log_init_default()` / `ar_log_init_wasm()` should
+//! For richer diagnostic output, use the verbose variant
+//! [`ar_log_init_default_verbose`] (or [`ar_log_init_wasm_verbose`] on
+//! `wasm32`):
+//!
+//! ```no_run
+//! # #[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
+//! webarkitlib_rs::arlog::ar_log_init_default_verbose();
+//! ```
+//!
+//! Verbose output uses a single bracketed header:
+//!
+//! ```text
+//! [info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] hello
+//! [warning - 2026-04-21T14:23:45Z - webarkitlib_rs::ar2] low mem
+//! ```
+//!
+//! Filtering is unchanged — `RUST_LOG` controls which records pass; the
+//! verbose flag only changes how passing records are formatted.
+//! [`arlog_rel!`] messages stay prefix-free in both modes.
+//!
+//! Examples that call `ar_log_init_default()` / `ar_log_init_wasm()` (or
+//! their `_verbose` siblings) should
 //! declare the dependency in `Cargo.toml` so `cargo run --example …` and
 //! rust-analyzer pick the feature up automatically:
 //!
@@ -205,6 +226,67 @@ macro_rules! arlog_perror {
 
 // --- Init helpers ---------------------------------------------------------
 
+/// Maps a [`log::Level`] to the lower-case ARToolKit C label
+/// (`error` / `warning` / `info` / `debug`). `Trace` collapses to `debug`.
+#[cfg(not(target_arch = "wasm32"))]
+fn level_label(level: log::Level) -> &'static str {
+    match level {
+        log::Level::Error => "error",
+        log::Level::Warn => "warning",
+        log::Level::Info => "info",
+        log::Level::Debug | log::Level::Trace => "debug",
+    }
+}
+
+/// Pure formatter used by the desktop init helpers. Extracted from the
+/// `env_logger` closure so it can be unit-tested without installing a
+/// global logger. `timestamp` is taken as a `&str` so tests can pass a
+/// fixed value while production code passes `env_logger`'s timestamp.
+#[cfg(not(target_arch = "wasm32"))]
+fn format_line(
+    verbose: bool,
+    level: log::Level,
+    target: &str,
+    module: Option<&str>,
+    timestamp: &str,
+    args: &std::fmt::Arguments<'_>,
+) -> String {
+    // Release-info channel is always prefix-free, in both modes —
+    // it's intended for clean banner / version output.
+    if target == AR_LOG_REL_TARGET {
+        return format!("{}", args);
+    }
+    let label = level_label(level);
+    if verbose {
+        let module = module.unwrap_or("?");
+        format!("[{} - {} - {}] {}", label, timestamp, module, args)
+    } else {
+        format!("[{}] {}", label, args)
+    }
+}
+
+/// Shared init for desktop env_logger backends. `verbose` toggles between the
+/// terse C-style format (`[info] msg`) and the verbose unified format
+/// (`[info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] msg`).
+#[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
+fn init_env_logger(verbose: bool) {
+    use std::io::Write;
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format(move |buf, record| {
+            let ts = buf.timestamp().to_string();
+            let line = format_line(
+                verbose,
+                record.level(),
+                record.target(),
+                record.module_path(),
+                &ts,
+                record.args(),
+            );
+            writeln!(buf, "{}", line)
+        })
+        .init();
+}
+
 /// Installs [`env_logger`] with a formatter that reproduces ARToolKit's C
 /// output format (`[info] msg`, `[warning] msg`, `[error] msg`, `[debug] msg`,
 /// and unprefixed release-info). Honors `RUST_LOG` if set, defaults to `info`.
@@ -219,23 +301,25 @@ macro_rules! arlog_perror {
 /// ```
 #[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
 pub fn ar_log_init_default() {
-    use std::io::Write;
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .format(|buf, record| {
-            if record.target() == AR_LOG_REL_TARGET {
-                writeln!(buf, "{}", record.args())
-            } else {
-                let label = match record.level() {
-                    log::Level::Error => "error",
-                    log::Level::Warn => "warning",
-                    log::Level::Info => "info",
-                    log::Level::Debug => "debug",
-                    log::Level::Trace => "debug",
-                };
-                writeln!(buf, "[{}] {}", label, record.args())
-            }
-        })
-        .init();
+    init_env_logger(false);
+}
+
+/// Verbose variant of [`ar_log_init_default`]. Uses a single bracketed
+/// header containing level, ISO-8601 UTC timestamp, and the originating
+/// module path:
+///
+/// ```text
+/// [info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] hello
+/// ```
+///
+/// Release-info messages (via [`arlog_rel!`]) stay prefix-free even in
+/// verbose mode, so they remain suitable for banners.
+///
+/// Filtering is unchanged from the terse variant — `RUST_LOG` still
+/// controls which records pass; this only changes how they are formatted.
+#[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
+pub fn ar_log_init_default_verbose() {
+    init_env_logger(true);
 }
 
 /// Installs [`console_log`] so `arlog_*!` macros appear in the browser DevTools
@@ -244,6 +328,19 @@ pub fn ar_log_init_default() {
 pub fn ar_log_init_wasm() {
     console_log::init_with_level(log::Level::Info).expect("console_log init failed");
     log::set_max_level(log::LevelFilter::Info);
+}
+
+/// Verbose WASM variant: initializes [`console_log`] at `Debug` level so
+/// `arlog_d!` records also reach the DevTools console.
+///
+/// Note: browser DevTools renders its own timestamp and source-location
+/// columns for each console entry, so the verbose format used by the
+/// desktop init helper is unnecessary here — DevTools already shows that
+/// metadata natively.
+#[cfg(all(feature = "log-helpers", target_arch = "wasm32"))]
+pub fn ar_log_init_wasm_verbose() {
+    console_log::init_with_level(log::Level::Debug).expect("console_log init failed");
+    log::set_max_level(log::LevelFilter::Debug);
 }
 
 // --- Tests ----------------------------------------------------------------
@@ -432,6 +529,104 @@ mod tests {
             0,
             "arlog_d! must not evaluate args when filtered"
         );
+    }
+
+    // --- format_line tests (verbose mode wiring) ---
+
+    const FAKE_TS: &str = "2026-04-21T14:23:45Z";
+
+    #[test]
+    fn format_line_terse_info() {
+        let s = format_line(
+            false,
+            log::Level::Info,
+            "webarkitlib_rs::marker",
+            Some("webarkitlib_rs::marker"),
+            FAKE_TS,
+            &format_args!("hello {}", 42),
+        );
+        assert_eq!(s, "[info] hello 42");
+    }
+
+    #[test]
+    fn format_line_terse_warn_uses_warning_label() {
+        let s = format_line(
+            false,
+            log::Level::Warn,
+            "x",
+            Some("x"),
+            FAKE_TS,
+            &format_args!("low mem"),
+        );
+        assert_eq!(s, "[warning] low mem");
+    }
+
+    #[test]
+    fn format_line_verbose_includes_ts_and_module() {
+        let s = format_line(
+            true,
+            log::Level::Info,
+            "webarkitlib_rs::marker",
+            Some("webarkitlib_rs::marker"),
+            FAKE_TS,
+            &format_args!("hello"),
+        );
+        assert_eq!(
+            s,
+            "[info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] hello"
+        );
+    }
+
+    #[test]
+    fn format_line_verbose_falls_back_to_question_mark_module() {
+        let s = format_line(
+            true,
+            log::Level::Error,
+            "x",
+            None,
+            FAKE_TS,
+            &format_args!("bad fd"),
+        );
+        assert_eq!(s, "[error - 2026-04-21T14:23:45Z - ?] bad fd");
+    }
+
+    #[test]
+    fn format_line_rel_channel_is_prefix_free_in_terse_mode() {
+        let s = format_line(
+            false,
+            log::Level::Info,
+            AR_LOG_REL_TARGET,
+            Some("webarkitlib_rs::version"),
+            FAKE_TS,
+            &format_args!("WebARKitLib-rs v0.3.3"),
+        );
+        assert_eq!(s, "WebARKitLib-rs v0.3.3");
+    }
+
+    #[test]
+    fn format_line_rel_channel_is_prefix_free_in_verbose_mode() {
+        let s = format_line(
+            true,
+            log::Level::Info,
+            AR_LOG_REL_TARGET,
+            Some("webarkitlib_rs::version"),
+            FAKE_TS,
+            &format_args!("WebARKitLib-rs v0.3.3"),
+        );
+        assert_eq!(s, "WebARKitLib-rs v0.3.3");
+    }
+
+    #[test]
+    fn format_line_trace_collapses_to_debug_label() {
+        let s = format_line(
+            false,
+            log::Level::Trace,
+            "x",
+            Some("x"),
+            FAKE_TS,
+            &format_args!("trace msg"),
+        );
+        assert_eq!(s, "[debug] trace msg");
     }
 
     #[test]
