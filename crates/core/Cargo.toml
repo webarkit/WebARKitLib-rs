@@ -58,6 +58,10 @@ tempfile = "3"
 name = "simple_nft"
 required-features = ["ffi-backend"]
 
+[[example]]
+name = "load_nft"
+required-features = ["log-helpers"]
+
 [[bench]]
 name = "marker_bench"
 harness = false

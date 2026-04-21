@@ -47,18 +47,31 @@
 //! ```sh
 //! cargo run -p webarkitlib-rs --example load_nft
 //! ```
+//!
+//! This example uses [`webarkitlib_rs::arlog`] for logging via `arlog_i!`
+//! and installs the bundled `env_logger`-based backend with
+//! [`webarkitlib_rs::arlog::ar_log_init_default`]. The initializer is gated
+//! behind the `log-helpers` Cargo feature, which is declared as
+//! `required-features` for this example in `crates/core/Cargo.toml` — so
+//! `cargo run --example load_nft` enables it automatically; no `--features`
+//! flag needed.
+//!
+//! Adjust verbosity via the `RUST_LOG` env var (e.g. `RUST_LOG=debug`) or
+//! programmatically with [`webarkitlib_rs::arlog::set_ar_log_level`].
 
 use std::path::Path;
 use webarkitlib_rs::ar2::{AR2FeatureSetT, AR2ImageSetT};
+use webarkitlib_rs::arlog_i;
 use webarkitlib_rs::kpm::types::KpmRefDataSet;
 
 fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join("Data");
     let marker_name = "pinball";
 
-    println!("Loading NFT marker: '{}'", marker_name);
+    arlog_i!("Loading NFT marker: '{}'", marker_name);
     println!("========================================\n");
 
     // ---------------------------------------------------------------
