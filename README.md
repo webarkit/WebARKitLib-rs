@@ -163,6 +163,63 @@ The `crates/wasm/www` folder contains interactive web demos. To run them you nee
    - **`simple.html`** – static image demo with engine selector and threshold visualization.
    - **`simple_video_marker_example.html`** – live webcam demo with engine selector, marker type (pattern/barcode) selector, and threshold slider.
 
+## 📝 Logging
+
+WebARKitLib-rs uses the standard [`log`](https://crates.io/crates/log) crate facade, with ARToolKit-style macros (`arlog_d!`, `arlog_i!`, `arlog_w!`, `arlog_e!`, `arlog_rel!`, `arlog_perror!`) that mirror the C `ARLOG*` API:
+
+| C macro                   | Rust macro               |
+|---------------------------|--------------------------|
+| `ARLOGd("x=%d", x);`      | `arlog_d!("x={}", x);`   |
+| `ARLOGi("x=%d", x);`      | `arlog_i!("x={}", x);`   |
+| `ARLOGw("x=%d", x);`      | `arlog_w!("x={}", x);`   |
+| `ARLOGe("x=%d", x);`      | `arlog_e!("x={}", x);`   |
+| `ARLOG("banner\n");`      | `arlog_rel!("banner");`  |
+| `ARLOGperror("open");`    | `arlog_perror!("open");` |
+
+### Quick start — reproduce ARToolKit's C output format
+
+Enable the `log-helpers` feature and call the bundled initializer once in your binary:
+
+```toml
+[dependencies]
+webarkitlib-rs = { version = "0.3", features = ["log-helpers"] }
+```
+
+```rust
+fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
+    // ... your application
+}
+```
+
+Produces `[info] ...`, `[warning] ...`, `[error] ...`, `[debug] ...` — matching the C output exactly. Release-info messages (`arlog_rel!`) print unprefixed.
+
+### Controlling verbosity
+
+Set via environment variable (honored by the default helper):
+
+```bash
+RUST_LOG=debug cargo run --example simple
+```
+
+Or programmatically:
+
+```rust
+use webarkitlib_rs::arlog::{set_ar_log_level, ArLogLevel};
+set_ar_log_level(ArLogLevel::Debug);
+```
+
+### Other backends
+
+Because it's the `log` crate facade, any compatible backend works:
+
+- **WASM / browser** — `console_log` (or the bundled `ar_log_init_wasm()` helper under the `log-helpers` feature)
+- **Android** — `android_logger`
+- **Apple (iOS/macOS)** — `oslog`
+- **Structured / OpenTelemetry** — `tracing` + `tracing-log`
+
+No library code change is needed — pick the backend in your application's entry point.
+
 ## 📊 Benchmarking
 
 We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive. 

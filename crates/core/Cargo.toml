@@ -25,6 +25,12 @@ log = "0.4.0"
 rand = "0.9"
 rayon = "1.12"
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = { version = "0.11", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+console_log = { version = "1", optional = true }
+
 [build-dependencies]
 cc = "1"
 bindgen = "0.72.1"
@@ -38,6 +44,8 @@ simd-x86-sse41 = []
 simd-x86-avx2 = []
 ffi-backend = []
 dual-mode = []
+# Pulls env_logger (desktop) or console_log (wasm) for the `ar_log_init_*` helpers.
+log-helpers = ["dep:env_logger", "dep:console_log"]
 
 [dev-dependencies]
 chrono = "0.4"

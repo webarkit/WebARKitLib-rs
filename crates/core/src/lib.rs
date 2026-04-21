@@ -100,6 +100,7 @@
 //! ```
 
 pub mod ar2;
+pub mod arlog;
 pub mod bch;
 pub mod filter;
 pub mod icp;
