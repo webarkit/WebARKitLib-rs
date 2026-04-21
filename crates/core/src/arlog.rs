@@ -57,9 +57,16 @@
 //!
 //! # Setup
 //!
-//! Applications/examples initialize a backend **once** at startup. With the
-//! `log-helpers` feature enabled, this crate ships a ready-made initializer
-//! that reproduces the C ARToolKit output format:
+//! The `arlog_*!` macros are **always available** — they compile and run
+//! without any extra feature. However, log records are only *displayed* when
+//! a logger backend has been installed in the process; otherwise output is
+//! silently dropped (this is standard `log` crate behavior).
+//!
+//! ## Option 1 — bundled initializer (`log-helpers` feature)
+//!
+//! With the `log-helpers` feature enabled, this crate ships a ready-made
+//! initializer that reproduces the C ARToolKit output format
+//! (`env_logger` on native, `console_log` on `wasm32`):
 //!
 //! ```no_run
 //! # #[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
@@ -67,6 +74,25 @@
 //! ```
 //!
 //! Produces output like `[info] hello`, `[warning] low mem`, `[error] bad fd`.
+//!
+//! Examples that call `ar_log_init_default()` / `ar_log_init_wasm()` should
+//! declare the dependency in `Cargo.toml` so `cargo run --example …` and
+//! rust-analyzer pick the feature up automatically:
+//!
+//! ```toml
+//! [[example]]
+//! name = "load_nft"
+//! required-features = ["log-helpers"]
+//! ```
+//!
+//! See `examples/load_nft.rs` for the canonical usage pattern.
+//!
+//! ## Option 2 — bring your own backend
+//!
+//! If `log-helpers` is **off**, the `arlog_*!` macros still compile and emit
+//! `log::Record`s. Install any `log`-compatible backend yourself
+//! (`env_logger`, `tracing-subscriber`, `android_logger`, `oslog`, …) and
+//! records will flow through it unchanged.
 //!
 //! # `RelInfo` semantics
 //!
