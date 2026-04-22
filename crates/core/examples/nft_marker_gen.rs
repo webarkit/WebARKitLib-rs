@@ -127,6 +127,7 @@ fn file_kb(path: &Path) -> String {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
     let cli = Cli::parse();
     let start = Instant::now();
     let start_time = Local::now();

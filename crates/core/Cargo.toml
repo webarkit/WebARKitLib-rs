@@ -62,6 +62,10 @@ required-features = ["ffi-backend"]
 name = "load_nft"
 required-features = ["log-helpers"]
 
+[[example]]
+name = "nft_marker_gen"
+required-features = ["log-helpers"]
+
 [[bench]]
 name = "marker_bench"
 harness = false
