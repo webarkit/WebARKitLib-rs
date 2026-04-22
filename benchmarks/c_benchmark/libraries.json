@@ -3,7 +3,9 @@
     "name": "WebARKitLib",
     "source": {
       "type": "git",
-      "url": "https://github.com/webarkit/WebARKitLib.git"
+      "url": "https://github.com/webarkit/WebARKitLib.git",
+      "branch": "master",
+      "commit": "656436e36bbebd9c269cf2a9f47fb4a962359f92"
     }
   },
   {

@@ -158,7 +158,7 @@ def escapifyPath(path):
         return "\"" + path + "\""
     return path.replace("\\ ", " ")
 
-def cloneRepository(type, url, target_name, revision, try_only_local_operations = False, recursive = True):
+def cloneRepository(type, url, target_name, revision, try_only_local_operations = False, recursive = True, branch = None):
     target_dir = escapifyPath(os.path.join(SRC_DIR, target_name))
     target_dir_exists = os.path.exists(target_dir)
     log("Cloning " + url + " to " + target_dir)
@@ -191,10 +191,11 @@ def cloneRepository(type, url, target_name, revision, try_only_local_operations 
             if target_dir_exists:
                 dlog("Removing directory " + target_dir + " before cloning")
                 shutil.rmtree(target_dir)
+            branch_arg = " --branch " + branch if branch else ""
             if recursive:
-                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " clone --recursive " + url + " " + target_dir))
+                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " clone --recursive" + branch_arg + " " + url + " " + target_dir))
             else:
-                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " clone " + url + " " + target_dir))
+                dieIfNonZero(executeCommand(TOOL_COMMAND_GIT + " clone" + branch_arg + " " + url + " " + target_dir))
         elif not try_only_local_operations:
             log("Repository " + target_dir + " already exists; fetching instead of cloning")
             if recursive:
@@ -848,8 +849,10 @@ def main(argv):
                             raise
 
                 else:
-                    revision = source.get('revision', None)
+                    # `commit` is an alias for `revision` (clearer name in JSON schemas).
+                    revision = source.get('revision', source.get('commit', None))
                     recursive = source.get('recursive', True)
+                    branch = source.get('branch', None)
 
                     archive_name = name + ".tar.gz" # for reading or writing of snapshot archives
                     if revision is not None:
@@ -858,7 +861,7 @@ def main(argv):
                     try:
                         if force_fallback:
                             raise RuntimeError
-                        cloneRepository(src_type, src_url, name, revision, False, recursive)
+                        cloneRepository(src_type, src_url, name, revision, False, recursive, branch)
 
                         if create_repo_snapshots:
                             log("Creating snapshot of library repository '" + name + "'")
@@ -882,7 +885,7 @@ def main(argv):
                             downloadAndExtractFile(fallback_src_url, SNAPSHOT_DIR, name, force_download = True)
 
                             # reset repository state to particular revision (only using local operations inside the function)
-                            cloneRepository(src_type, src_url, name, revision, True, True)
+                            cloneRepository(src_type, src_url, name, revision, True, True, branch)
                         else:
                             raise
             else:

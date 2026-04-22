@@ -47,12 +47,10 @@ fn main() {
 fn build_freak_matcher() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-    // Workspace root is two levels up from crates/core/
-    let workspace_root = manifest_dir.join("..").join("..");
-    let webarkitlib = workspace_root
-        .join("benchmarks")
-        .join("c_benchmark")
-        .join("src")
+    // WebARKitLib C++ sources ship with the crate via the git submodule at
+    // `crates/core/third_party/WebARKitLib`. See docs/design/issue-72-ffi-backend-vendoring.md.
+    let webarkitlib = manifest_dir
+        .join("third_party")
         .join("WebARKitLib");
 
     let freak_matcher_root = webarkitlib
@@ -62,6 +60,16 @@ fn build_freak_matcher() {
         .join("FreakMatcher");
 
     let include_root = webarkitlib.join("include");
+
+    if !freak_matcher_root.exists() {
+        panic!(
+            "WebARKitLib C++ sources not found at {}. \
+             If you are building from a git clone, run \
+             `git submodule update --init --recursive`. \
+             (Installs from crates.io ship the sources inside the .crate tarball.)",
+            freak_matcher_root.display()
+        );
+    }
 
     // C++ wrapper files now live under src/kpm/
     let src_dir = manifest_dir.join("src").join("kpm");
