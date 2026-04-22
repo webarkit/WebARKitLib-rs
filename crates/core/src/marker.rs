@@ -422,6 +422,11 @@ fn ar_get_contour(
         }
 
         if !found {
+            arlog_d!(
+                "ar_get_contour: contour broken for label {} at coord_num={}",
+                label,
+                marker_info2.coord_num
+            );
             return Err("Contour broken");
         }
 
@@ -435,6 +440,11 @@ fn ar_get_contour(
 
         marker_info2.coord_num += 1;
         if marker_info2.coord_num as usize >= AR_CHAIN_MAX - 1 {
+            arlog_d!(
+                "ar_get_contour: contour exceeded AR_CHAIN_MAX={} for label {}",
+                AR_CHAIN_MAX,
+                label
+            );
             return Err("Contour too long");
         }
     }
