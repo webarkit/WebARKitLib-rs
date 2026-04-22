@@ -64,6 +64,7 @@
 //! ```
 
 use super::Ar2Error;
+use crate::arlog_d;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rayon::prelude::*;
 use std::io::{self, BufWriter, Cursor, Read, Write};
@@ -140,7 +141,7 @@ impl AR2ImageSetT {
                 Ok(set) => return Ok(set),
                 Err(_) => {
                     // Fall through to legacy.
-                    log::debug!("JPEG decode failed, trying legacy format");
+                    arlog_d!("JPEG decode failed, trying legacy format");
                 }
             }
         }
