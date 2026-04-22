@@ -42,6 +42,7 @@
 use crate::ar2::surface::AR2SurfaceSet;
 use crate::icp::ICPHandleT;
 use crate::types::{ARParamLT, ARPixelFormat, ARdouble};
+use crate::{arlog_d, arlog_e};
 
 pub const AR2_TRACKING_6DOF: i32 = 1;
 pub const AR2_TRACKING_HOMOGRAPHY: i32 = 2;
@@ -545,6 +546,10 @@ pub fn extract_visible_features(
 
                 if w[1] <= feature_points.maxdpi && w[1] >= feature_points.mindpi {
                     if l >= AR2_TRACKING_CANDIDATE_MAX {
+                        arlog_e!(
+                            "### Feature candidates for tracking are overflow (max={}).",
+                            AR2_TRACKING_CANDIDATE_MAX
+                        );
                         candidate[l].flag = -1;
                         return Err("Feature candidates overflow");
                     }
@@ -619,6 +624,10 @@ pub fn extract_visible_features_homography(
 
                 if w[1] <= feature_points.maxdpi && w[1] >= feature_points.mindpi {
                     if l >= AR2_TRACKING_CANDIDATE_MAX {
+                        arlog_e!(
+                            "### Feature candidates for tracking are overflow (max={}).",
+                            AR2_TRACKING_CANDIDATE_MAX
+                        );
                         candidate[l].flag = -1;
                         return Err("Feature candidates overflow");
                     }
@@ -1118,6 +1127,7 @@ pub fn ar2_tracking(
     err: &mut f32,
 ) -> Result<(), i32> {
     if surface_set.cont_num <= 0 {
+        arlog_d!("ar2_tracking() error: set_init_trans() must be called first.");
         return Err(-2);
     }
 
