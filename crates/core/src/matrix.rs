@@ -66,6 +66,7 @@ pub struct MatrixCodeResult {
 ///
 /// # Example
 /// ```rust,no_run
+/// use webarkitlib_rs::arlog_i;
 /// use webarkitlib_rs::matrix::ar_matrix_code_get_id;
 /// use webarkitlib_rs::types::ARMatrixCodeType;
 ///
@@ -78,7 +79,7 @@ pub struct MatrixCodeResult {
 /// if ar_matrix_code_get_id(&image, 640, 480, &vertex, ARMatrixCodeType::default(),
 ///         webarkitlib_rs::types::ARPixelFormat::RGB, 0.5,
 ///         &mut id, &mut dir, &mut cf, &mut err).is_ok() {
-///     println!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
+///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
 /// }
 /// ```
 pub fn ar_matrix_code_get_id(
