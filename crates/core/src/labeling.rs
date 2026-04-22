@@ -82,6 +82,7 @@ pub enum ImageProcMode {
 ///
 /// # Example
 /// ```rust,no_run
+/// use webarkitlib_rs::arlog_i;
 /// use webarkitlib_rs::labeling::{ar_labeling, LabelingMode, ImageProcMode};
 /// use webarkitlib_rs::types::ARLabelInfo;
 ///
@@ -91,7 +92,7 @@ pub enum ImageProcMode {
 /// let mut label_info = ARLabelInfo::default();
 /// ar_labeling(&luma, width, height, LabelingMode::BlackRegion, 100,
 ///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
-/// println!("{} regions found", label_info.label_num);
+/// arlog_i!("{} regions found", label_info.label_num);
 /// ```
 pub fn ar_labeling(
     image: &[u8],

@@ -70,6 +70,7 @@ pub enum ImageProcMode {
 ///
 /// # Example
 /// ```rust,no_run
+/// use webarkitlib_rs::arlog_i;
 /// use webarkitlib_rs::marker::ar_detect_marker;
 /// use webarkitlib_rs::types::{ARHandle, AR2VideoBufferT};
 ///
@@ -79,7 +80,7 @@ pub enum ImageProcMode {
 /// if ar_detect_marker(&mut handle, &frame).is_ok() {
 ///     for i in 0..handle.marker_num as usize {
 ///         let m = &handle.marker_info[i];
-///         println!("Marker id={}, cf={:.2}", m.id, m.cf);
+///         arlog_i!("Marker id={}, cf={:.2}", m.id, m.cf);
 ///     }
 /// }
 /// ```
