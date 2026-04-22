@@ -10,10 +10,31 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-exclude = [
-    "examples/Data/",
-    "benches/",
-    "tests/",
+include = [
+    "src/**/*",
+    "examples/**/*.rs",
+    "build.rs",
+    "Cargo.toml",
+    # Vendored WebARKitLib C++ sources (via git submodule). See
+    # docs/design/issue-72-ffi-backend-vendoring.md.
+    # Only the subtrees build.rs actually compiles or includes — we
+    # intentionally exclude Eigen's test/, bench/, and doc/ directories.
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/facade/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/detectors/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/matchers/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/framework/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/homography_estimation/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/math/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/utils/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/Eigen/**/*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/unsupported/Eigen/**/*",
+    "third_party/WebARKitLib/include/**/*",
+    # Licenses required to ship alongside vendored code.
+    "third_party/WebARKitLib/LICENSE*",
+    "third_party/WebARKitLib/COPYING*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/Eigen/COPYING*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/unsupported/COPYING*",
+    "third_party/WebARKitLib/lib/SRC/KPM/FreakMatcher/unsupported/README.txt",
 ]
 
 [dependencies]

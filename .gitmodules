@@ -1,0 +1,4 @@
+[submodule "crates/core/third_party/WebARKitLib"]
+	path = crates/core/third_party/WebARKitLib
+	url = https://github.com/webarkit/WebARKitLib.git
+	branch = master

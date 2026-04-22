@@ -48,6 +48,28 @@ To enable the C++ FFI backend for KPM (Natural Feature Tracking):
 webarkitlib-rs = { version = "0.3", features = ["ffi-backend"] }
 ```
 
+> When installing from crates.io, no extra setup is required — the C++
+> sources needed by `ffi-backend` ship inside the published crate.
+
+### Contributing — clone with submodules
+
+This repository uses a git submodule for the WebARKitLib C++ sources that
+back the `ffi-backend` feature. Clone recursively:
+
+```bash
+git clone --recursive https://github.com/webarkit/WebARKitLib-rs.git
+```
+
+If you already cloned without `--recursive`:
+
+```bash
+git submodule update --init --recursive
+```
+
+The submodule lives at `crates/core/third_party/WebARKitLib` and is pinned
+to a specific upstream commit. Building from a non-recursive clone will
+fail early in `build.rs` with an actionable message.
+
 ### Native Rust Example
 
 To see the marker detection in action on your local machine, run the provided simple example:
@@ -254,6 +276,12 @@ Detailed SIMD performance results and reproduction steps can be found in the [BE
     cd benchmarks/c_benchmark
     python ../bootstrap.py --bootstrap-file libraries.json
     ```
+
+    > Note: this Python bootstrap is only required for the standalone
+    > **C benchmark** build here. The Rust `ffi-backend` feature gets its
+    > C++ sources from the git submodule at
+    > `crates/core/third_party/WebARKitLib` and does **not** require
+    > Python.
 
 2.  **Execute the Suite**:
     ```bash

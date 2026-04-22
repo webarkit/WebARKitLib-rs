@@ -36,25 +36,48 @@ jobs:
       run: cargo test --workspace --features simd
 
   kpm-build:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
+      with:
+        submodules: recursive
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Install libclang
+    - name: Install libclang (Linux)
+      if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y libclang-dev
-
-    - name: Bootstrap WebARKitLib C++ sources
-      working-directory: benchmarks/c_benchmark
-      run: python ../bootstrap.py --bootstrap-file libraries.json
 
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
 
     - name: Build kpm backend (FFI backend)
       run: cargo build -p webarkitlib-rs --features ffi-backend
+
+  submodule-drift-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      with:
+        submodules: recursive
+
+    - name: Verify submodule SHA matches libraries.json commit
+      run: |
+        SUB=$(git -C crates/core/third_party/WebARKitLib rev-parse HEAD)
+        JSON=$(jq -r '.[] | select(.name=="WebARKitLib") | .source.commit' \
+               benchmarks/c_benchmark/libraries.json)
+        if [ "$SUB" != "$JSON" ]; then
+          echo "::error::Submodule SHA ($SUB) does not match libraries.json commit ($JSON)"
+          echo "Run: git -C crates/core/third_party/WebARKitLib rev-parse HEAD"
+          echo "Then update benchmarks/c_benchmark/libraries.json accordingly."
+          exit 1
+        fi
+        echo "OK: submodule and libraries.json both pinned at $SUB"
 
   wasm-build:
     runs-on: ubuntu-latest
