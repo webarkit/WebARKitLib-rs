@@ -38,7 +38,7 @@
 //! Translated from ARToolKit C headers (icp.h, icpCore.h)
 
 use crate::types::ARdouble;
-use log::{debug, error};
+use crate::{arlog_d, arlog_e};
 
 /// 2D Coordinate for ICP
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -202,7 +202,7 @@ pub fn icp_point(
     mat_xw2xc: &mut [[ARdouble; 4]; 3],
 ) -> Result<ARdouble, &'static str> {
     if data.screen_coord.len() < 3 || data.world_coord.len() < 3 {
-        debug!("ICP Point: Not enough points");
+        arlog_d!("ICP Point: Not enough points");
         return Err("Not enough points for ICP");
     }
 
@@ -237,21 +237,21 @@ pub fn icp_point(
         }
         err1 /= num_points as ARdouble;
 
-        // println!("Loop {}, err1: {}, err0: {}", loop_idx, err1, err0);
+        arlog_d!("Loop {}, err1: {}, err0: {}", loop_idx, err1, err0);
 
         if err1 < handle.break_loop_error_thresh {
-            // println!("ICP Point: Break loop threshold reached");
+            arlog_d!("ICP Point: Break loop threshold reached");
             break;
         }
         if loop_idx > 0
             && err1 < handle.break_loop_error_thresh2
             && (err1 / err0) > handle.break_loop_error_ratio_thresh
         {
-            // println!("ICP Point: Break loop ratio reached");
+            arlog_d!("ICP Point: Break loop ratio reached");
             break;
         }
         if loop_idx == handle.max_loop {
-            // println!("ICP Point: Max loop reached");
+            arlog_d!("ICP Point: Max loop reached");
             break;
         }
         err0 = err1;
@@ -272,7 +272,7 @@ pub fn icp_point(
         }
 
         if let Err(e) = icp_get_delta_s(&mut ds, &du, &j_u_s_table, num_points * 2) {
-            error!("ICP Point: icp_get_delta_s failed: {}", e);
+            arlog_e!("ICP Point: icp_get_delta_s failed: {}", e);
             return Err(e);
         }
         icp_update_mat(mat_xw2xc, &ds);
@@ -854,12 +854,12 @@ pub fn icp_get_init_xw2xc_from_planar_data(
     let mut mat_ata = (&mat_at * &mat_a)?;
     let mat_atb = (&mat_at * &mat_b)?;
 
-    // println!("mat_ata:\n{:?}", mat_ata);
+    arlog_d!("mat_ata:\n{:?}", mat_ata);
     mat_ata.self_inv()?;
-    // println!("mat_ata_inv:\n{:?}", mat_ata);
+    arlog_d!("mat_ata_inv:\n{:?}", mat_ata);
 
     let mat_c = (&mat_ata * &mat_atb)?;
-    // println!("mat_c:\n{:?}", mat_c);
+    arlog_d!("mat_c:\n{:?}", mat_c);
 
     let mut v = [[0.0; 3]; 3];
     let mut t = [0.0; 3];
@@ -903,7 +903,7 @@ pub fn icp_get_init_xw2xc_from_planar_data(
         t[2] = -t[2];
     }
 
-    // println!("v after rotation check:\n{:?}", v);
+    arlog_d!("v after rotation check:\n{:?}", v);
 
     v[2][0] = v[0][1] * v[1][2] - v[0][2] * v[1][1];
     v[2][1] = v[0][2] * v[1][0] - v[0][0] * v[1][2];
