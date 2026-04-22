@@ -49,9 +49,7 @@ fn build_freak_matcher() {
 
     // WebARKitLib C++ sources ship with the crate via the git submodule at
     // `crates/core/third_party/WebARKitLib`. See docs/design/issue-72-ffi-backend-vendoring.md.
-    let webarkitlib = manifest_dir
-        .join("third_party")
-        .join("WebARKitLib");
+    let webarkitlib = manifest_dir.join("third_party").join("WebARKitLib");
 
     let freak_matcher_root = webarkitlib
         .join("lib")
