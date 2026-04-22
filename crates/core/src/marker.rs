@@ -37,8 +37,8 @@
 //! Marker Detection Pipeline
 //! Ported from arDetectMarker.c, arDetectMarker2.c, and arGetMarkerInfo.c
 
+use crate::arlog_d;
 use crate::types::{ARLabelInfo, ARMarkerInfo2, ARdouble};
-use log::debug;
 
 pub const AR_AREA_MAX: i32 = 100000;
 pub const AR_AREA_MIN: i32 = 70;
@@ -124,7 +124,7 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        debug!(
+        arlog_d!(
             "ar_labeling found {} labels.",
             ar_handle.label_info.label_num
         );
@@ -149,7 +149,7 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        debug!(
+        arlog_d!(
             "ar_detect_marker2 found {} square candidates.",
             ar_handle.marker2_num
         );
@@ -191,7 +191,7 @@ pub fn ar_detect_marker(
     )?;
 
     if ar_handle.ar_debug != 0 {
-        debug!(
+        arlog_d!(
             "ar_get_marker_info produced {} final markers.",
             ar_handle.marker_num
         );
@@ -246,18 +246,21 @@ pub fn ar_detect_marker2(
     let label_num = label_info.label_num as usize;
     for i in 0..label_num {
         if label_info.area[i] < area_min_local || label_info.area[i] > area_max_local {
-            debug!(
+            arlog_d!(
                 "Label {} skipped due to Area ({}) not in [{}, {}]",
-                i, label_info.area[i], area_min_local, area_max_local
+                i,
+                label_info.area[i],
+                area_min_local,
+                area_max_local
             );
             continue;
         }
         if label_info.clip[i][0] <= 1 || label_info.clip[i][1] >= xsize_local - 2 {
-            debug!("Label {} skipped due to X-Clip bounds", i);
+            arlog_d!("Label {} skipped due to X-Clip bounds", i);
             continue;
         }
         if label_info.clip[i][2] <= 1 || label_info.clip[i][3] >= ysize_local - 2 {
-            debug!("Label {} skipped due to Y-Clip bounds", i);
+            arlog_d!("Label {} skipped due to Y-Clip bounds", i);
             continue;
         }
 
@@ -273,7 +276,7 @@ pub fn ar_detect_marker2(
         );
 
         if ret.is_err() {
-            debug!(
+            arlog_d!(
                 "ar_get_contour failed for label {}: {:?}",
                 i,
                 ret.unwrap_err()
@@ -283,7 +286,7 @@ pub fn ar_detect_marker2(
 
         let ret = check_square(label_info.area[i], &mut current_marker, square_fit_thresh);
         if ret.is_err() {
-            debug!(
+            arlog_d!(
                 "check_square failed for label {}: {:?}",
                 i,
                 ret.unwrap_err()
@@ -391,7 +394,7 @@ fn ar_get_contour(
     }
 
     if sx == -1 {
-        debug!("ar_get_contour failed. label={}. clip={:?}.", label, clip);
+        arlog_d!("ar_get_contour failed. label={}. clip={:?}.", label, clip);
         return Err("Contour start point not found");
     }
 
@@ -858,13 +861,15 @@ pub fn ar_get_marker_info(
                     marker_info[j].dir_matrix = mc_dir;
                     marker_info[j].cf_matrix = mc_cf;
                     marker_info[j].error_corrected = mc_err;
-                    debug!(
+                    arlog_d!(
                         "ar_get_marker_info: barcode id={}, dir={}, cf={:.4}",
-                        mc_id, mc_dir, mc_cf
+                        mc_id,
+                        mc_dir,
+                        mc_cf
                     );
                 }
                 Err(e) => {
-                    debug!("ar_get_marker_info: barcode decode failed: {}", e);
+                    arlog_d!("ar_get_marker_info: barcode decode failed: {}", e);
                     marker_info[j].id_matrix = -1;
                     marker_info[j].dir_matrix = -1;
                     marker_info[j].cf_matrix = 0.0;

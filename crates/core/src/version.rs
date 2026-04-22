@@ -60,7 +60,7 @@ pub fn get_version() -> &'static str {
 /// Call this early in your application (e.g. during initialization) so the
 /// version appears in the console / log output.
 pub fn print_version() {
-    log::info!("WebARKitLib-rs v{}", VERSION);
+    crate::arlog_i!("WebARKitLib-rs v{}", VERSION);
 }
 
 #[cfg(test)]

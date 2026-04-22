@@ -26,9 +26,10 @@
 //! Matrix Code (Barcode) Marker Decoding
 //! Ported from arGetMatrixCode.c and associated ECC logic.
 
+use crate::arlog_d;
 use crate::marker::ar_get_line;
 use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble};
-use log::{debug, trace};
+use log::trace;
 
 /// Results of a matrix code decoding attempt.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,7 +113,7 @@ pub fn ar_matrix_code_get_id(
         &mut bits,
     )?;
 
-    debug!("ar_matrix_code_get_id: vertices v0=({:.1},{:.1}) v1=({:.1},{:.1}) v2=({:.1},{:.1}) v3=({:.1},{:.1})",
+    arlog_d!("ar_matrix_code_get_id: vertices v0=({:.1},{:.1}) v1=({:.1},{:.1}) v2=({:.1},{:.1}) v3=({:.1},{:.1})",
         vertex[0][0], vertex[0][1], vertex[1][0], vertex[1][1],
         vertex[2][0], vertex[2][1], vertex[3][0], vertex[3][1]);
 
@@ -128,9 +129,11 @@ pub fn ar_matrix_code_get_id(
     }
 
     let mid_thresh = ((min_val as u32 + max_val as u32) / 2) as u8;
-    debug!(
+    arlog_d!(
         "ar_matrix_code_get_id: min={}, max={}, thresh={}",
-        min_val, max_val, mid_thresh
+        min_val,
+        max_val,
+        mid_thresh
     );
 
     if (max_val as i32 - min_val as i32) < 30 {
@@ -147,7 +150,7 @@ pub fn ar_matrix_code_get_id(
         grid_size,
         core_bits
     );
-    debug!("ar_matrix_code_get_id: core_bits={:?}", core_bits);
+    arlog_d!("ar_matrix_code_get_id: core_bits={:?}", core_bits);
 
     // The C reference `get_matrix_code` receives only the dim×dim inner data.
     // Check orientation based on corners of the core data:
@@ -257,9 +260,10 @@ pub fn ar_matrix_code_get_id(
         }
     }
 
-    debug!(
+    arlog_d!(
         "ar_matrix_code_get_id: code_raw={}, dir={}",
-        code_raw, matched_dir
+        code_raw,
+        matched_dir
     );
 
     *dir = matched_dir;
