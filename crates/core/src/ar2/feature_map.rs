@@ -43,6 +43,7 @@
 use super::feature_set::{AR2FeatureCoordT, AR2FeaturePointsT, AR2FeatureSetT};
 use super::image_set::AR2ImageSetT;
 use super::Ar2Error;
+use crate::arlog_i;
 use rayon::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -552,7 +553,6 @@ fn gen_feature_map_for_level(
             }
         }
     }
-    let _ = sum; // used implicitly via the 2% threshold
     let threshold_pixels = (total as f32 * 0.02) as u32;
     let mut acc = 0u32;
     let mut thresh_bin = 0usize;
@@ -563,6 +563,10 @@ fn gen_feature_map_for_level(
             break;
         }
     }
+
+    arlog_i!("         ImageSize = {:7}[pixel]", total);
+    arlog_i!("Extracted features = {:7}[pixel]", sum);
+    arlog_i!(" Filtered features = {:7}[pixel]", acc);
 
     // Stage 3: For each pixel passing NMS + threshold, compute template
     // similarity in the annular search region.
@@ -662,6 +666,8 @@ fn select_features(
     let mut work = fmap.to_vec();
     let mut tmpl = vec![0.0f32; template_area];
     let mut coords = Vec::new();
+
+    arlog_i!("Max feature = {}", max_feature_num);
 
     while (coords.len() as i32) < max_feature_num {
         // Find pixel with minimum similarity score
