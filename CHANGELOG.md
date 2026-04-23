@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.4] - 2026-04-23
+
+### Preliminary action before  `Milestone 6 — Math & homography in pure Rust`
+
+### 🎨 Styling
+
+- Apply cargo fmt to build.rs
+
+### 🐛 Bug Fixes
+
+- *(ffi-backend)* Vendor WebARKitLib C++ via git submodule (#72)
+
+### 📚 Documentation
+
+- *(arlog)* Pin log-helpers on load_nft example and clarify usage
+- *(log)* Use arlog_i! instead of println! in doc examples
+- Add CLAUDE.md with project conventions + HEADER.txt template
+
+### 🚀 Features
+
+- *(arlog)* Port ARToolKit logging API over the log crate facade (#57)
+- *(arlog)* Add verbose init helpers with timestamp + module path
+- *(arlog)* Sweep existing println/debug calls to arlog_* (Pass A)
+- *(log)* Fill in missing arlog_d! calls in marker.rs (Pass B2)
+- *(log)* Fill in missing arlog_* calls in ar2/tracking.rs (Pass B2)
+- *(log)* Port informational arlog_i! calls in ar2/feature_map.rs (B2)
+- *(log)* Wire arlog backend into nft_marker_gen example
+- *(log)* Add arlog_* at Err sites in matrix.rs + bch.rs (Pass B2)
+- *(log)* Retrofit log + return Err pattern across 5 modules (Pass B3)
+- Include assets directory in Cargo.toml for build process
+
+### 🚜 Refactor
+
+- *(log)* Swap bare log::* for arlog_* vocabulary (Pass B1)
+
 ## [0.3.3] - 2026-04-27
 
 ### Milestone 5 — NFT marker creation pipeline

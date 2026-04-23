@@ -48,6 +48,28 @@ To enable the C++ FFI backend for KPM (Natural Feature Tracking):
 webarkitlib-rs = { version = "0.3", features = ["ffi-backend"] }
 ```
 
+> When installing from crates.io, no extra setup is required — the C++
+> sources needed by `ffi-backend` ship inside the published crate.
+
+### Contributing — clone with submodules
+
+This repository uses a git submodule for the WebARKitLib C++ sources that
+back the `ffi-backend` feature. Clone recursively:
+
+```bash
+git clone --recursive https://github.com/webarkit/WebARKitLib-rs.git
+```
+
+If you already cloned without `--recursive`:
+
+```bash
+git submodule update --init --recursive
+```
+
+The submodule lives at `crates/core/third_party/WebARKitLib` and is pinned
+to a specific upstream commit. Building from a non-recursive clone will
+fail early in `build.rs` with an actionable message.
+
 ### Native Rust Example
 
 To see the marker detection in action on your local machine, run the provided simple example:
@@ -163,6 +185,84 @@ The `crates/wasm/www` folder contains interactive web demos. To run them you nee
    - **`simple.html`** – static image demo with engine selector and threshold visualization.
    - **`simple_video_marker_example.html`** – live webcam demo with engine selector, marker type (pattern/barcode) selector, and threshold slider.
 
+## 📝 Logging
+
+WebARKitLib-rs uses the standard [`log`](https://crates.io/crates/log) crate facade, with ARToolKit-style macros (`arlog_d!`, `arlog_i!`, `arlog_w!`, `arlog_e!`, `arlog_rel!`, `arlog_perror!`) that mirror the C `ARLOG*` API:
+
+| C macro                   | Rust macro               |
+|---------------------------|--------------------------|
+| `ARLOGd("x=%d", x);`      | `arlog_d!("x={}", x);`   |
+| `ARLOGi("x=%d", x);`      | `arlog_i!("x={}", x);`   |
+| `ARLOGw("x=%d", x);`      | `arlog_w!("x={}", x);`   |
+| `ARLOGe("x=%d", x);`      | `arlog_e!("x={}", x);`   |
+| `ARLOG("banner\n");`      | `arlog_rel!("banner");`  |
+| `ARLOGperror("open");`    | `arlog_perror!("open");` |
+
+### Quick start — reproduce ARToolKit's C output format
+
+Enable the `log-helpers` feature and call the bundled initializer once in your binary:
+
+```toml
+[dependencies]
+webarkitlib-rs = { version = "0.3", features = ["log-helpers"] }
+```
+
+```rust
+fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
+    // ... your application
+}
+```
+
+Produces `[info] ...`, `[warning] ...`, `[error] ...`, `[debug] ...` — matching the C output exactly. Release-info messages (`arlog_rel!`) print unprefixed.
+
+### Verbose mode
+
+For richer output (timestamp + originating module), use the verbose initializer:
+
+```rust
+fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default_verbose();
+    // ... your application
+}
+```
+
+Produces a single bracketed header per line:
+
+```text
+[info - 2026-04-21T14:23:45Z - webarkitlib_rs::marker] hello
+[warning - 2026-04-21T14:23:45Z - webarkitlib_rs::ar2] low mem
+[error - 2026-04-21T14:23:45Z - webarkitlib_rs::kpm] bad fd
+```
+
+Filtering still respects `RUST_LOG`; only the formatting changes. `arlog_rel!` messages stay prefix-free in verbose mode too. On `wasm32`, use `ar_log_init_wasm_verbose()`, which raises the level to `Debug` (browser DevTools renders the timestamp and source location natively).
+
+### Controlling verbosity
+
+Set via environment variable (honored by the default helper):
+
+```bash
+RUST_LOG=debug cargo run --example simple
+```
+
+Or programmatically:
+
+```rust
+use webarkitlib_rs::arlog::{set_ar_log_level, ArLogLevel};
+set_ar_log_level(ArLogLevel::Debug);
+```
+
+### Other backends
+
+Because it's the `log` crate facade, any compatible backend works:
+
+- **WASM / browser** — `console_log` (or the bundled `ar_log_init_wasm()` helper under the `log-helpers` feature)
+- **Android** — `android_logger`
+- **Apple (iOS/macOS)** — `oslog`
+- **Structured / OpenTelemetry** — `tracing` + `tracing-log`
+
+No library code change is needed — pick the backend in your application's entry point.
+
 ## 📊 Benchmarking
 
 We maintain a strict performance comparison with the original C library to ensure our Rust port remains competitive. 
@@ -176,6 +276,12 @@ Detailed SIMD performance results and reproduction steps can be found in the [BE
     cd benchmarks/c_benchmark
     python ../bootstrap.py --bootstrap-file libraries.json
     ```
+
+    > Note: this Python bootstrap is only required for the standalone
+    > **C benchmark** build here. The Rust `ffi-backend` feature gets its
+    > C++ sources from the git submodule at
+    > `crates/core/third_party/WebARKitLib` and does **not** require
+    > Python.
 
 2.  **Execute the Suite**:
     ```bash
