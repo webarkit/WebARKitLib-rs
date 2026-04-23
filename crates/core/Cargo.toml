@@ -15,6 +15,7 @@ include = [
     "examples/**/*.rs",
     "build.rs",
     "Cargo.toml",
+    "assets/**/*",
     # Vendored WebARKitLib C++ sources (via git submodule). See
     # docs/design/issue-72-ffi-backend-vendoring.md.
     # Only the subtrees build.rs actually compiles or includes — we
