@@ -37,7 +37,7 @@ All notable changes to this project will be documented in this file.
 
 - *(log)* Swap bare log::* for arlog_* vocabulary (Pass B1)
 
-## [0.3.3] - 2026-04-27
+## [0.3.3] - 2026-04-20
 
 ### Milestone 5 — NFT marker creation pipeline
 
