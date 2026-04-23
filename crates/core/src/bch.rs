@@ -35,6 +35,7 @@
  */
 //! # BCH Code Decoding - used for error correction in AR marker detection.
 use crate::types::ARMatrixCodeType;
+use crate::{arlog_d, arlog_e};
 
 pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
     const PARITY65_DECODER_TABLE: [i8; 64] = [
@@ -43,10 +44,15 @@ pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
         16, -1, -1, 19, -1, 21, 22, -1, -1, 25, 26, -1, 28, -1, -1, 31,
     ];
     if code_raw >= 64 {
+        arlog_d!("decode_parity65: EDC fail (code_raw={:#x} >= 64)", code_raw);
         return Err("EDC fail");
     }
     let val = PARITY65_DECODER_TABLE[code_raw as usize];
     if val < 0 {
+        arlog_d!(
+            "decode_parity65: EDC fail (table miss for code_raw={:#x})",
+            code_raw
+        );
         Err("EDC fail")
     } else {
         Ok(val as u64)
@@ -67,10 +73,18 @@ pub fn decode_hamming63(code_raw: u64) -> Result<(u64, i32), &'static str> {
         false, true, true, true, true, true, true, false,
     ];
     if code_raw >= 64 {
+        arlog_d!(
+            "decode_hamming63: EDC fail (code_raw={:#x} >= 64)",
+            code_raw
+        );
         return Err("EDC fail");
     }
     let val = HAMMING63_DECODER_TABLE[code_raw as usize];
     if val < 0 {
+        arlog_d!(
+            "decode_hamming63: EDC fail (table miss for code_raw={:#x})",
+            code_raw
+        );
         Err("EDC fail")
     } else {
         let corrected = if ERROR_CORRECTED[code_raw as usize] {
@@ -133,7 +147,13 @@ pub fn decode_bch(
             alpha_to = &BCH_31_ALPHA_TO;
             index_of = &BCH_31_INDEX_OF;
         }
-        _ => return Err("Unsupported BCH code type"),
+        _ => {
+            arlog_e!(
+                "decode_bch: unsupported matrix code type {:?}",
+                matrix_code_type
+            );
+            return Err("Unsupported BCH code type");
+        }
     }
 
     let mut in_bitwise = in_val;
@@ -287,9 +307,11 @@ pub fn decode_bch(
                     recd[loc[i]] ^= 1;
                 }
             } else {
+                arlog_d!("decode_bch: count != l[u] (in_val={:#x})", in_val);
                 return Err("BCH correction failed (count != l)");
             }
         } else {
+            arlog_d!("decode_bch: l[u] > t (in_val={:#x})", in_val);
             return Err("BCH correction failed (l > t)");
         }
     }
