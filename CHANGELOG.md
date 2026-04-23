@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.6] - 2026-04-23
+
+### 🐛 Bug Fixes
+
+- *(ci)* Harden publish-crates checkout against submodule HTTP 500s
+
 ## [0.3.5] - 2026-04-23
 
 ### 🐛 Bug Fixes
