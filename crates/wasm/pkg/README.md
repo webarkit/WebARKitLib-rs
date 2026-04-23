@@ -1,6 +1,6 @@
 # WebARKitLib-rs 🦀
 
-![WebARKitLib-rs](./assets/WebARKitLib-Rust-banner.png)
+![WebARKitLib-rs](./assets/WebARKitLib-Rust-banner.jpg)
 
 [![CI](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml)
 [![Crates.io](https://img.shields.io/crates/v/webarkitlib-rs.svg)](https://crates.io/crates/webarkitlib-rs)

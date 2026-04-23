@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.7] - 2026-04-23
+
+### 🐛 Bug Fixes
+
+- Replace PNG banner with JPG version in README and assets
+
 ## [0.3.6] - 2026-04-23
 
 ### 🐛 Bug Fixes
