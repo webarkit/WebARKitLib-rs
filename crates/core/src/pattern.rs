@@ -38,6 +38,7 @@
 //! Ported natively to safe Rust from arPattLoad.c and arPattGetID.c
 
 use crate::types::*;
+use crate::{arlog_d, arlog_e};
 use std::fs::File;
 use std::io::{BufWriter, Error, ErrorKind, Result as IoResult, Write};
 use std::path::Path;
@@ -91,6 +92,7 @@ pub fn ar_patt_load_from_buffer(
     }
 
     if patno == -1 {
+        arlog_e!("ar_patt_load_from_buffer: maximum pattern limit reached");
         return Err("Maximum pattern limit reached");
     }
 
@@ -108,9 +110,11 @@ pub fn ar_patt_load_from_buffer(
                 if let Ok(val) = t.parse::<i32>() {
                     read_tokens.push(val);
                 } else {
+                    arlog_e!("ar_patt_load_from_buffer: failed to parse pattern number");
                     return Err("Failed to parse pattern number");
                 }
             } else {
+                arlog_e!("ar_patt_load_from_buffer: unexpected EOF while reading pattern data");
                 return Err("Pattern data read error (unexpected EOF)");
             }
         }
@@ -267,9 +271,15 @@ pub fn ar_patt_save(
 /// Activates a pattern for detection.
 pub fn ar_patt_activate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
     if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        arlog_e!(
+            "ar_patt_activate: invalid pattern index {} (len={})",
+            patno,
+            patt_handle.pattf.len()
+        );
         return Err("Invalid pattern index");
     }
     if patt_handle.pattf[patno as usize] == 0 {
+        arlog_e!("ar_patt_activate: pattern {} not loaded", patno);
         return Err("Pattern not loaded");
     }
     patt_handle.active[patno as usize] = true;
@@ -279,9 +289,15 @@ pub fn ar_patt_activate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<()
 /// Deactivates a pattern from detection.
 pub fn ar_patt_deactivate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
     if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        arlog_e!(
+            "ar_patt_deactivate: invalid pattern index {} (len={})",
+            patno,
+            patt_handle.pattf.len()
+        );
         return Err("Invalid pattern index");
     }
     if patt_handle.pattf[patno as usize] == 0 {
+        arlog_e!("ar_patt_deactivate: pattern {} not loaded", patno);
         return Err("Pattern not loaded");
     }
     patt_handle.active[patno as usize] = false;
@@ -291,6 +307,11 @@ pub fn ar_patt_deactivate(patt_handle: &mut ARPattHandle, patno: i32) -> Result<
 /// Frees a pattern slot, making it available for a new pattern.
 pub fn ar_patt_free(patt_handle: &mut ARPattHandle, patno: i32) -> Result<(), &'static str> {
     if patno < 0 || patno as usize >= patt_handle.pattf.len() {
+        arlog_e!(
+            "ar_patt_free: invalid pattern index {} (len={})",
+            patno,
+            patt_handle.pattf.len()
+        );
         return Err("Invalid pattern index");
     }
     if patt_handle.pattf[patno as usize] != 0 {
@@ -326,6 +347,7 @@ pub fn pattern_match(
         *code = 0;
         *dir = 0;
         *cf = -1.0;
+        arlog_e!("pattern_match: invalid size={}", size);
         return Err("Invalid size");
     }
 
@@ -334,6 +356,11 @@ pub fn pattern_match(
     if mode == AR_TEMPLATE_MATCHING_COLOR {
         let size_sqd_x3 = size_u * size_u * 3;
         if data.len() < size_sqd_x3 {
+            arlog_e!(
+                "pattern_match(color): data too small (len={}, need={})",
+                data.len(),
+                size_sqd_x3
+            );
             return Err("Data array too small");
         }
         let mut input = vec![0i16; size_sqd_x3];
@@ -357,6 +384,10 @@ pub fn pattern_match(
             *code = 0;
             *dir = 0;
             *cf = -1.0;
+            arlog_d!(
+                "pattern_match(color): insufficient contrast (datapow={:.3})",
+                datapow
+            );
             return Err("Insufficient contrast");
         }
 
@@ -397,6 +428,11 @@ pub fn pattern_match(
     } else if mode == AR_TEMPLATE_MATCHING_MONO {
         let size_sqd = size_u * size_u;
         if data.len() < size_sqd {
+            arlog_e!(
+                "pattern_match(mono): data too small (len={}, need={})",
+                data.len(),
+                size_sqd
+            );
             return Err("Data array too small");
         }
 
@@ -421,6 +457,10 @@ pub fn pattern_match(
             *code = 0;
             *dir = 0;
             *cf = -1.0;
+            arlog_d!(
+                "pattern_match(mono): insufficient contrast (datapow={:.3})",
+                datapow
+            );
             return Err("Insufficient contrast");
         }
 
@@ -460,6 +500,7 @@ pub fn pattern_match(
         *cf = max;
         Ok(())
     } else {
+        arlog_e!("pattern_match: unsupported matching mode {}", mode);
         Err("Unsupported matching mode")
     }
 }
@@ -630,6 +671,11 @@ pub fn ar_patt_get_image(
             let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
 
             if d == 0.0 {
+                arlog_d!(
+                    "ar_patt_get_image: matrix denominator is zero (xw={:.3}, yw={:.3})",
+                    xw,
+                    yw
+                );
                 return Err("Matrix denominator is zero");
             }
 
@@ -675,7 +721,13 @@ pub fn ar_patt_get_image(
                             ext_patt2[dest_idx + 2] += val;
                         }
                         // Note: BGR, BGRA, 2vuy, yuvs, rgb565, etc. can be expanded here.
-                        _ => return Err("Unsupported pixel format for color matching"),
+                        _ => {
+                            arlog_e!(
+                                "ar_patt_get_image: unsupported pixel format {:?} for color matching",
+                                pixel_format
+                            );
+                            return Err("Unsupported pixel format for color matching");
+                        }
                     }
                 } else {
                     match pixel_format {
@@ -703,7 +755,13 @@ pub fn ar_patt_get_image(
                             ext_patt2[idx_patt] += image[src_idx] as u32;
                         }
                         // Note: Other specific mono format decodings can be added here.
-                        _ => return Err("Unsupported pixel format for mono matching"),
+                        _ => {
+                            arlog_e!(
+                                "ar_patt_get_image: unsupported pixel format {:?} for mono matching",
+                                pixel_format
+                            );
+                            return Err("Unsupported pixel format for mono matching");
+                        }
                     }
                 }
             }
@@ -834,6 +892,11 @@ pub fn ar_patt_get_image2(
             let d = para[2][0] * xw + para[2][1] * yw + para[2][2];
 
             if d == 0.0 {
+                arlog_d!(
+                    "ar_patt_get_image2: matrix denominator is zero (xw={:.3}, yw={:.3})",
+                    xw,
+                    yw
+                );
                 return Err("Matrix denominator is zero");
             }
 
@@ -889,7 +952,13 @@ pub fn ar_patt_get_image2(
                             ext_patt2[dest_idx + 2] += val;
                         }
                         // Note: Add other specific color format decodings (e.g., RGB_565, YUVS) here as needed.
-                        _ => return Err("Unsupported pixel format for color matching"),
+                        _ => {
+                            arlog_e!(
+                                "ar_patt_get_image2: unsupported pixel format {:?} for color matching",
+                                pixel_format
+                            );
+                            return Err("Unsupported pixel format for color matching");
+                        }
                     }
                 } else {
                     match pixel_format {
@@ -917,7 +986,13 @@ pub fn ar_patt_get_image2(
                             ext_patt2[idx_patt] += image[src_idx] as u32;
                         }
                         // Note: Add other specific mono format decodings here as needed.
-                        _ => return Err("Unsupported pixel format for mono matching"),
+                        _ => {
+                            arlog_e!(
+                                "ar_patt_get_image2: unsupported pixel format {:?} for mono matching",
+                                pixel_format
+                            );
+                            return Err("Unsupported pixel format for mono matching");
+                        }
                     }
                 }
             }

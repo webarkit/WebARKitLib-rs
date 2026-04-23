@@ -37,6 +37,7 @@
 //! Connected Component Labeling Utilities
 //! Translated from ARToolKit C headers (arLabeling.c, arLabelingSub.h)
 
+use crate::arlog_e;
 use crate::types::{ARLabelInfo, ARdouble};
 use log::trace;
 
@@ -137,6 +138,11 @@ pub fn ar_labeling(
     }
 
     if image.len() < (ysize as usize * xsize as usize) {
+        arlog_e!(
+            "ar_labeling: image buffer too small (len={}, expected>={})",
+            image.len(),
+            ysize as usize * xsize as usize
+        );
         return Err("Image buffer is too small for given dimensions.");
     }
 
@@ -321,6 +327,11 @@ pub fn ar_labeling(
                 } else {
                     wk_max += 1;
                     if wk_max > AR_LABELING_WORK_SIZE {
+                        arlog_e!(
+                            "ar_labeling: work array overflow (wk_max={}, limit={})",
+                            wk_max,
+                            AR_LABELING_WORK_SIZE
+                        );
                         return Err("Labeling work array overflow");
                     }
                     work[wk_max - 1] = wk_max as i32;
