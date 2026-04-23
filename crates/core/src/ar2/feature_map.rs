@@ -43,7 +43,7 @@
 use super::feature_set::{AR2FeatureCoordT, AR2FeaturePointsT, AR2FeatureSetT};
 use super::image_set::AR2ImageSetT;
 use super::Ar2Error;
-use crate::arlog_i;
+use crate::{arlog_e, arlog_i};
 use rayon::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -801,6 +801,7 @@ pub fn ar2_gen_feature_map(
     level: u8,
 ) -> Result<AR2FeatureSetT, Ar2Error> {
     if image_set.scale.is_empty() {
+        arlog_e!("ar2_gen_feature_map: image set has no scales");
         return Err(Ar2Error::InvalidInput("image set has no scales"));
     }
 

@@ -64,7 +64,7 @@
 //! ```
 
 use super::Ar2Error;
-use crate::arlog_d;
+use crate::{arlog_d, arlog_e};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rayon::prelude::*;
 use std::io::{self, BufWriter, Cursor, Read, Write};
@@ -124,6 +124,7 @@ impl AR2ImageSetT {
         // Read number of scales.
         let num = cursor.read_i32::<LittleEndian>()?;
         if num <= 0 {
+            arlog_e!("AR2ImageSetT::from_bytes: invalid scale count: {}", num);
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("invalid scale count: {}", num),
@@ -475,22 +476,35 @@ pub fn ar2_gen_image_set(
     dpi: f32,
 ) -> Result<AR2ImageSetT, Ar2Error> {
     if image.is_empty() || xsize <= 0 || ysize <= 0 {
+        arlog_e!(
+            "ar2_gen_image_set: image empty or zero-sized (len={}, xsize={}, ysize={})",
+            image.len(),
+            xsize,
+            ysize
+        );
         return Err(Ar2Error::InvalidInput(
             "image is empty or has zero dimensions",
         ));
     }
     let expected = (xsize as usize) * (ysize as usize) * (nc as usize);
     if image.len() != expected {
+        arlog_e!(
+            "ar2_gen_image_set: image length mismatch (got={}, expected={})",
+            image.len(),
+            expected
+        );
         return Err(Ar2Error::InvalidInput(
             "image buffer length does not match xsize * ysize * nc",
         ));
     }
     if nc != 1 && nc != 3 {
+        arlog_e!("ar2_gen_image_set: unsupported channel count nc={}", nc);
         return Err(Ar2Error::InvalidInput(
             "nc must be 1 (grayscale) or 3 (RGB)",
         ));
     }
     if dpi <= 0.0 {
+        arlog_e!("ar2_gen_image_set: non-positive dpi={}", dpi);
         return Err(Ar2Error::InvalidInput("dpi must be positive"));
     }
 

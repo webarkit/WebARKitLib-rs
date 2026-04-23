@@ -37,8 +37,8 @@
 //! Marker Detection Pipeline
 //! Ported from arDetectMarker.c, arDetectMarker2.c, and arGetMarkerInfo.c
 
-use crate::arlog_d;
 use crate::types::{ARLabelInfo, ARMarkerInfo2, ARdouble};
+use crate::{arlog_d, arlog_e};
 
 pub const AR_AREA_MAX: i32 = 100000;
 pub const AR_AREA_MIN: i32 = 70;
@@ -92,12 +92,18 @@ pub fn ar_detect_marker(
 
     let luma_buff = match &frame.buff_luma {
         Some(b) => b.as_slice(),
-        None => return Err("AR2VideoBufferT requires buff_luma to be available"),
+        None => {
+            arlog_e!("ar_detect_marker: AR2VideoBufferT.buff_luma is None");
+            return Err("AR2VideoBufferT requires buff_luma to be available");
+        }
     };
 
     let color_buff = match &frame.buff {
         Some(b) => b.as_slice(),
-        None => return Err("AR2VideoBufferT requires buff to be available"),
+        None => {
+            arlog_e!("ar_detect_marker: AR2VideoBufferT.buff is None");
+            return Err("AR2VideoBufferT requires buff to be available");
+        }
     };
 
     let thresh = ar_handle.ar_labeling_thresh as u8;
@@ -157,6 +163,7 @@ pub fn ar_detect_marker(
     }
 
     if ar_handle.ar_param_lt.is_null() {
+        arlog_e!("ar_detect_marker: ARHandle.ar_param_lt is null");
         return Err("ARParamLT is null in ARHandle");
     }
 
