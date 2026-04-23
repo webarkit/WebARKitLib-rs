@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.5] - 2026-04-23
+
+### 🐛 Bug Fixes
+
+- *(ci)* Add submodules: recursive to release.yml checkout steps
+
 ## [0.3.4] - 2026-04-23
 
 ### Preliminary action before  `Milestone 6 — Math & homography in pure Rust`
