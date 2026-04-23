@@ -26,9 +26,9 @@
 //! Matrix Code (Barcode) Marker Decoding
 //! Ported from arGetMatrixCode.c and associated ECC logic.
 
-use crate::arlog_d;
 use crate::marker::ar_get_line;
 use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble};
+use crate::{arlog_d, arlog_e};
 use log::trace;
 
 /// Results of a matrix code decoding attempt.
@@ -97,6 +97,10 @@ pub fn ar_matrix_code_get_id(
 ) -> Result<(), &'static str> {
     let dim = (code_type as i32) & 0xFF;
     if dim < 3 || dim > 6 {
+        arlog_e!(
+            "ar_matrix_code_get_id: unsupported dim={} (expected 3..=6)",
+            dim
+        );
         return Err("Unsupported matrix dimension");
     }
 
@@ -138,6 +142,10 @@ pub fn ar_matrix_code_get_id(
     );
 
     if (max_val as i32 - min_val as i32) < 30 {
+        arlog_d!(
+            "ar_matrix_code_get_id: low contrast range={}",
+            max_val as i32 - min_val as i32
+        );
         return Err("Low contrast in matrix grid");
     }
 
@@ -180,6 +188,10 @@ pub fn ar_matrix_code_get_id(
     }
 
     if matched_dir == -1 {
+        arlog_d!(
+            "ar_matrix_code_get_id: locator pattern not found, dir_code={:?}",
+            dir_code
+        );
         return Err("Barcode locator pattern not found in grid corners");
     }
 
@@ -276,6 +288,11 @@ pub fn ar_matrix_code_get_id(
         *error_corrected = err;
         Ok(())
     } else {
+        arlog_d!(
+            "ar_matrix_code_get_id: decode failed for code_raw={} (dir={})",
+            code_raw,
+            matched_dir
+        );
         Err("Failed to decode extracted matrix code string")
     }
 }
@@ -385,7 +402,10 @@ fn sample_grid(
         crate::types::ARPixelFormat::RGBA
         | crate::types::ARPixelFormat::BGRA
         | crate::types::ARPixelFormat::ARGB => 4,
-        _ => return Err("Unsupported pixel format in sample_grid"),
+        _ => {
+            arlog_e!("sample_grid: unsupported pixel format {:?}", pixel_format);
+            return Err("Unsupported pixel format in sample_grid");
+        }
     };
 
     let mut world = [[0.0; 2]; 4];
