@@ -294,15 +294,24 @@ fn main() {
                     arlog_i!("  Extracted 3D Pose (ICP Error: {:.4}):", err);
                     arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[0][0], trans_mat[0][1], trans_mat[0][2], trans_mat[0][3]
+                        trans_mat[0][0],
+                        trans_mat[0][1],
+                        trans_mat[0][2],
+                        trans_mat[0][3]
                     );
                     arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[1][0], trans_mat[1][1], trans_mat[1][2], trans_mat[1][3]
+                        trans_mat[1][0],
+                        trans_mat[1][1],
+                        trans_mat[1][2],
+                        trans_mat[1][3]
                     );
                     arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[2][0], trans_mat[2][1], trans_mat[2][2], trans_mat[2][3]
+                        trans_mat[2][0],
+                        trans_mat[2][1],
+                        trans_mat[2][2],
+                        trans_mat[2][3]
                     );
                 }
             }
