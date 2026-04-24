@@ -351,10 +351,8 @@ fn icp_get_j_u_xc(
 }
 
 fn icp_get_j_t_s(j_t_s: &mut [[ARdouble; 6]; 12]) {
-    for i in 0..12 {
-        for j in 0..6 {
-            j_t_s[i][j] = 0.0;
-        }
+    for row in j_t_s.iter_mut() {
+        row.fill(0.0);
     }
     j_t_s[1][2] = -1.0;
     j_t_s[2][1] = 1.0;
@@ -498,6 +496,7 @@ pub fn icp_update_mat(mat_xw2xc: &mut [[ARdouble; 4]; 3], ds: &[ARdouble; 6]) {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 pub fn icp_get_delta_s(
     s: &mut [ARdouble; 6],
     du: &[ARdouble],
@@ -523,19 +522,15 @@ pub fn icp_get_delta_s(
 
     let mat_s = (&mat_jt_j * &mat_jt_u)?;
 
-    for i in 0..6 {
-        s[i] = mat_s.m[i];
-    }
+    s.copy_from_slice(&mat_s.m[..6]);
 
     Ok(())
 }
 
 pub fn icp_create_handle(mat_xc2u: &[[ARdouble; 4]; 3]) -> Result<*mut ICPHandleT, &'static str> {
     let mut handle = Box::new(ICPHandleT::default());
-    for j in 0..3 {
-        for i in 0..4 {
-            handle.mat_xc2u[j][i] = mat_xc2u[j][i];
-        }
+    for (dst, src) in handle.mat_xc2u.iter_mut().zip(mat_xc2u.iter()) {
+        dst.copy_from_slice(src);
     }
     Ok(Box::into_raw(handle))
 }
@@ -781,10 +776,8 @@ pub fn icp_get_init_xw2xc_from_planar_data(
     if num < 4 {
         return Err("Needs at least 4 points");
     }
-    for i in 0..num {
-        if world_coord[i].z != 0.0 {
-            return Err("Points must be planar (Z=0)");
-        }
+    if world_coord[..num].iter().any(|p| p.z != 0.0) {
+        return Err("Points must be planar (Z=0)");
     }
     if mat_xc2u[0][0] == 0.0 {
         return Err("mat_xc2u[0][0] is zero");

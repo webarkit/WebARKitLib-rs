@@ -82,6 +82,7 @@ pub struct MatrixCodeResult {
 ///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
 /// }
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn ar_matrix_code_get_id(
     image: &[u8],
     xsize: i32,
@@ -386,6 +387,7 @@ pub fn ar_get_barcode_marker(
 ///   equal to `dim + 2` where `dim = code_type & 0xFF`.
 /// - `patt_ratio` — fraction of the square covered by data cells (0.5–0.9).
 /// - `bits` — output: `grid_size * grid_size` raw intensity values.
+#[allow(clippy::too_many_arguments)]
 fn sample_grid(
     image: &[u8],
     xsize: i32,
