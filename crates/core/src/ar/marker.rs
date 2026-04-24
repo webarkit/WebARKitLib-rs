@@ -37,7 +37,7 @@
 //! Marker Detection Pipeline
 //! Ported from arDetectMarker.c, arDetectMarker2.c, and arGetMarkerInfo.c
 
-use crate::types::{ARLabelInfo, ARMarkerInfo2, ARdouble};
+use crate::types::{ARLabelInfo, ARMarkerInfo2, ARPixelFormat, ARdouble};
 use crate::{arlog_d, arlog_e};
 
 pub const AR_AREA_MAX: i32 = 100000;
@@ -89,6 +89,15 @@ pub fn ar_detect_marker(
     frame: &crate::types::AR2VideoBufferT,
 ) -> Result<(), &'static str> {
     ar_handle.marker_num = 0;
+
+    if ar_handle.ar_pixel_format == ARPixelFormat::Invalid {
+        arlog_e!(
+            "ar_detect_marker: ar_handle.ar_pixel_format is Invalid. \
+             Call ARHandle::set_pixel_format() with a supported format \
+             (e.g. ARPixelFormat::MONO for luma input, ARPixelFormat::RGB for color)."
+        );
+        return Err("ARHandle pixel format not set");
+    }
 
     let luma_buff = match &frame.buff_luma {
         Some(b) => b.as_slice(),

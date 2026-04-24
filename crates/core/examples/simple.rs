@@ -183,7 +183,7 @@ fn main() {
     ar_handle.ar_debug = 1;
     ar_handle.xsize = width;
     ar_handle.ysize = height;
-    ar_handle.ar_pixel_format = ARPixelFormat::Invalid; // N/A for raw Luma
+    ar_handle.set_pixel_format(ARPixelFormat::MONO); // raw luma input
     ar_handle.ar_image_proc_mode = 0; // FrameImage
     ar_handle.ar_pattern_detection_mode = 0; // Template matching color/mono
     ar_handle.ar_labeling_mode = 0; // Black region
