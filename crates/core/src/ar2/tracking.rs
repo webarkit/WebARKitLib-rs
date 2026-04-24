@@ -562,18 +562,20 @@ pub fn extract_visible_features(
                         flag: 0,
                     };
                     l += 1;
-                } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
-                    && l2 < AR2_TRACKING_CANDIDATE_MAX {
-                        candidate2[l2] = AR2TemplateCandidate {
-                            snum: i as i32,
-                            level: j as i32,
-                            num: k as i32,
-                            sx,
-                            sy,
-                            flag: 0,
-                        };
-                        l2 += 1;
-                    }
+                } else if w[1] <= feature_points.maxdpi * 2.0
+                    && w[1] >= feature_points.mindpi / 2.0
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX
+                {
+                    candidate2[l2] = AR2TemplateCandidate {
+                        snum: i as i32,
+                        level: j as i32,
+                        num: k as i32,
+                        sx,
+                        sy,
+                        flag: 0,
+                    };
+                    l2 += 1;
+                }
             }
         }
     }
@@ -638,18 +640,20 @@ pub fn extract_visible_features_homography(
                         flag: 0,
                     };
                     l += 1;
-                } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
-                    && l2 < AR2_TRACKING_CANDIDATE_MAX {
-                        candidate2[l2] = AR2TemplateCandidate {
-                            snum: i as i32,
-                            level: j as i32,
-                            num: k as i32,
-                            sx,
-                            sy,
-                            flag: 0,
-                        };
-                        l2 += 1;
-                    }
+                } else if w[1] <= feature_points.maxdpi * 2.0
+                    && w[1] >= feature_points.mindpi / 2.0
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX
+                {
+                    candidate2[l2] = AR2TemplateCandidate {
+                        snum: i as i32,
+                        level: j as i32,
+                        num: k as i32,
+                        sx,
+                        sy,
+                        flag: 0,
+                    };
+                    l2 += 1;
+                }
             }
         }
     }
@@ -1539,13 +1543,14 @@ pub fn ar2_get_best_matching(
                     img, xsize, ysize, pix_format, mtemp, i, j, &mut wval,
                 )
                 .is_ok()
-                    && wval > wval2 {
-                        *bx = i;
-                        *by = j;
-                        wval2 = wval;
-                        *val = wval as f32 / 10000.0;
-                        final_ret = Ok(());
-                    }
+                    && wval > wval2
+                {
+                    *bx = i;
+                    *by = j;
+                    wval2 = wval;
+                    *val = wval as f32 / 10000.0;
+                    final_ret = Ok(());
+                }
             }
         }
     }

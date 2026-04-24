@@ -440,8 +440,7 @@ fn sample_grid(
             let yc = ((para[1][0] * xw + para[1][1] * yw + para[1][2]) / d) as i32;
 
             if xc >= 0 && xc < xsize && yc >= 0 && yc < ysize {
-                if (y == 0 || y == grid_size - 1) && (x == 0 || x == grid_size - 1)
-                {
+                if (y == 0 || y == grid_size - 1) && (x == 0 || x == grid_size - 1) {
                     trace!("sample_grid: grid({},{}) -> image({},{})", x, y, xc, yc);
                 }
                 let idx = ((yc * xsize + xc) * nc) as usize;

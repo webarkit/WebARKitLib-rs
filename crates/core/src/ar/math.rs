@@ -50,7 +50,6 @@ pub struct ARMat {
     pub clm: i32,
 }
 
-
 impl ARMat {
     /// Allocate a new matrix with specified dimensions
     pub fn new(row: i32, clm: i32) -> Self {
@@ -661,7 +660,6 @@ pub struct ARMatf {
     pub clm: i32,
 }
 
-
 impl ARMatf {
     /// Allocate a new matrix with specified dimensions
     pub fn new(row: i32, clm: i32) -> Self {
@@ -715,7 +713,6 @@ pub struct ARVec {
     pub v: Vec<ARdouble>,
     pub clm: i32,
 }
-
 
 impl ARVec {
     /// Allocate a new vector with specified columns

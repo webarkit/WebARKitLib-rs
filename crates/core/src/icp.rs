@@ -83,24 +83,20 @@ pub struct ICP3DLineSegT {
 }
 
 /// Point Data for ICP
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ICPDataT {
     pub screen_coord: Vec<ICP2DCoordT>,
     pub world_coord: Vec<ICP3DCoordT>,
 }
 
-
 /// Stereo Point Data for ICP
-#[derive(Debug, Clone, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ICPStereoDataT {
     pub screen_coord_l: Vec<ICP2DCoordT>,
     pub world_coord_l: Vec<ICP3DCoordT>,
     pub screen_coord_r: Vec<ICP2DCoordT>,
     pub world_coord_r: Vec<ICP3DCoordT>,
 }
-
 
 /// ICP Handle
 #[derive(Debug, Clone, PartialEq)]
