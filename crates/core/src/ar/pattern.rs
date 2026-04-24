@@ -726,10 +726,17 @@ pub fn ar_patt_get_image(
                         }
                         // Note: BGR, BGRA, 2vuy, yuvs, rgb565, etc. can be expanded here.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image: unsupported pixel format {:?} for color matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image: unsupported pixel format {:?} for color matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for color matching");
                         }
                     }
@@ -760,10 +767,17 @@ pub fn ar_patt_get_image(
                         }
                         // Note: Other specific mono format decodings can be added here.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image: unsupported pixel format {:?} for mono matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image: unsupported pixel format {:?} for mono matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for mono matching");
                         }
                     }
@@ -958,10 +972,17 @@ pub fn ar_patt_get_image2(
                         }
                         // Note: Add other specific color format decodings (e.g., RGB_565, YUVS) here as needed.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image2: unsupported pixel format {:?} for color matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image2: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image2: unsupported pixel format {:?} for color matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for color matching");
                         }
                     }
@@ -992,10 +1013,17 @@ pub fn ar_patt_get_image2(
                         }
                         // Note: Add other specific mono format decodings here as needed.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image2: unsupported pixel format {:?} for mono matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image2: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image2: unsupported pixel format {:?} for mono matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for mono matching");
                         }
                     }
