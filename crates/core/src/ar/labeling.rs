@@ -95,6 +95,7 @@ pub enum ImageProcMode {
 ///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
 /// arlog_i!("{} regions found", label_info.label_num);
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn ar_labeling(
     image: &[u8],
     xsize: i32,
@@ -301,9 +302,9 @@ pub fn ar_labeling(
                     n_count = unique_count;
 
                     let mut final_label = neighbors[0];
-                    for k in 1..n_count {
-                        if neighbors[k] != final_label {
-                            final_label = do_union(work, &mut work2, final_label, neighbors[k]);
+                    for &nb in &neighbors[1..n_count] {
+                        if nb != final_label {
+                            final_label = do_union(work, &mut work2, final_label, nb);
                         }
                     }
                     label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;

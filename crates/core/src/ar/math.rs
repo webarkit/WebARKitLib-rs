@@ -135,10 +135,7 @@ impl ARMat {
             return Ok(());
         }
 
-        let mut nos = vec![0; dimen];
-        for n in 0..dimen {
-            nos[n] = n;
-        }
+        let mut nos: Vec<usize> = (0..dimen).collect();
 
         for n in 0..dimen {
             let mut p = 0.0;
@@ -207,6 +204,7 @@ impl ARMat {
     }
 
     /// Tridiagonalize symmetric matrix (port of arVecTridiagonalize)
+    #[allow(clippy::needless_range_loop)]
     pub fn tridiagonalize(
         &mut self,
         d: &mut [ARdouble],
@@ -398,6 +396,7 @@ pub fn qrm(a: &mut ARMat, dv: &mut [ARdouble]) -> Result<(), &'static str> {
 }
 
 impl ARMat {
+    #[allow(clippy::needless_range_loop)]
     pub fn ex(&self, mean: &mut [ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -421,6 +420,7 @@ impl ARMat {
         Ok(())
     }
 
+    #[allow(clippy::needless_range_loop)]
     pub fn center(&mut self, mean: &[ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;

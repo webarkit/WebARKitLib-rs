@@ -199,6 +199,7 @@ pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i3
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `patt_size` - Size of the pattern grid.
 /// * `filename` - Destination path for the saved pattern file.
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 pub fn ar_patt_save(
     image: &[u8],
     xsize: usize,
@@ -334,6 +335,7 @@ pub fn ar_patt_delete_handle(patt_handle: ARPattHandle) {
 }
 
 /// Matches the unwarped square marker against loaded templates via NCC (Normalized Cross Correlation).
+#[allow(clippy::needless_range_loop)]
 pub fn pattern_match(
     patt_handle: &ARPattHandle,
     mode: i32,
@@ -505,6 +507,7 @@ pub fn pattern_match(
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 pub fn get_cpara(
     world: &[[ARdouble; 2]; 4],
     vertex: &[[ARdouble; 2]; 4],
@@ -568,6 +571,7 @@ pub fn get_cpara(
 /// * `vertex` - Array of 4 indices pointing to the corners in the coord arrays.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+#[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image(
     image_proc_mode: i32,
     patt_detect_mode: i32,
@@ -792,6 +796,7 @@ pub fn ar_patt_get_image(
 /// * `vertex` - 4 corners of the detected marker.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+#[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image2(
     image_proc_mode: i32,
     patt_detect_mode: i32,

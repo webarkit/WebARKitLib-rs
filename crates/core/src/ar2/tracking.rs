@@ -501,8 +501,7 @@ pub fn extract_visible_features(
     let mut l = 0;
     let mut l2 = 0;
 
-    for i in 0..surface_set.surface.len() {
-        let surface = &surface_set.surface[i];
+    for (i, surface) in surface_set.surface.iter().enumerate() {
         let feature_set = match &surface.feature_set {
             Some(fs) => fs,
             None => continue,
@@ -596,8 +595,7 @@ pub fn extract_visible_features_homography(
     let mut l = 0;
     let mut l2 = 0;
 
-    for i in 0..surface_set.surface.len() {
-        let surface = &surface_set.surface[i];
+    for (i, surface) in surface_set.surface.iter().enumerate() {
         let feature_set = match &surface.feature_set {
             Some(fs) => fs,
             None => continue,
@@ -1010,6 +1008,7 @@ pub struct AR2Tracking2DResult {
     pub pos3d: [f32; 3],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_tracking_2d_sub(
     cparam_lt: Option<&ARParamLT>,
     pix_format: ARPixelFormat,
@@ -1349,10 +1348,10 @@ pub fn ar2_get_trans_mat(
     let mut dx = 0.0;
     let mut dy = 0.0;
     let mut dz = 0.0;
-    for i in 0..num {
-        dx += pos3d[i][0];
-        dy += pos3d[i][1];
-        dz += pos3d[i][2];
+    for p in &pos3d[..num] {
+        dx += p[0];
+        dy += p[1];
+        dz += p[2];
     }
     dx /= num as f32;
     dy /= num as f32;
@@ -1427,6 +1426,7 @@ pub fn ar2_get_trans_mat(
 pub const KEEP_NUM: usize = 3;
 pub const SKIP_INTERVAL: i32 = 3;
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching(
     img: &[u8],
     mf_image: &mut [u8],
@@ -1442,15 +1442,13 @@ pub fn ar2_get_best_matching(
     val: &mut f32,
 ) -> Result<(), &'static str> {
     // Initialise mf_image for search areas
-    for ii in 0..3 {
-        if search[ii][0] < 0 {
+    for s in &search {
+        if s[0] < 0 {
             break;
         }
 
-        let px =
-            (search[ii][0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
-        let py =
-            (search[ii][1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let px = (s[0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let py = (s[1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
 
         let sx = (px - rx).max(0);
         let ex = (px + rx).min(xsize - 1);
@@ -1470,18 +1468,16 @@ pub fn ar2_get_best_matching(
     let mut cval = [0; KEEP_NUM];
     let mut ret = true;
 
-    for ii in 0..3 {
-        if search[ii][0] < 0 {
+    for s in &search {
+        if s[0] < 0 {
             if ret {
                 return Err("No valid search point");
             }
             break;
         }
 
-        let px =
-            (search[ii][0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
-        let py =
-            (search[ii][1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let px = (s[0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let py = (s[1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
 
         for j in (py - ry..=py + ry).step_by((SKIP_INTERVAL + 1) as usize) {
             if j - mtemp.yts1 * AR2_TEMP_SCALE < 0 {
@@ -1558,6 +1554,7 @@ pub fn ar2_get_best_matching(
     final_ret
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching_sub_fine(
     img: &[u8],
     xsize: i32,
@@ -1635,13 +1632,10 @@ fn update_candidate(
         return;
     }
 
-    let mut insert_idx = *keep_num;
-    for l in 0..*keep_num {
-        if cval[l] < wval {
-            insert_idx = l;
-            break;
-        }
-    }
+    let insert_idx = cval[..*keep_num]
+        .iter()
+        .position(|&v| v < wval)
+        .unwrap_or(*keep_num);
 
     if insert_idx == *keep_num {
         if insert_idx < KEEP_NUM {

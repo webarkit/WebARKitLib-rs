@@ -157,8 +157,8 @@ pub fn decode_bch(
     }
 
     let mut in_bitwise = in_val;
-    for i in 0..length {
-        recd[i] = (in_bitwise & 1) as u8;
+    for r in recd[..length].iter_mut() {
+        *r = (in_bitwise & 1) as u8;
         in_bitwise >>= 1;
     }
 
@@ -191,10 +191,8 @@ pub fn decode_bch(
         d[1] = s[1];
         elp[0][0] = 0;
         elp[1][0] = 1;
-        for i in 1..t2 {
-            elp[0][i] = -1;
-            elp[1][i] = 0;
-        }
+        elp[0][1..t2].fill(-1);
+        elp[1][1..t2].fill(0);
         l_arr[0] = 0;
         l_arr[1] = 0;
         u_lu[0] = -1;
@@ -236,9 +234,7 @@ pub fn decode_bch(
                     l_arr[u + 1] = l_arr[q] + u - q;
                 }
 
-                for i in 0..t2 {
-                    elp[u + 1][i] = 0;
-                }
+                elp[u + 1][..t2].fill(0);
                 for i in 0..=l_arr[q] {
                     if elp[q][i] != -1 {
                         elp[u + 1][i + u - q] = alpha_to
@@ -316,8 +312,8 @@ pub fn decode_bch(
 
     let mut out_p = 0u64;
     let mut out_bit = 1u64;
-    for i in (length - k)..length {
-        if recd[i] != 0 {
+    for &r in &recd[(length - k)..length] {
+        if r != 0 {
             out_p += out_bit;
         }
         out_bit <<= 1;

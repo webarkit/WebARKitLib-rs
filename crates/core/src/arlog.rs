@@ -229,6 +229,7 @@ macro_rules! arlog_perror {
 /// Maps a [`log::Level`] to the lower-case ARToolKit C label
 /// (`error` / `warning` / `info` / `debug`). `Trace` collapses to `debug`.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 fn level_label(level: log::Level) -> &'static str {
     match level {
         log::Level::Error => "error",
@@ -243,6 +244,7 @@ fn level_label(level: log::Level) -> &'static str {
 /// global logger. `timestamp` is taken as a `&str` so tests can pass a
 /// fixed value while production code passes `env_logger`'s timestamp.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
 fn format_line(
     verbose: bool,
     level: log::Level,

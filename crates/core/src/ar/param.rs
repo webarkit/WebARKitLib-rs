@@ -44,6 +44,7 @@ use std::io::{self, Read};
 
 impl ARParam {
     /// Load ARParam from a byte stream (Endian-safe cross-platform BigEndian deserialization)
+    #[allow(clippy::field_reassign_with_default)]
     pub fn load<R: Read>(mut reader: R) -> io::Result<Self> {
         let mut param = ARParam::default();
 

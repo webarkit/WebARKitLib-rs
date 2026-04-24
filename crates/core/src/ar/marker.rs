@@ -226,6 +226,7 @@ pub fn ar_detect_marker(
 /// - `label_info` — labeling output produced by [`crate::labeling::ar_labeling`].
 /// - `marker_info2` — output slice (length ≥ `AR_SQUARE_MAX`) to write candidates into.
 /// - `marker2_num` — number of candidates written on return.
+#[allow(clippy::too_many_arguments)]
 pub fn ar_detect_marker2(
     xsize: i32,
     ysize: i32,
@@ -340,8 +341,7 @@ pub fn ar_detect_marker2(
     *marker2_num = valid_count as i32;
 
     if matches!(image_proc_mode, ImageProcMode::FieldImage) {
-        for i in 0..(*marker2_num as usize) {
-            let pm = &mut marker_info2[i];
+        for pm in &mut marker_info2[..*marker2_num as usize] {
             pm.area *= 4;
             pm.pos[0] *= 2.0;
             pm.pos[1] *= 2.0;
@@ -792,6 +792,7 @@ pub fn ar_get_line(
 /// - `patt_handle_opt` — loaded pattern database (required for template modes;
 ///   pass `None` for pure matrix-code mode).
 /// - `matrix_code_type` — dimension/ECC variant used by [`crate::matrix::ar_matrix_code_get_id`].
+#[allow(clippy::too_many_arguments)]
 pub fn ar_get_marker_info(
     image: &[u8],
     xsize: i32,
@@ -810,12 +811,10 @@ pub fn ar_get_marker_info(
 ) -> Result<(), &'static str> {
     let mut j = 0;
 
-    for i in 0..marker2_num as usize {
-        marker_info[j].area = marker_info2[i].area;
+    for info2 in &marker_info2[..marker2_num as usize] {
+        marker_info[j].area = info2.area;
 
-        if let Ok((ix, iy)) =
-            param_ltf.observ2ideal(marker_info2[i].pos[0] as f32, marker_info2[i].pos[1] as f32)
-        {
+        if let Ok((ix, iy)) = param_ltf.observ2ideal(info2.pos[0] as f32, info2.pos[1] as f32) {
             marker_info[j].pos[0] = ix as f64;
             marker_info[j].pos[1] = iy as f64;
         } else {
@@ -823,10 +822,10 @@ pub fn ar_get_marker_info(
         }
 
         if ar_get_line(
-            &marker_info2[i].x_coord,
-            &marker_info2[i].y_coord,
-            marker_info2[i].coord_num as usize,
-            &marker_info2[i].vertex,
+            &info2.x_coord,
+            &info2.y_coord,
+            info2.coord_num as usize,
+            &info2.vertex,
             param_ltf,
             &mut marker_info[j].line,
             &mut marker_info[j].vertex,
@@ -900,10 +899,10 @@ pub fn ar_get_marker_info(
                     // ar_patt_get_image expects x_coord and y_coord arrays (contour)
                     // and a 4-element array of vertex indices (usize).
                     let vertex_indices: [usize; 4] = [
-                        marker_info2[i].vertex[0] as usize,
-                        marker_info2[i].vertex[1] as usize,
-                        marker_info2[i].vertex[2] as usize,
-                        marker_info2[i].vertex[3] as usize,
+                        info2.vertex[0] as usize,
+                        info2.vertex[1] as usize,
+                        info2.vertex[2] as usize,
+                        info2.vertex[3] as usize,
                     ];
 
                     let res = crate::pattern::ar_patt_get_image(
@@ -915,8 +914,8 @@ pub fn ar_get_marker_info(
                         xsize as usize,
                         ysize as usize,
                         pixel_format,
-                        &marker_info2[i].x_coord,
-                        &marker_info2[i].y_coord,
+                        &info2.x_coord,
+                        &info2.y_coord,
                         &vertex_indices,
                         patt_ratio,
                         &mut ext_patt,
