@@ -130,8 +130,7 @@ impl Default for ARMarkerInfo2 {
 
 /// Result codes returned by arDetectMarker to report state of individual detected trapezoidal regions.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMarkerInfoCutoffPhase {
     #[default]
     None = 0,
@@ -145,7 +144,6 @@ pub enum ARMarkerInfoCutoffPhase {
     PoseErrorMulti,
     HeuristicTroublesomeMatrixCodes,
 }
-
 
 /// Describes a detected trapezoidal area (a candidate for a marker match).
 ///
@@ -287,13 +285,11 @@ impl ARParamLT {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ARTrackingHistory {
     pub marker: ARMarkerInfo,
     pub count: i32,
 }
-
 
 pub type ARLabelingLabelType = i16;
 
@@ -342,8 +338,7 @@ pub struct ARImageProcInfo {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARPixelFormat {
     #[default]
     Invalid = -1,
@@ -364,10 +359,8 @@ pub enum ARPixelFormat {
     NV21,
 }
 
-
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARLabelingThreshMode {
     #[default]
     Manual = 0,
@@ -377,10 +370,8 @@ pub enum ARLabelingThreshMode {
     AutoBracketing,
 }
 
-
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMatrixCodeType {
     /// 3x3 Matrix Code (Default)
     #[default]
@@ -404,7 +395,6 @@ pub enum ARMatrixCodeType {
     /// 6x6 Matrix Code
     Code6x6 = 0x06,
 }
-
 
 /// Structure holding state of an instance of the square marker tracker.
 #[derive(Debug, Clone)]

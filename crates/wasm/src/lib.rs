@@ -128,8 +128,7 @@ impl WasmARHandle {
             return Err(JsValue::from_str("Pattern handle is null"));
         }
         let patt_handle = unsafe { &mut *self.handle.patt_handle };
-        let idx = ar_patt_load_from_buffer(patt_handle, patt_content)
-            .map_err(JsValue::from_str)?;
+        let idx = ar_patt_load_from_buffer(patt_handle, patt_content).map_err(JsValue::from_str)?;
         Ok(idx)
     }
 

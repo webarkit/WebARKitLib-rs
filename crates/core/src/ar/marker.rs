@@ -384,11 +384,10 @@ fn ar_get_contour(
     // Compare the pixel value directly against `label`.
     let mut p_idx = (sy * xsize + clip[0]) as usize;
     for i in clip[0]..=clip[1] {
-        if p_idx < limage.len()
-            && limage[p_idx] == label as crate::types::ARLabelingLabelType {
-                sx = i;
-                break;
-            }
+        if p_idx < limage.len() && limage[p_idx] == label as crate::types::ARLabelingLabelType {
+            sx = i;
+            break;
+        }
         p_idx += 1;
     }
 
