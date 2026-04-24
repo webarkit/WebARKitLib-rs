@@ -691,11 +691,7 @@ pub(crate) fn gen_image_layer1(
             // Divide by count * nc to average across both pixels and channels,
             // producing a single grayscale value.
             let divisor = count * (nc as u32);
-            dst[(dy * dst_xsize + dx) as usize] = if divisor > 0 {
-                (sum / divisor) as u8
-            } else {
-                0
-            };
+            dst[(dy * dst_xsize + dx) as usize] = sum.checked_div(divisor).unwrap_or(0) as u8;
         }
     }
 
@@ -764,7 +760,7 @@ pub(crate) fn gen_image_layer2(
                 }
             }
 
-            dst[(dy * dst_xsize + dx) as usize] = if count > 0 { (sum / count) as u8 } else { 0 };
+            dst[(dy * dst_xsize + dx) as usize] = sum.checked_div(count).unwrap_or(0) as u8;
         }
     }
 
