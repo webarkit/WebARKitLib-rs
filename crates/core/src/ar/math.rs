@@ -634,14 +634,12 @@ impl<'b> Mul<&'b ARMat> for &ARMat {
 
         for r in 0..(dest.row as usize) {
             for c in 0..(dest.clm as usize) {
-                let mut sum = 0.0;
-                let mut p1_idx = r * a_clm;
-                let mut p2_idx = c;
-                for _ in 0..a_clm {
-                    sum += self.m[p1_idx] * rhs.m[p2_idx];
-                    p1_idx += 1;
-                    p2_idx += b_clm;
-                }
+                let row_a = &self.m[r * a_clm..(r + 1) * a_clm];
+                let sum: f64 = row_a
+                    .iter()
+                    .zip((c..).step_by(b_clm))
+                    .map(|(&a, bi)| a * rhs.m[bi])
+                    .sum();
                 dest.m[r * dest_clm + c] = sum;
             }
         }
@@ -689,14 +687,12 @@ impl<'b> Mul<&'b ARMatf> for &ARMatf {
 
         for r in 0..(dest.row as usize) {
             for c in 0..(dest.clm as usize) {
-                let mut sum = 0.0;
-                let mut p1_idx = r * a_clm;
-                let mut p2_idx = c;
-                for _ in 0..a_clm {
-                    sum += self.m[p1_idx] * rhs.m[p2_idx];
-                    p1_idx += 1;
-                    p2_idx += b_clm;
-                }
+                let row_a = &self.m[r * a_clm..(r + 1) * a_clm];
+                let sum: f32 = row_a
+                    .iter()
+                    .zip((c..).step_by(b_clm))
+                    .map(|(&a, bi)| a * rhs.m[bi])
+                    .sum();
                 dest.m[r * dest_clm + c] = sum;
             }
         }
