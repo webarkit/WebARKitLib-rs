@@ -510,12 +510,12 @@ pub fn get_cpara(
     vertex: &[[ARdouble; 2]; 4],
     para: &mut [[ARdouble; 3]; 3],
 ) -> Result<(), &'static str> {
-    use crate::math::ARMat;
+    use super::math::ARMat;
     let mut a = ARMat::new(8, 8);
     let mut b = ARMat::new(8, 1);
 
     for i in 0..4 {
-        a.m[i * 16 + 0] = world[i][0];
+        a.m[i * 16] = world[i][0];
         a.m[i * 16 + 1] = world[i][1];
         a.m[i * 16 + 2] = 1.0;
         a.m[i * 16 + 3] = 0.0;
@@ -533,7 +533,7 @@ pub fn get_cpara(
         a.m[i * 16 + 14] = -world[i][0] * vertex[i][1];
         a.m[i * 16 + 15] = -world[i][1] * vertex[i][1];
 
-        b.m[i * 2 + 0] = vertex[i][0];
+        b.m[i * 2] = vertex[i][0];
         b.m[i * 2 + 1] = vertex[i][1];
     }
 
@@ -541,7 +541,7 @@ pub fn get_cpara(
     let c = (&a * &b)?;
 
     for i in 0..2 {
-        para[i][0] = c.m[i * 3 + 0];
+        para[i][0] = c.m[i * 3];
         para[i][1] = c.m[i * 3 + 1];
         para[i][2] = c.m[i * 3 + 2];
     }

@@ -309,7 +309,7 @@ pub fn ar_labeling(
                     label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
 
                     let l = (final_label as usize - 1) * 7;
-                    work2[l + 0] += 1;
+                    work2[l] += 1;
                     work2[l + 1] += i as i64;
                     work2[l + 2] += j as i64;
                     if work2[l + 3] > i as i64 {
@@ -338,7 +338,7 @@ pub fn ar_labeling(
                     label_img[p_idx] = wk_max as crate::types::ARLabelingLabelType;
 
                     let l = (wk_max - 1) * 7;
-                    work2[l + 0] = 1; // area
+                    work2[l] = 1; // area
                     work2[l + 1] = i as i64; // pos[0]
                     work2[l + 2] = j as i64; // pos[1]
                     work2[l + 3] = i as i64; // clip[0] (xmin)
@@ -421,11 +421,11 @@ pub fn ar_labeling(
         if work[k - 1] == k as i32 {
             // It's a root
             let src = (k - 1) * 7;
-            if work2[src + 0] > 0 {
+            if work2[src] > 0 {
                 let dense_idx = label_map[k - 1];
                 if dense_idx > 0 {
                     let i = (dense_idx - 1) as usize;
-                    label_info.area[i] = work2[src + 0] as i32;
+                    label_info.area[i] = work2[src] as i32;
                     label_info.pos[i][0] = work2[src + 1] as ARdouble;
                     label_info.pos[i][1] = work2[src + 2] as ARdouble;
                     label_info.clip[i][0] = work2[src + 3] as i32;

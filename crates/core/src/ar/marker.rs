@@ -283,22 +283,14 @@ pub fn ar_detect_marker2(
             &mut current_marker,
         );
 
-        if ret.is_err() {
-            arlog_d!(
-                "ar_get_contour failed for label {}: {:?}",
-                i,
-                ret.unwrap_err()
-            );
+        if let Err(e) = ret {
+            arlog_d!("ar_get_contour failed for label {}: {:?}", i, e);
             continue;
         }
 
         let ret = check_square(label_info.area[i], &mut current_marker, square_fit_thresh);
-        if ret.is_err() {
-            arlog_d!(
-                "check_square failed for label {}: {:?}",
-                i,
-                ret.unwrap_err()
-            );
+        if let Err(e) = ret {
+            arlog_d!("check_square failed for label {}: {:?}", i, e);
             continue;
         }
 
@@ -392,12 +384,11 @@ fn ar_get_contour(
     // Compare the pixel value directly against `label`.
     let mut p_idx = (sy * xsize + clip[0]) as usize;
     for i in clip[0]..=clip[1] {
-        if p_idx < limage.len() {
-            if limage[p_idx] == label as crate::types::ARLabelingLabelType {
+        if p_idx < limage.len()
+            && limage[p_idx] == label as crate::types::ARLabelingLabelType {
                 sx = i;
                 break;
             }
-        }
         p_idx += 1;
     }
 
@@ -471,10 +462,8 @@ fn ar_get_contour(
     let mut wx = vec![0; v1];
     let mut wy = vec![0; v1];
 
-    for i in 0..v1 {
-        wx[i] = marker_info2.x_coord[i];
-        wy[i] = marker_info2.y_coord[i];
-    }
+    wx.copy_from_slice(&marker_info2.x_coord[..v1]);
+    wy.copy_from_slice(&marker_info2.y_coord[..v1]);
 
     let coord_num = marker_info2.coord_num as usize;
     for i in v1..coord_num {
@@ -483,10 +472,8 @@ fn ar_get_contour(
     }
 
     let offset = coord_num - v1;
-    for i in 0..v1 {
-        marker_info2.x_coord[offset + i] = wx[i];
-        marker_info2.y_coord[offset + i] = wy[i];
-    }
+    marker_info2.x_coord[offset..offset + v1].copy_from_slice(&wx);
+    marker_info2.y_coord[offset..offset + v1].copy_from_slice(&wy);
 
     let end_idx = marker_info2.coord_num as usize;
     marker_info2.x_coord[end_idx] = marker_info2.x_coord[0];
@@ -755,7 +742,7 @@ pub fn ar_get_line(
         for j in 0..n {
             let (ix, iy) =
                 param_ltf.observ2ideal(x_coord[st + j] as f32, y_coord[st + j] as f32)?;
-            input.m[j * 2 + 0] = ix as f64;
+            input.m[j * 2] = ix as f64;
             input.m[j * 2 + 1] = iy as f64;
         }
 

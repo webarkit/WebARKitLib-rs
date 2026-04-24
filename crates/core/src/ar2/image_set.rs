@@ -561,7 +561,7 @@ fn encode_grayscale_jpeg(
         let mut encoder = JpegEncoder::new_with_quality(&mut jpeg_buf, quality);
         encoder
             .encode(pixels, width, height, ColorType::L8.into())
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
     }
 
     // Patch the JFIF APP0 header to embed DPI.

@@ -182,10 +182,10 @@ pub fn decode_bch(
     let mut l_arr = vec![0usize; t2 + 2];
     if syn_error {
         let mut elp = vec![vec![0; 18]; 20];
-        let mut d = vec![0; 20];
-        let mut u_lu = vec![0i32; 20];
+        let mut d = [0; 20];
+        let mut u_lu = [0i32; 20];
         let mut loc = vec![0usize; 127];
-        let mut reg = vec![0; 10];
+        let mut reg = [0; 10];
 
         d[0] = 0;
         d[1] = s[1];
@@ -284,9 +284,7 @@ pub fn decode_bch(
                 }
             }
 
-            for i in 1..=l_arr[u] {
-                reg[i] = elp[u][i];
-            }
+            reg[1..=l_arr[u]].copy_from_slice(&elp[u][1..=l_arr[u]]);
             let mut count = 0;
             for i in 1..=n {
                 let mut q_err = 1;

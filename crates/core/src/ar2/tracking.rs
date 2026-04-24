@@ -563,8 +563,7 @@ pub fn extract_visible_features(
                     };
                     l += 1;
                 } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
-                {
-                    if l2 < AR2_TRACKING_CANDIDATE_MAX {
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX {
                         candidate2[l2] = AR2TemplateCandidate {
                             snum: i as i32,
                             level: j as i32,
@@ -575,7 +574,6 @@ pub fn extract_visible_features(
                         };
                         l2 += 1;
                     }
-                }
             }
         }
     }
@@ -641,8 +639,7 @@ pub fn extract_visible_features_homography(
                     };
                     l += 1;
                 } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
-                {
-                    if l2 < AR2_TRACKING_CANDIDATE_MAX {
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX {
                         candidate2[l2] = AR2TemplateCandidate {
                             snum: i as i32,
                             level: j as i32,
@@ -653,7 +650,6 @@ pub fn extract_visible_features_homography(
                         };
                         l2 += 1;
                     }
-                }
             }
         }
     }
@@ -703,7 +699,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 1 {
         let mut dmax = 0.0;
         let mut j = -1;
@@ -732,7 +728,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 2 {
         let mut dmax = 0.0;
         let mut j = -1;
@@ -763,7 +759,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 3 {
         let (mut p2sinf, mut p2cosf) = (0.0, 0.0);
         let (mut p3sinf, mut p3cosf) = (0.0, 0.0);
@@ -853,7 +849,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else {
         // Find previous feature if still valid
         for p_cand in prev_feature.iter_mut() {
@@ -1226,7 +1222,7 @@ pub fn ar2_tracking(
         let cparam_lt = unsafe { handle.cparam_lt.as_ref() };
         let snum = cand.snum as usize;
 
-        match ar2_tracking_2d_sub(
+        if let Ok(res) = ar2_tracking_2d_sub(
             cparam_lt,
             handle.pix_format,
             handle.xsize,
@@ -1242,33 +1238,30 @@ pub fn ar2_tracking(
             &mut handle.mf_image,
             &mut handle.templ[0], // Using index 0 for sequential
         ) {
-            Ok(res) => {
-                if res.sim > handle.sim_thresh {
-                    if handle.tracking_mode == AR2_TRACKING_6DOF {
-                        let (ix, iy) = cparam_lt
-                            .unwrap()
-                            .param_ltf
-                            .observ2ideal(res.pos2d[0], res.pos2d[1])
-                            .map_err(|_| -1)?;
-                        handle.pos2d[num as usize][0] = ix;
-                        handle.pos2d[num as usize][1] = iy;
-                    } else {
-                        handle.pos2d[num as usize][0] = res.pos2d[0];
-                        handle.pos2d[num as usize][1] = res.pos2d[1];
-                    }
-                    handle.pos3d[num as usize][0] = res.pos3d[0];
-                    handle.pos3d[num as usize][1] = res.pos3d[1];
-                    handle.pos3d[num as usize][2] = res.pos3d[2];
-
-                    handle.used_feature[num as usize].snum = cand.snum;
-                    handle.used_feature[num as usize].level = cand.level;
-                    handle.used_feature[num as usize].num = cand.num;
-                    handle.used_feature[num as usize].flag = 0;
-
-                    num += 1;
+            if res.sim > handle.sim_thresh {
+                if handle.tracking_mode == AR2_TRACKING_6DOF {
+                    let (ix, iy) = cparam_lt
+                        .unwrap()
+                        .param_ltf
+                        .observ2ideal(res.pos2d[0], res.pos2d[1])
+                        .map_err(|_| -1)?;
+                    handle.pos2d[num as usize][0] = ix;
+                    handle.pos2d[num as usize][1] = iy;
+                } else {
+                    handle.pos2d[num as usize][0] = res.pos2d[0];
+                    handle.pos2d[num as usize][1] = res.pos2d[1];
                 }
+                handle.pos3d[num as usize][0] = res.pos3d[0];
+                handle.pos3d[num as usize][1] = res.pos3d[1];
+                handle.pos3d[num as usize][2] = res.pos3d[2];
+
+                handle.used_feature[num as usize].snum = cand.snum;
+                handle.used_feature[num as usize].level = cand.level;
+                handle.used_feature[num as usize].num = cand.num;
+                handle.used_feature[num as usize].flag = 0;
+
+                num += 1;
             }
-            Err(_) => {}
         }
         i += 1;
     }
@@ -1424,7 +1417,7 @@ pub fn ar2_get_trans_mat(
         - mat[2][1] * dy as ARdouble
         - mat[2][2] * dz as ARdouble) as f32;
 
-    err as f32
+    err
 }
 
 pub const KEEP_NUM: usize = 3;
@@ -1546,15 +1539,13 @@ pub fn ar2_get_best_matching(
                     img, xsize, ysize, pix_format, mtemp, i, j, &mut wval,
                 )
                 .is_ok()
-                {
-                    if wval > wval2 {
+                    && wval > wval2 {
                         *bx = i;
                         *by = j;
                         wval2 = wval;
                         *val = wval as f32 / 10000.0;
                         final_ret = Ok(());
                     }
-                }
             }
         }
     }
