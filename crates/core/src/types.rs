@@ -131,7 +131,9 @@ impl Default for ARMarkerInfo2 {
 /// Result codes returned by arDetectMarker to report state of individual detected trapezoidal regions.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ARMarkerInfoCutoffPhase {
+    #[default]
     None = 0,
     PatternExtraction,
     MatchGeneric,
@@ -144,11 +146,6 @@ pub enum ARMarkerInfoCutoffPhase {
     HeuristicTroublesomeMatrixCodes,
 }
 
-impl Default for ARMarkerInfoCutoffPhase {
-    fn default() -> Self {
-        ARMarkerInfoCutoffPhase::None
-    }
-}
 
 /// Describes a detected trapezoidal area (a candidate for a marker match).
 ///
@@ -291,19 +288,12 @@ impl ARParamLT {
 
 #[repr(C)]
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct ARTrackingHistory {
     pub marker: ARMarkerInfo,
     pub count: i32,
 }
 
-impl Default for ARTrackingHistory {
-    fn default() -> Self {
-        Self {
-            marker: ARMarkerInfo::default(),
-            count: 0,
-        }
-    }
-}
 
 pub type ARLabelingLabelType = i16;
 
@@ -353,7 +343,9 @@ pub struct ARImageProcInfo {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ARPixelFormat {
+    #[default]
     Invalid = -1,
     RGB = 0,
     BGR,
@@ -372,15 +364,12 @@ pub enum ARPixelFormat {
     NV21,
 }
 
-impl Default for ARPixelFormat {
-    fn default() -> Self {
-        ARPixelFormat::Invalid
-    }
-}
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ARLabelingThreshMode {
+    #[default]
     Manual = 0,
     AutoMedian,
     AutoOtsu,
@@ -388,16 +377,13 @@ pub enum ARLabelingThreshMode {
     AutoBracketing,
 }
 
-impl Default for ARLabelingThreshMode {
-    fn default() -> Self {
-        ARLabelingThreshMode::Manual
-    }
-}
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum ARMatrixCodeType {
     /// 3x3 Matrix Code (Default)
+    #[default]
     Code3x3 = 0x03,
     /// 3x3 Matrix Code with Parity (6,5)
     Code3x3Parity65 = 0x03 | 0x100,
@@ -419,11 +405,6 @@ pub enum ARMatrixCodeType {
     Code6x6 = 0x06,
 }
 
-impl Default for ARMatrixCodeType {
-    fn default() -> Self {
-        ARMatrixCodeType::Code3x3
-    }
-}
 
 /// Structure holding state of an instance of the square marker tracker.
 #[derive(Debug, Clone)]
@@ -460,11 +441,12 @@ pub struct ARHandle {
 
 impl ARHandle {
     pub fn new(param: ARParam) -> Self {
-        let mut handle = ARHandle::default();
-        handle.xsize = param.xsize;
-        handle.ysize = param.ysize;
         // In the full port, arParamLT would be initialized here too.
-        handle
+        ARHandle {
+            xsize: param.xsize,
+            ysize: param.ysize,
+            ..ARHandle::default()
+        }
     }
 
     pub fn set_pixel_format(&mut self, format: ARPixelFormat) {

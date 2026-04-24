@@ -92,26 +92,34 @@
 //!
 //! Detailed benchmark results can be found in `crates/core/benches/BENCHMARKS.md`.
 //!
+//!
 //! ## Example
 //!
 //! ```rust,no_run
-//! use webarkitlib_rs::marker::ar_detect_marker;
-//! // ... detection logic here
+//! // Preferred: use the canonical module path
+//! use webarkitlib_rs::ar::marker::ar_detect_marker;
+//!
+//! // Also available via the top-level re-export (backward compatibility):
+//! use webarkitlib_rs::marker::ar_detect_marker as ar_detect_marker_compat;
 //! ```
 
+pub mod ar;
 pub mod ar2;
 pub mod arlog;
-pub mod bch;
-pub mod filter;
 pub mod icp;
-pub mod image_proc;
 pub mod kpm;
-pub mod labeling;
-pub mod marker;
-pub mod math;
-pub mod matrix;
-pub mod param;
-pub mod pattern;
-pub mod pose;
 pub mod types;
 pub mod version;
+
+// Re-exports — keep the flat crate-level paths that existed before the `ar/`
+// restructure (issue #82) so downstream code compiles without path changes.
+pub use ar::bch;
+pub use ar::filter;
+pub use ar::image_proc;
+pub use ar::labeling;
+pub use ar::marker;
+pub use ar::math;
+pub use ar::matrix;
+pub use ar::param;
+pub use ar::pattern;
+pub use ar::pose;
