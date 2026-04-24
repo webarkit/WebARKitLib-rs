@@ -313,6 +313,12 @@ fn main() {
 
     // Cleanup 3D Extrinsics Handle
     ar_3d_delete_handle(&mut ar3d_handle_ptr).expect("Failed to delete AR3DHandle");
+
+    if ar_handle.label_info.label_image.is_empty() {
+        println!("  (skipped: no label image — marker detection did not run)");
+        return;
+    }
+
     let mut color_map = std::collections::HashMap::new();
     let mut label_img = image::RgbImage::new(width as u32, height as u32);
 
