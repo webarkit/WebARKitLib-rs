@@ -115,7 +115,7 @@ jobs:
 
     - name: Run native simple example
       working-directory: crates/core
-      run: cargo run --example simple
+      run: cargo run --example simple --features log-helpers
 
   benchmarks:
     runs-on: ubuntu-latest
@@ -126,7 +126,7 @@ jobs:
 
     - name: Generate hiro.raw for C benchmark
       working-directory: crates/core
-      run: cargo run --example simple -- ../../benchmarks/data/camera_para.dat ../../benchmarks/data/patt.hiro ../../benchmarks/data/img.jpg
+      run: cargo run --example simple --features log-helpers -- ../../benchmarks/data/camera_para.dat ../../benchmarks/data/patt.hiro ../../benchmarks/data/img.jpg
 
     - name: Run benchmarks
       run: |
