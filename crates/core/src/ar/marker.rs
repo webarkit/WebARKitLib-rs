@@ -943,30 +943,34 @@ pub fn ar_get_marker_info(
                         );
 
                         if match_res.is_ok() && p_code >= 0 {
-                            marker_info[j].id = p_code;
-                            marker_info[j].dir = p_dir;
-                            marker_info[j].cf = p_cf;
+                            marker_info[j].id_patt = p_code;
+                            marker_info[j].dir_patt = p_dir;
+                            marker_info[j].cf_patt = p_cf;
                         } else {
-                            marker_info[j].id = -1;
-                            marker_info[j].dir = 0;
-                            marker_info[j].cf = p_cf;
+                            marker_info[j].id_patt = -1;
+                            marker_info[j].dir_patt = 0;
+                            marker_info[j].cf_patt = p_cf;
                         }
                     } else {
-                        marker_info[j].id = -1;
-                        marker_info[j].dir = 0;
-                        marker_info[j].cf = -1.0;
+                        marker_info[j].id_patt = -1;
+                        marker_info[j].dir_patt = 0;
+                        marker_info[j].cf_patt = -1.0;
                     }
                 } else {
-                    marker_info[j].id = -1;
-                    marker_info[j].dir = 0;
-                    marker_info[j].cf = 0.0;
+                    marker_info[j].id_patt = -1;
+                    marker_info[j].dir_patt = 0;
+                    marker_info[j].cf_patt = 0.0;
                 }
             } else {
-                marker_info[j].id = -1;
-                marker_info[j].dir = 0;
-                marker_info[j].cf = 0.0;
+                marker_info[j].id_patt = -1;
+                marker_info[j].dir_patt = 0;
+                marker_info[j].cf_patt = 0.0;
             }
         }
+
+        // Mirror arGetMarkerInfo.c lines 92-100: copy the per-mode fields
+        // into the final `id` / `cf` / `dir` based on detection mode.
+        finalize_marker_id_cf_dir(&mut marker_info[j], patt_detect_mode);
 
         j += 1;
     }
