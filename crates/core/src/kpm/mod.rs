@@ -71,6 +71,7 @@
 //! | [`ref_data_set`] | [`RefDataSet`](ref_data_set::RefDataSet) collection |
 
 pub mod backend;
+pub mod freak;
 pub mod handle;
 pub mod kpm_ffi;
 pub mod matching;
