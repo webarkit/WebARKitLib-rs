@@ -975,6 +975,28 @@ pub fn ar_get_marker_info(
     Ok(())
 }
 
+/// Copy the per-mode marker fields (`*_patt` or `*_matrix`) into the final
+/// `id` / `cf` / `dir` based on the detection mode. Mirrors
+/// `arGetMarkerInfo.c` lines 92-100.
+///
+/// Mixed modes (`AR_TEMPLATE_MATCHING_*_AND_MATRIX_CODE_DETECTION`) leave the
+/// final fields untouched — callers must inspect `*_patt` / `*_matrix`
+/// themselves to decide.
+fn finalize_marker_id_cf_dir(marker: &mut ARMarkerInfo, patt_detect_mode: i32) {
+    if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR
+        || patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_MONO
+    {
+        marker.id = marker.id_patt;
+        marker.dir = marker.dir_patt;
+        marker.cf = marker.cf_patt;
+    } else if patt_detect_mode == crate::types::AR_MATRIX_CODE_DETECTION {
+        marker.id = marker.id_matrix;
+        marker.dir = marker.dir_matrix;
+        marker.cf = marker.cf_matrix;
+    }
+    // Mixed modes: do nothing.
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
