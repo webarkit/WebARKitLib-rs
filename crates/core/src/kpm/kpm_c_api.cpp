@@ -38,6 +38,7 @@
 #include <facade/visual_database_facade.h>
 #include <matchers/feature_point.h>
 #include <matchers/matcher_types.h>
+#include <math/math_utils.h>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -279,6 +280,20 @@ int kpm_extract_features(KpmOpaqueHandle* handle,
     }
 
     return n;
+}
+
+/* ---- Dual-mode validation: math function bridges (Milestone 6, #63) ---- */
+
+float webarkit_cpp_fast_atan2(float y, float x) {
+    return vision::fastatan2(y, x);
+}
+
+float webarkit_cpp_fast_sqrt1(float x) {
+    return vision::fastsqrt1(x);
+}
+
+float webarkit_cpp_fast_exp6_f32(float x) {
+    return vision::fastexp6<float>(x);
 }
 
 } // extern "C"

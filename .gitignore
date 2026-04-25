@@ -19,6 +19,9 @@ Cargo.lock
 # VSCode files
 .vscode/
 
+# IntelliJ IDEA / JetBrains files
+.idea/
+
 # Benchmarking and Example Artifacts
 benchmarks/c_benchmark/src/
 benchmarks/c_benchmark/build/

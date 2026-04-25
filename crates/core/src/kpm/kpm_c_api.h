@@ -117,6 +117,19 @@ int kpm_extract_features(KpmOpaqueHandle* handle,
                          unsigned char* desc_out,
                          int max_features);
 
+/* ---- Dual-mode validation: math function bridges (Milestone 6, #63) ---- */
+
+/* Thin wrappers around vision::fastatan2, vision::fastsqrt1, vision::fastexp6
+ * from FreakMatcher/math/math_utils.h. Used by Rust dual-mode tests to verify
+ * that the pure-Rust ports in crates/core/src/kpm/freak/math.rs produce the
+ * same outputs as the C++ baseline across a sweep of inputs.
+ *
+ * These are always exposed when ffi-backend is built; they are zero-cost when
+ * unused (link-time dead-code elimination removes them). */
+float webarkit_cpp_fast_atan2(float y, float x);
+float webarkit_cpp_fast_sqrt1(float x);
+float webarkit_cpp_fast_exp6_f32(float x);
+
 #ifdef __cplusplus
 }
 #endif
