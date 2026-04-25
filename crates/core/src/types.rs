@@ -174,8 +174,6 @@ pub struct MatchOk {
     pub cf: f64,
     /// Number of errors corrected by ECC (0 for codes without ECC, always 0 for template).
     pub error_corrected: i32,
-    /// Global ID for `ARMatrixCodeType::GlobalId` mode; `None` for all other types.
-    pub global_id: Option<u64>,
 }
 
 impl From<MatchError> for ARMarkerInfoCutoffPhase {
