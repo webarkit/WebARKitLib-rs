@@ -43,23 +43,33 @@
 //! All functions are marked `#[inline(always)]` to match C++ `inline` keyword behavior
 //! and enable call-site specialization via monomorphization.
 
-use std::ops::AddAssign;
-
 // ============================================================================
 // Constants
 // ============================================================================
 
-/// π (pi) in f64 precision
-pub const PI: f64 = 3.1415926535897932384626433832795;
+/// π (pi) in f64 precision.
+///
+/// Re-exports `std::f64::consts::PI` to match the C++ `#define PI` from
+/// `math_utils.h:42`.
+pub const PI: f64 = std::f64::consts::PI;
 
-/// π (pi) in f32 precision
-pub const PI_F: f32 = 3.1415926535897932384626433832795_f32;
+/// π (pi) in f32 precision.
+///
+/// Re-exports `std::f32::consts::PI` to match the C++ `#define PI` from
+/// `math_utils.h:42`.
+pub const PI_F: f32 = std::f32::consts::PI;
 
-/// 1 / (2π)
-pub const ONE_OVER_2PI: f32 = 0.159154943091895_f32;
+/// 1 / (2π).
+///
+/// Computed from `PI_F` to retain full f32 precision. Matches the C++
+/// `#define ONE_OVER_2PI 0.159154943091895` from `math_utils.h:43`.
+pub const ONE_OVER_2PI: f32 = 1.0 / (2.0 * PI_F);
 
-/// √2 (square root of 2)
-pub const SQRT2: f32 = 1.41421356237309504880_f32;
+/// √2 (square root of 2).
+///
+/// Re-exports `std::f32::consts::SQRT_2` to match the C++
+/// `#define SQRT2 1.41421356237309504880` from `math_utils.h:44`.
+pub const SQRT2: f32 = std::f32::consts::SQRT_2;
 
 /// π / 180 — conversion factor from degrees to radians (f32)
 pub const DEG_TO_RAD_F: f32 = PI_F / 180.0;
@@ -354,10 +364,8 @@ pub fn copy_vector<T: Copy>(dst: &mut [T], src: &[T]) {
 ///
 /// C++ equivalent: `Swap9<T>`
 #[inline(always)]
-pub fn swap_9<T: Copy>(a: &mut [T; 9], b: &mut [T; 9]) {
-    let temp = *a;
-    *a = *b;
-    *b = temp;
+pub fn swap_9<T>(a: &mut [T; 9], b: &mut [T; 9]) {
+    std::mem::swap(a, b);
 }
 
 /// Set a specific bit in a bitstring (array of u8).
@@ -384,38 +392,23 @@ pub fn bitstring_get_bit(bitstring: &[u8], pos: usize) -> u8 {
     (bitstring[byte_idx] >> bit_idx) & 1
 }
 
-/// Create a sequential vector [x0, x0+1, x0+2, ...].
+/// Create a sequential vector [x0, x0+1, x0+2, ...] for f32 types.
 ///
-/// C++ equivalent: `SequentialVector<T>`
-#[inline(always)]
-pub fn sequential_vector<T: Default + Copy + AddAssign>(v: &mut [T], x0: T) {
-    let mut val = x0;
-    for elem in v.iter_mut() {
-        *elem = val;
-        val += T::default(); // This won't work as intended; fixed below
-    }
-}
-
-// Fixed version of sequential_vector that requires numeric traits
-/// Create a sequential vector [x0, x0+1, x0+2, ...] for numeric types.
-///
-/// Works with types that support addition and zero initialization.
+/// C++ equivalent: `SequentialVector<T>` for `T = float`.
 #[inline(always)]
 pub fn sequential_vector_f32(v: &mut [f32], x0: f32) {
-    let mut val = x0;
-    for elem in v.iter_mut() {
-        *elem = val;
-        val += 1.0;
+    for (i, elem) in v.iter_mut().enumerate() {
+        *elem = x0 + i as f32;
     }
 }
 
 /// Create a sequential vector [x0, x0+1, x0+2, ...] for i32 types.
+///
+/// C++ equivalent: `SequentialVector<T>` for `T = int`.
 #[inline(always)]
 pub fn sequential_vector_i32(v: &mut [i32], x0: i32) {
-    let mut val = x0;
-    for elem in v.iter_mut() {
+    for (val, elem) in (x0..).zip(v.iter_mut()) {
         *elem = val;
-        val += 1;
     }
 }
 
