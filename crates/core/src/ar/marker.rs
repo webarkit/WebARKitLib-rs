@@ -1000,4 +1000,96 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(marker2_num, 0);
     }
+
+    /// Verifies `finalize_marker_id_cf_dir` copies the right per-mode fields
+    /// into the final `id` / `cf` / `dir` for each detection mode, mirroring
+    /// `arGetMarkerInfo.c` lines 92-100.
+    #[test]
+    fn test_finalize_marker_id_cf_dir_template_color() {
+        let mut m = ARMarkerInfo::default();
+        m.id_patt = 7;
+        m.dir_patt = 2;
+        m.cf_patt = 0.85;
+        m.id_matrix = 99; // should be ignored
+        m.dir_matrix = 3;
+        m.cf_matrix = 0.5;
+
+        finalize_marker_id_cf_dir(&mut m, crate::pattern::AR_TEMPLATE_MATCHING_COLOR);
+
+        assert_eq!(m.id, 7);
+        assert_eq!(m.dir, 2);
+        assert!((m.cf - 0.85).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_finalize_marker_id_cf_dir_template_mono() {
+        let mut m = ARMarkerInfo::default();
+        m.id_patt = 4;
+        m.dir_patt = 1;
+        m.cf_patt = 0.7;
+
+        finalize_marker_id_cf_dir(&mut m, crate::pattern::AR_TEMPLATE_MATCHING_MONO);
+
+        assert_eq!(m.id, 4);
+        assert_eq!(m.dir, 1);
+        assert!((m.cf - 0.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_finalize_marker_id_cf_dir_matrix_only() {
+        let mut m = ARMarkerInfo::default();
+        m.id_patt = 99; // should be ignored
+        m.dir_patt = 2;
+        m.cf_patt = 0.5;
+        m.id_matrix = 12;
+        m.dir_matrix = 0;
+        m.cf_matrix = 0.92;
+
+        finalize_marker_id_cf_dir(&mut m, crate::types::AR_MATRIX_CODE_DETECTION);
+
+        assert_eq!(m.id, 12);
+        assert_eq!(m.dir, 0);
+        assert!((m.cf - 0.92).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_finalize_marker_id_cf_dir_mixed_color_matrix_leaves_finals_alone() {
+        let mut m = ARMarkerInfo::default();
+        // Pre-set finals to sentinel values; verify they're not overwritten.
+        m.id = -42;
+        m.dir = -42;
+        m.cf = -42.0;
+        m.id_patt = 1;
+        m.dir_patt = 1;
+        m.cf_patt = 0.1;
+        m.id_matrix = 2;
+        m.dir_matrix = 2;
+        m.cf_matrix = 0.2;
+
+        finalize_marker_id_cf_dir(
+            &mut m,
+            crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION,
+        );
+
+        assert_eq!(m.id, -42);
+        assert_eq!(m.dir, -42);
+        assert!((m.cf - -42.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_finalize_marker_id_cf_dir_mixed_mono_matrix_leaves_finals_alone() {
+        let mut m = ARMarkerInfo::default();
+        m.id = -42;
+        m.dir = -42;
+        m.cf = -42.0;
+
+        finalize_marker_id_cf_dir(
+            &mut m,
+            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
+        );
+
+        assert_eq!(m.id, -42);
+        assert_eq!(m.dir, -42);
+        assert!((m.cf - -42.0).abs() < 1e-9);
+    }
 }
