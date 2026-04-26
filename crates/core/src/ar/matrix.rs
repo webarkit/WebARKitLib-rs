@@ -58,10 +58,10 @@ pub struct MatrixCodeResult {
 /// - `vertex` — four `[x, y]` corner coordinates in ideal (undistorted) space,
 ///   as produced by [`crate::marker::ar_get_line`].
 /// - `code_type` — selects the square dimension (`3..=6`) and ECC scheme.
-/// - `id` / `dir` / `cf` / `error_corrected` — output values.
 ///
 /// # Returns
-/// `Ok(())` on successful decode. `Err` on low contrast, missing locator pattern,
+/// `Ok(MatchOk { id, dir, cf, error_corrected })` on successful decode.
+/// `Err(MatchError::*)` on low contrast, missing locator pattern, ECC failure,
 /// or unsupported `code_type`.
 ///
 /// # Example
@@ -72,14 +72,13 @@ pub struct MatrixCodeResult {
 ///
 /// let image = vec![0u8; 640 * 480 * 3];
 /// let vertex = [[100.0, 100.0], [200.0, 100.0], [200.0, 200.0], [100.0, 200.0]];
-/// let mut id = -1i32;
-/// let mut dir = -1i32;
-/// let mut cf = 0.0f64;
-/// let mut err = 0i32;
-/// if ar_matrix_code_get_id(&image, 640, 480, &vertex, ARMatrixCodeType::default(),
-///         webarkitlib_rs::types::ARPixelFormat::RGB, 0.5,
-///         &mut id, &mut dir, &mut cf, &mut err).is_ok() {
-///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
+/// if let Ok(ok) = ar_matrix_code_get_id(
+///     &image, 640, 480, &vertex,
+///     ARMatrixCodeType::default(),
+///     webarkitlib_rs::types::ARPixelFormat::RGB,
+///     0.5,
+/// ) {
+///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", ok.id, ok.dir, ok.cf);
 /// }
 /// ```
 pub fn ar_matrix_code_get_id(

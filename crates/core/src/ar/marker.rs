@@ -849,10 +849,6 @@ pub fn ar_get_marker_info(
 
         if is_matrix_mode {
             // Decode the matrix (barcode) code
-            let mut mc_id = -1i32;
-            let mut mc_dir = -1i32;
-            let mut mc_cf = 0.0f64;
-            let mut mc_err = 0i32;
             match crate::matrix::ar_matrix_code_get_id(
                 image,
                 xsize,
@@ -861,28 +857,26 @@ pub fn ar_get_marker_info(
                 matrix_code_type,
                 pixel_format,
                 patt_ratio,
-                &mut mc_id,
-                &mut mc_dir,
-                &mut mc_cf,
-                &mut mc_err,
             ) {
-                Ok(()) => {
-                    marker_info[j].id_matrix = mc_id;
-                    marker_info[j].dir_matrix = mc_dir;
-                    marker_info[j].cf_matrix = mc_cf;
-                    marker_info[j].error_corrected = mc_err;
+                Ok(ok) => {
+                    marker_info[j].id_matrix = ok.id;
+                    marker_info[j].dir_matrix = ok.dir;
+                    marker_info[j].cf_matrix = ok.cf;
+                    marker_info[j].error_corrected = ok.error_corrected;
+                    marker_info[j].cutoff_phase = crate::types::ARMarkerInfoCutoffPhase::None;
                     arlog_d!(
                         "ar_get_marker_info: barcode id={}, dir={}, cf={:.4}",
-                        mc_id,
-                        mc_dir,
-                        mc_cf
+                        ok.id,
+                        ok.dir,
+                        ok.cf
                     );
                 }
                 Err(e) => {
-                    arlog_d!("ar_get_marker_info: barcode decode failed: {}", e);
+                    arlog_d!("ar_get_marker_info: barcode decode failed: {:?}", e);
                     marker_info[j].id_matrix = -1;
                     marker_info[j].dir_matrix = -1;
                     marker_info[j].cf_matrix = 0.0;
+                    marker_info[j].cutoff_phase = e.into();
                 }
             }
         }
@@ -929,32 +923,48 @@ pub fn ar_get_marker_info(
                     );
 
                     if res.is_ok() {
-                        let mut p_code = -1;
-                        let mut p_dir = 0;
-                        let mut p_cf = -1.0;
-                        let match_res = crate::pattern::pattern_match(
+                        match crate::pattern::pattern_match(
                             patt_handle,
                             patt_detect_mode,
                             &ext_patt,
                             patt_size,
-                            &mut p_code,
-                            &mut p_dir,
-                            &mut p_cf,
-                        );
-
-                        if match_res.is_ok() && p_code >= 0 {
-                            marker_info[j].id_patt = p_code;
-                            marker_info[j].dir_patt = p_dir;
-                            marker_info[j].cf_patt = p_cf;
-                        } else {
-                            marker_info[j].id_patt = -1;
-                            marker_info[j].dir_patt = 0;
-                            marker_info[j].cf_patt = p_cf;
+                        ) {
+                            Ok(ok) if ok.id >= 0 => {
+                                marker_info[j].id_patt = ok.id;
+                                marker_info[j].dir_patt = ok.dir;
+                                marker_info[j].cf_patt = ok.cf;
+                                if !is_matrix_mode {
+                                    marker_info[j].cutoff_phase =
+                                        crate::types::ARMarkerInfoCutoffPhase::None;
+                                }
+                            }
+                            Ok(ok) => {
+                                // pattern_match returned Ok but no template matched
+                                marker_info[j].id_patt = -1;
+                                marker_info[j].dir_patt = 0;
+                                marker_info[j].cf_patt = ok.cf;
+                                if !is_matrix_mode {
+                                    marker_info[j].cutoff_phase =
+                                        crate::types::ARMarkerInfoCutoffPhase::MatchGeneric;
+                                }
+                            }
+                            Err(e) => {
+                                marker_info[j].id_patt = -1;
+                                marker_info[j].dir_patt = 0;
+                                marker_info[j].cf_patt = -1.0;
+                                if !is_matrix_mode {
+                                    marker_info[j].cutoff_phase = e.into();
+                                }
+                            }
                         }
                     } else {
                         marker_info[j].id_patt = -1;
                         marker_info[j].dir_patt = 0;
                         marker_info[j].cf_patt = -1.0;
+                        if !is_matrix_mode {
+                            marker_info[j].cutoff_phase =
+                                crate::types::ARMarkerInfoCutoffPhase::PatternExtraction;
+                        }
                     }
                 } else {
                     marker_info[j].id_patt = -1;
@@ -1117,5 +1127,64 @@ mod tests {
         assert_eq!(m.id, -42);
         assert_eq!(m.dir, -42);
         assert!((m.cf - -42.0).abs() < 1e-9);
+    }
+
+    /// Verifies cutoff_phase is set to None on a successful template match.
+    #[test]
+    fn test_cutoff_phase_none_on_template_success() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchOk};
+        let mut marker = ARMarkerInfo::default();
+        let ok = MatchOk {
+            id: 0,
+            dir: 0,
+            cf: 0.8,
+            error_corrected: 0,
+        };
+        marker.id_patt = ok.id;
+        marker.dir_patt = ok.dir;
+        marker.cf_patt = ok.cf;
+        marker.cutoff_phase = ARMarkerInfoCutoffPhase::None;
+        assert_eq!(marker.cutoff_phase, ARMarkerInfoCutoffPhase::None);
+    }
+
+    /// Verifies cutoff_phase is set to MatchContrast when matrix decoding
+    /// returns MatchError::Contrast (mirrors arGetMarkerInfo.c:84).
+    #[test]
+    fn test_cutoff_phase_set_on_matrix_contrast_error() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
+        let mut marker = ARMarkerInfo::default();
+        let e = MatchError::Contrast;
+        marker.id_matrix = -1;
+        marker.cf_matrix = 0.0;
+        marker.cutoff_phase = e.into();
+        assert_eq!(marker.cutoff_phase, ARMarkerInfoCutoffPhase::MatchContrast);
+    }
+
+    /// Verifies cutoff_phase is set to MatchBarcodeNotFound when matrix decoding
+    /// returns MatchError::BarcodeNotFound (mirrors arGetMarkerInfo.c:85).
+    #[test]
+    fn test_cutoff_phase_set_on_matrix_barcode_not_found() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
+        let mut marker = ARMarkerInfo::default();
+        let e = MatchError::BarcodeNotFound;
+        marker.cutoff_phase = e.into();
+        assert_eq!(
+            marker.cutoff_phase,
+            ARMarkerInfoCutoffPhase::MatchBarcodeNotFound
+        );
+    }
+
+    /// Verifies cutoff_phase is set to PatternExtraction when ar_patt_get_image
+    /// fails (mirrors arGetMarkerInfo.c:88).
+    #[test]
+    fn test_cutoff_phase_pattern_extraction_failure() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
+        let mut marker = ARMarkerInfo::default();
+        let e = MatchError::PatternExtraction;
+        marker.cutoff_phase = e.into();
+        assert_eq!(
+            marker.cutoff_phase,
+            ARMarkerInfoCutoffPhase::PatternExtraction
+        );
     }
 }
