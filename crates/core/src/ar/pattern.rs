@@ -341,16 +341,12 @@ pub fn pattern_match(
     mode: i32,
     data: &[u8],
     size: i32,
-    code: &mut i32,
-    dir: &mut i32,
-    cf: &mut ARdouble,
-) -> Result<(), &'static str> {
+) -> Result<crate::types::MatchOk, crate::types::MatchError> {
+    use crate::types::{MatchError, MatchOk};
+
     if size <= 0 {
-        *code = 0;
-        *dir = 0;
-        *cf = -1.0;
         arlog_e!("pattern_match: invalid size={}", size);
-        return Err("Invalid size");
+        return Err(MatchError::PatternExtraction);
     }
 
     let size_u = size as usize;
@@ -363,7 +359,7 @@ pub fn pattern_match(
                 data.len(),
                 size_sqd_x3
             );
-            return Err("Data array too small");
+            return Err(MatchError::PatternExtraction);
         }
         let mut input = vec![0i16; size_sqd_x3];
 
@@ -383,14 +379,11 @@ pub fn pattern_match(
 
         let datapow = (sum as ARdouble).sqrt();
         if datapow / ((size as ARdouble) * 3.0f64.sqrt()) < AR_PATT_CONTRAST_THRESH1 {
-            *code = 0;
-            *dir = 0;
-            *cf = -1.0;
             arlog_d!(
                 "pattern_match(color): insufficient contrast (datapow={:.3})",
                 datapow
             );
-            return Err("Insufficient contrast");
+            return Err(MatchError::Contrast);
         }
 
         let mut res1 = -1;
@@ -423,10 +416,12 @@ pub fn pattern_match(
             }
         }
 
-        *dir = res1;
-        *code = res2;
-        *cf = max;
-        Ok(())
+        Ok(MatchOk {
+            id: res2,
+            dir: res1,
+            cf: max,
+            error_corrected: 0,
+        })
     } else if mode == AR_TEMPLATE_MATCHING_MONO {
         let size_sqd = size_u * size_u;
         if data.len() < size_sqd {
@@ -435,7 +430,7 @@ pub fn pattern_match(
                 data.len(),
                 size_sqd
             );
-            return Err("Data array too small");
+            return Err(MatchError::PatternExtraction);
         }
 
         let mut input = vec![0i16; size_sqd];
@@ -456,14 +451,11 @@ pub fn pattern_match(
 
         let datapow = (sum as ARdouble).sqrt();
         if datapow / (size as ARdouble) < AR_PATT_CONTRAST_THRESH1 {
-            *code = 0;
-            *dir = 0;
-            *cf = -1.0;
             arlog_d!(
                 "pattern_match(mono): insufficient contrast (datapow={:.3})",
                 datapow
             );
-            return Err("Insufficient contrast");
+            return Err(MatchError::Contrast);
         }
 
         let mut res1 = -1;
@@ -497,13 +489,15 @@ pub fn pattern_match(
             }
         }
 
-        *dir = res1;
-        *code = res2;
-        *cf = max;
-        Ok(())
+        Ok(MatchOk {
+            id: res2,
+            dir: res1,
+            cf: max,
+            error_corrected: 0,
+        })
     } else {
         arlog_e!("pattern_match: unsupported matching mode {}", mode);
-        Err("Unsupported matching mode")
+        Err(MatchError::Generic)
     }
 }
 
@@ -1046,19 +1040,8 @@ pub fn ar_patt_get_id(
     patt_detect_mode: i32,
     data: &[u8], // Data from the normalized region of interest (square)
     patt_size: i32,
-    code: &mut i32,
-    dir: &mut i32,
-    cf: &mut f64,
-) -> Result<(), &'static str> {
-    pattern_match(
-        patt_handle,
-        patt_detect_mode,
-        data,
-        patt_size,
-        code,
-        dir,
-        cf,
-    )
+) -> Result<crate::types::MatchOk, crate::types::MatchError> {
+    pattern_match(patt_handle, patt_detect_mode, data, patt_size)
 }
 
 #[cfg(test)]
@@ -1089,19 +1072,16 @@ mod tests {
             }
         }
 
-        let mut code = 0;
-        let mut dir = 0;
-        let mut cf = 0.0;
         let result = pattern_match(
             &handle,
             AR_TEMPLATE_MATCHING_COLOR,
             &mock_data,
             AR_PATT_SIZE1,
-            &mut code,
-            &mut dir,
-            &mut cf,
         );
         assert!(result.is_ok());
+        let ok = result.unwrap();
+        assert!(ok.cf >= 0.0);
+        assert_eq!(ok.error_corrected, 0);
     }
 
     #[test]
