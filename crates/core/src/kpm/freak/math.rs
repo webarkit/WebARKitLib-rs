@@ -1949,9 +1949,20 @@ mod tests {
 
 #[cfg(feature = "dual-mode")]
 extern "C" {
+    // M6-1 (#63) — math_utils.h
     fn webarkit_cpp_fast_atan2(y: f32, x: f32) -> f32;
     fn webarkit_cpp_fast_sqrt1(x: f32) -> f32;
     fn webarkit_cpp_fast_exp6_f32(x: f32) -> f32;
+
+    // M6-2 (#64) — linear_algebra.h / linear_solvers.h. Return 1 on success,
+    // 0 on failure (C ABI int instead of bool for portability).
+    fn webarkit_cpp_solve_linear_system_2x2(x: *mut f32, a: *const f32, b: *const f32) -> i32;
+    fn webarkit_cpp_solve_symmetric_linear_system_3x3(
+        x: *mut f32,
+        a: *const f32,
+        b: *const f32,
+    ) -> i32;
+    fn webarkit_cpp_solve_null_vector_8x9_destructive(x: *mut f32, a: *mut f32) -> i32;
 }
 
 #[cfg(all(test, feature = "dual-mode"))]
@@ -2057,6 +2068,188 @@ mod dual_mode_tests {
             "fast_exp6: max relative err = {} over 401 inputs (worst at x={})",
             max_rel_err,
             worst_x
+        );
+    }
+
+    // ========================================================================
+    // M6-2 (#64) — linear_algebra.h / linear_solvers.h dual-mode tests
+    // ========================================================================
+
+    /// Sweep `solve_linear_system_2x2` over 1000 random non-degenerate 2×2
+    /// systems and assert Rust and C++ agree element-wise to 1e-5.
+    #[test]
+    fn solve_linear_system_2x2_matches_cpp() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0xDEADBEEF);
+        let mut max_diff = 0.0_f32;
+        let mut compared = 0u32;
+
+        for _ in 0..1000 {
+            let a: [f32; 4] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
+            let b: [f32; 2] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
+
+            let mut x_rust = [0.0_f32; 2];
+            let mut x_cpp = [0.0_f32; 2];
+
+            let r = solve_linear_system_2x2(&mut x_rust, &a, &b);
+            let c = unsafe {
+                webarkit_cpp_solve_linear_system_2x2(x_cpp.as_mut_ptr(), a.as_ptr(), b.as_ptr())
+            } != 0;
+
+            assert_eq!(r, c, "Rust and C++ disagreed on success/failure");
+
+            if r {
+                for i in 0..2 {
+                    let diff = (x_rust[i] - x_cpp[i]).abs();
+                    if diff > max_diff {
+                        max_diff = diff;
+                    }
+                    assert!(
+                        diff < 1e-5,
+                        "solve_linear_system_2x2 diverged at x[{}]: rust={}, cpp={}, diff={}",
+                        i,
+                        x_rust[i],
+                        x_cpp[i],
+                        diff
+                    );
+                }
+                compared += 1;
+            }
+        }
+
+        arlog_e!(
+            "solve_linear_system_2x2: max diff = {} over {} comparisons",
+            max_diff,
+            compared
+        );
+    }
+
+    /// Sweep `solve_symmetric_linear_system_3x3` over 500 random SPD 3×3
+    /// systems (built as `M*M^T + 0.1*I` to guarantee positive-definiteness)
+    /// and assert Rust and C++ agree element-wise to 1e-5.
+    #[test]
+    fn solve_symmetric_linear_system_3x3_matches_cpp() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0xDEADBEEF);
+        let mut max_diff = 0.0_f32;
+        let mut compared = 0u32;
+
+        for _ in 0..500 {
+            // Build SPD A = M*M^T + 0.1*I
+            let m: [f32; 9] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
+            let mut a = [0.0_f32; 9];
+            for i in 0..3 {
+                for j in 0..3 {
+                    let mut s = 0.0_f32;
+                    for k in 0..3 {
+                        s += m[i * 3 + k] * m[j * 3 + k];
+                    }
+                    a[i * 3 + j] = s;
+                }
+            }
+            a[0] += 0.1;
+            a[4] += 0.1;
+            a[8] += 0.1;
+
+            let b: [f32; 3] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
+
+            let mut x_rust = [0.0_f32; 3];
+            let mut x_cpp = [0.0_f32; 3];
+
+            let r = solve_symmetric_linear_system_3x3(&mut x_rust, &a, &b);
+            let c = unsafe {
+                webarkit_cpp_solve_symmetric_linear_system_3x3(
+                    x_cpp.as_mut_ptr(),
+                    a.as_ptr(),
+                    b.as_ptr(),
+                )
+            } != 0;
+
+            assert_eq!(r, c, "Rust and C++ disagreed on success/failure");
+
+            if r {
+                for i in 0..3 {
+                    let diff = (x_rust[i] - x_cpp[i]).abs();
+                    if diff > max_diff {
+                        max_diff = diff;
+                    }
+                    assert!(
+                        diff < 1e-5,
+                        "solve_symmetric_linear_system_3x3 diverged at x[{}]: rust={}, cpp={}, diff={}",
+                        i,
+                        x_rust[i],
+                        x_cpp[i],
+                        diff
+                    );
+                }
+                compared += 1;
+            }
+        }
+
+        arlog_e!(
+            "solve_symmetric_linear_system_3x3: max diff = {} over {} comparisons",
+            max_diff,
+            compared
+        );
+    }
+
+    /// Sweep `solve_null_vector_8x9_destructive` over 100 random 8×9 matrices
+    /// and assert Rust and C++ produce the same null direction.
+    ///
+    /// A null vector is defined only up to sign; comparison is `|dot(rust, cpp)|`
+    /// against `1.0` (not element-wise). Tolerance: 1e-4 per spec.
+    #[test]
+    fn solve_null_vector_8x9_destructive_matches_cpp() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0xDEADBEEF);
+        let mut min_dot = 1.0_f32;
+        let mut compared = 0u32;
+
+        for _ in 0..100 {
+            let a_orig: [f32; 72] = std::array::from_fn(|_| rng.random_range(-1.0_f32..1.0));
+
+            let mut a_rust = a_orig;
+            let mut a_cpp = a_orig;
+            let mut x_rust = [0.0_f32; 9];
+            let mut x_cpp = [0.0_f32; 9];
+
+            let r = solve_null_vector_8x9_destructive(&mut x_rust, &mut a_rust);
+            let c = unsafe {
+                webarkit_cpp_solve_null_vector_8x9_destructive(
+                    x_cpp.as_mut_ptr(),
+                    a_cpp.as_mut_ptr(),
+                )
+            } != 0;
+
+            assert_eq!(r, c, "Rust and C++ disagreed on success/failure");
+
+            if r {
+                // Sign-ambiguous: |dot| should be ~1.0 (both vectors unit length,
+                // possibly differing by a global sign flip)
+                let dot: f32 = (0..9).map(|i| x_rust[i] * x_cpp[i]).sum();
+                let abs_dot = dot.abs();
+                if abs_dot < min_dot {
+                    min_dot = abs_dot;
+                }
+                assert!(
+                    (1.0 - abs_dot) < 1e-4,
+                    "solve_null_vector_8x9 diverged: |dot(rust, cpp)| = {} (expected ~1.0)",
+                    abs_dot
+                );
+                compared += 1;
+            }
+        }
+
+        arlog_e!(
+            "solve_null_vector_8x9_destructive: min |dot(rust, cpp)| = {} over {} comparisons",
+            min_dot,
+            compared
         );
     }
 }
