@@ -130,6 +130,20 @@ float webarkit_cpp_fast_atan2(float y, float x);
 float webarkit_cpp_fast_sqrt1(float x);
 float webarkit_cpp_fast_exp6_f32(float x);
 
+/* ---- Dual-mode validation: linear-algebra bridges (Milestone 6, #64) ---- */
+
+/* Thin wrappers around vision::SolveLinearSystem2x2,
+ * vision::SolveSymmetricLinearSystem3x3, vision::SolveNullVector8x9Destructive
+ * from FreakMatcher/math/linear_algebra.h and linear_solvers.h. Used by the
+ * M6-2 dual-mode tests to validate the pure-Rust ports against the C++
+ * baseline.
+ *
+ * Return 1 on success, 0 on failure (mapping C++ bool to int for portability
+ * across the C ABI). */
+int webarkit_cpp_solve_linear_system_2x2(float x[2], const float a[4], const float b[2]);
+int webarkit_cpp_solve_symmetric_linear_system_3x3(float x[3], const float a[9], const float b[3]);
+int webarkit_cpp_solve_null_vector_8x9_destructive(float x[9], float a[72]);
+
 #ifdef __cplusplus
 }
 #endif

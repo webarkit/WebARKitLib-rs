@@ -39,6 +39,8 @@
 #include <matchers/feature_point.h>
 #include <matchers/matcher_types.h>
 #include <math/math_utils.h>
+#include <math/linear_algebra.h>
+#include <math/linear_solvers.h>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -294,6 +296,20 @@ float webarkit_cpp_fast_sqrt1(float x) {
 
 float webarkit_cpp_fast_exp6_f32(float x) {
     return vision::fastexp6<float>(x);
+}
+
+/* ---- Dual-mode validation: linear-algebra bridges (Milestone 6, #64) ---- */
+
+int webarkit_cpp_solve_linear_system_2x2(float x[2], const float a[4], const float b[2]) {
+    return vision::SolveLinearSystem2x2<float>(x, a, b) ? 1 : 0;
+}
+
+int webarkit_cpp_solve_symmetric_linear_system_3x3(float x[3], const float a[9], const float b[3]) {
+    return vision::SolveSymmetricLinearSystem3x3<float>(x, a, b) ? 1 : 0;
+}
+
+int webarkit_cpp_solve_null_vector_8x9_destructive(float x[9], float a[72]) {
+    return vision::SolveNullVector8x9Destructive<float>(x, a) ? 1 : 0;
 }
 
 } // extern "C"
