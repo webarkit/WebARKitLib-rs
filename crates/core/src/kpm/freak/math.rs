@@ -39,9 +39,17 @@
 //! Ported from WebARKitLib C++ headers:
 //! - `KPM/FreakMatcher/math/indexing.h` (251 lines) — vector/array indexing and manipulation
 //! - `KPM/FreakMatcher/math/math_utils.h` (196 lines) — fast math approximations
+//! - `KPM/FreakMatcher/math/linear_algebra.h` (400 lines) — determinants, inverses, linear solvers
+//! - `KPM/FreakMatcher/math/linear_solvers.h` (411 lines) — DLT null-vector and tridiagonal solvers
+//!
+//! Selected private helpers are also ported from `KPM/FreakMatcher/math/matrix.h`.
 //!
 //! All functions are marked `#[inline(always)]` to match C++ `inline` keyword behavior
 //! and enable call-site specialization via monomorphization.
+
+use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
+
+use crate::arlog_e;
 
 // ============================================================================
 // Constants
@@ -669,6 +677,657 @@ pub fn fast_exp6_f64(x: f64) -> f64 {
 }
 
 // ============================================================================
+// linear_algebra.h Functions
+// ============================================================================
+//
+// Ported from `KPM/FreakMatcher/math/linear_algebra.h` (400 lines). Selected
+// private helpers from `KPM/FreakMatcher/math/matrix.h` are also included.
+//
+// Live entrypoints in upstream (verified at submodule rev 656436e36b):
+//   - SolveLinearSystem2x2          → detectors/harris.cpp:633
+//   - SolveSymmetricLinearSystem3x3 → detectors/DoG_scale_invariant_detector.cpp:510
+// All other functions in this section are either reachable transitively from
+// the live entrypoints, or are flagged as upstream dead code in their doc
+// comments (matching M6-1's treatment of `fastsqrt1`).
+
+// ---------- Trivial vector ops (generic) ----------
+
+/// Compute the dot product of two 4-element vectors.
+///
+/// C++ equivalent: `DotProduct4<T>` — used at `detectors/harris.cpp` for
+/// gradient-product accumulation.
+#[inline(always)]
+pub fn dot_product_4<T>(a: &[T; 4], b: &[T; 4]) -> T
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]
+}
+
+/// Compute the dot product of two 9-element vectors.
+///
+/// C++ equivalent: `DotProduct9<T>` — reached transitively via
+/// `accumulate_projection_9` inside `solve_null_vector_8x9_destructive`.
+#[inline(always)]
+pub fn dot_product_9<T>(a: &[T; 9], b: &[T; 9]) -> T
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    a[0] * b[0]
+        + a[1] * b[1]
+        + a[2] * b[2]
+        + a[3] * b[3]
+        + a[4] * b[4]
+        + a[5] * b[5]
+        + a[6] * b[6]
+        + a[7] * b[7]
+        + a[8] * b[8]
+}
+
+/// Compute the sum of squares of a 9-element vector.
+///
+/// C++ equivalent: `SumSquares9<T>` — reached transitively inside
+/// `solve_null_vector_8x9_destructive` for column-norm pivoting.
+#[inline(always)]
+pub fn sum_squares_9<T>(x: &[T; 9]) -> T
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    dot_product_9(x, x)
+}
+
+/// Scale a 4-element vector: `dst = src * s`.
+///
+/// C++ equivalent: `ScaleVector4<T>`.
+#[inline(always)]
+pub fn scale_vector_4<T>(dst: &mut [T; 4], src: &[T; 4], s: T)
+where
+    T: Mul<Output = T> + Copy,
+{
+    dst[0] = src[0] * s;
+    dst[1] = src[1] * s;
+    dst[2] = src[2] * s;
+    dst[3] = src[3] * s;
+}
+
+/// Scale an 8-element vector: `dst = src * s`.
+///
+/// C++ equivalent: `ScaleVector8<T>`.
+#[inline(always)]
+pub fn scale_vector_8<T>(dst: &mut [T; 8], src: &[T; 8], s: T)
+where
+    T: Mul<Output = T> + Copy,
+{
+    dst[0] = src[0] * s;
+    dst[1] = src[1] * s;
+    dst[2] = src[2] * s;
+    dst[3] = src[3] * s;
+    dst[4] = src[4] * s;
+    dst[5] = src[5] * s;
+    dst[6] = src[6] * s;
+    dst[7] = src[7] * s;
+}
+
+/// Scale a 9-element vector: `dst = src * s`.
+///
+/// C++ equivalent: `ScaleVector9<T>` — reached transitively inside
+/// `solve_null_vector_8x9_destructive` for basis-vector normalization.
+#[inline(always)]
+pub fn scale_vector_9<T>(dst: &mut [T; 9], src: &[T; 9], s: T)
+where
+    T: Mul<Output = T> + Copy,
+{
+    dst[0] = src[0] * s;
+    dst[1] = src[1] * s;
+    dst[2] = src[2] * s;
+    dst[3] = src[3] * s;
+    dst[4] = src[4] * s;
+    dst[5] = src[5] * s;
+    dst[6] = src[6] * s;
+    dst[7] = src[7] * s;
+    dst[8] = src[8] * s;
+}
+
+/// Accumulate a scaled 9-element vector: `dst += src * s`.
+///
+/// C++ equivalent: `AccumulateScaledVector9<T>` — reached transitively inside
+/// `solve_null_vector_8x9_destructive` for the final null-vector recovery.
+#[inline(always)]
+pub fn accumulate_scaled_vector_9<T>(dst: &mut [T; 9], src: &[T; 9], s: T)
+where
+    T: Mul<Output = T> + AddAssign + Copy,
+{
+    dst[0] += src[0] * s;
+    dst[1] += src[1] * s;
+    dst[2] += src[2] * s;
+    dst[3] += src[3] * s;
+    dst[4] += src[4] * s;
+    dst[5] += src[5] * s;
+    dst[6] += src[6] * s;
+    dst[7] += src[7] * s;
+    dst[8] += src[8] * s;
+}
+
+/// Compute the linear combination `w = u*a + v*b` of two 4-element vectors.
+///
+/// C++ equivalent: `AddScaledVectors4<T>`.
+#[inline(always)]
+pub fn add_scaled_vectors_4<T>(w: &mut [T; 4], u: &[T; 4], v: &[T; 4], a: T, b: T)
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    w[0] = a * u[0] + b * v[0];
+    w[1] = a * u[1] + b * v[1];
+    w[2] = a * u[2] + b * v[2];
+    w[3] = a * u[3] + b * v[3];
+}
+
+/// Update an upper-triangular 2×2 outer product accumulator: `A += x * x^T`.
+///
+/// Only writes the 3 unique entries of the symmetric 2×2 matrix
+/// (`A[0]`, `A[1]`, `A[3]`); `A[2]` is left untouched (mirror of `A[1]`).
+///
+/// C++ equivalent: `UpdateOuterProduct2x2<T>` — defined in `linear_algebra.h:351`
+/// but **never called** anywhere in the upstream WebARKitLib FreakMatcher
+/// (verified at submodule rev 656436e36b). Ported for completeness.
+#[inline(always)]
+pub fn update_outer_product_2x2<T>(a: &mut [T; 4], x: &[T; 2])
+where
+    T: Mul<Output = T> + AddAssign + Copy,
+{
+    a[0] += x[0] * x[0];
+    a[1] += x[0] * x[1];
+    a[3] += x[1] * x[1];
+}
+
+/// Accumulate a Gauss-Newton normal-equation right-hand side: `b -= J * residual`.
+///
+/// C++ equivalent: `UpdateGaussNewtonOperations2x2<T>` — defined in
+/// `linear_algebra.h:361` but **never called** anywhere in the upstream
+/// WebARKitLib FreakMatcher (verified at submodule rev 656436e36b).
+/// Ported for completeness.
+#[inline(always)]
+pub fn update_gauss_newton_operations_2x2<T>(b: &mut [T; 2], j: &[T; 2], residual: T)
+where
+    T: Mul<Output = T> + SubAssign + Copy,
+{
+    b[0] -= j[0] * residual;
+    b[1] -= j[1] * residual;
+}
+
+// ---------- Cofactor / determinant helpers (private) ----------
+
+/// 4-arg cofactor of a 2×2 matrix `[[a, b], [c, d]]`: `a*d - b*c`.
+///
+/// C++ equivalent: `Cofactor2x2(a, b, c, d)` from `linear_algebra.h:72`.
+#[inline(always)]
+fn cofactor_2x2<T>(a: T, b: T, c: T, d: T) -> T
+where
+    T: Mul<Output = T> + Sub<Output = T> + Copy,
+{
+    a * d - b * c
+}
+
+/// 3-arg cofactor of a symmetric 2×2 matrix `[[a, b], [b, c]]`: `a*c - b*b`.
+///
+/// C++ equivalent: `Cofactor2x2(a, b, c)` overload from `linear_algebra.h:96`.
+#[inline(always)]
+fn cofactor_2x2_sym<T>(a: T, b: T, c: T) -> T
+where
+    T: Mul<Output = T> + Sub<Output = T> + Copy,
+{
+    a * c - b * b
+}
+
+/// Determinant of a 2×2 matrix laid out row-major as `[A00, A01, A10, A11]`.
+///
+/// C++ equivalent: `Determinant2x2<T>` from `linear_algebra.h:104`.
+#[inline(always)]
+fn determinant_2x2<T>(a: &[T; 4]) -> T
+where
+    T: Mul<Output = T> + Sub<Output = T> + Copy,
+{
+    cofactor_2x2(a[0], a[1], a[2], a[3])
+}
+
+/// Determinant of a symmetric 3×3 matrix laid out row-major.
+///
+/// `det(A) = -A[8]*A[1]^2 + 2*A[1]*A[2]*A[5] - A[4]*A[2]^2 - A[0]*A[5]^2 + A[0]*A[4]*A[8]`
+///
+/// Caller must ensure the input is symmetric (`A[1] == A[3]`, `A[2] == A[6]`,
+/// `A[5] == A[7]`); only the upper-triangular entries are read.
+///
+/// C++ equivalent: `DeterminantSymmetric3x3<T>` from `linear_algebra.h:122` —
+/// reached transitively via `matrix_inverse_symmetric_3x3` inside
+/// `solve_symmetric_linear_system_3x3` (live at
+/// `detectors/DoG_scale_invariant_detector.cpp:510`).
+#[inline(always)]
+pub fn determinant_symmetric_3x3(a: &[f32; 9]) -> f32 {
+    -a[8] * sqr(a[1]) + 2.0 * a[1] * a[2] * a[5] - a[4] * sqr(a[2]) - a[0] * sqr(a[5])
+        + a[0] * a[4] * a[8]
+}
+
+// ---------- Matrix-vector multiply helpers (private, from matrix.h) ----------
+
+/// Multiply a 2×2 matrix by a 2-vector: `y = A * x`.
+///
+/// C++ equivalent: `Multiply_2x2_2x1<T>` from `matrix.h:73`.
+#[inline(always)]
+fn multiply_2x2_2x1<T>(y: &mut [T; 2], a: &[T; 4], x: &[T; 2])
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    y[0] = a[0] * x[0] + a[1] * x[1];
+    y[1] = a[2] * x[0] + a[3] * x[1];
+}
+
+/// Multiply a 3×3 matrix by a 3-vector: `y = A * x`.
+///
+/// C++ equivalent: `Multiply_3x3_3x1<T>` from `matrix.h:82`.
+#[inline(always)]
+fn multiply_3x3_3x1<T>(y: &mut [T; 3], a: &[T; 9], x: &[T; 3])
+where
+    T: Mul<Output = T> + Add<Output = T> + Copy,
+{
+    y[0] = a[0] * x[0] + a[1] * x[1] + a[2] * x[2];
+    y[1] = a[3] * x[0] + a[4] * x[1] + a[5] * x[2];
+    y[2] = a[6] * x[0] + a[7] * x[1] + a[8] * x[2];
+}
+
+// ---------- Matrix inverse helpers (private) ----------
+
+/// Compute the inverse of a 2×2 matrix `A` into `B`. Returns `false` if
+/// `|det A| <= threshold`.
+///
+/// C++ equivalent: `MatrixInverse2x2<T>` from `linear_algebra.h:135`.
+#[inline(always)]
+fn matrix_inverse_2x2(b: &mut [f32; 4], a: &[f32; 4], threshold: f32) -> bool {
+    let det = determinant_2x2(a);
+    if det.abs() <= threshold {
+        return false;
+    }
+    let inv_det = 1.0 / det;
+    b[0] = a[3] * inv_det;
+    b[1] = -a[1] * inv_det;
+    b[2] = -a[2] * inv_det;
+    b[3] = a[0] * inv_det;
+    true
+}
+
+/// Compute the inverse of a symmetric 3×3 matrix `A` into `B`. Returns `false`
+/// if `|det A| <= threshold`. Caller must ensure `A` is symmetric.
+///
+/// C++ equivalent: `MatrixInverseSymmetric3x3<T>` from `linear_algebra.h:182`.
+#[inline(always)]
+fn matrix_inverse_symmetric_3x3(b: &mut [f32; 9], a: &[f32; 9], threshold: f32) -> bool {
+    let det = determinant_symmetric_3x3(a);
+    if det.abs() <= threshold {
+        return false;
+    }
+    let inv_det = 1.0 / det;
+
+    b[0] = cofactor_2x2_sym(a[4], a[5], a[8]) * inv_det;
+    b[1] = cofactor_2x2(a[2], a[1], a[8], a[7]) * inv_det;
+    b[2] = cofactor_2x2(a[1], a[2], a[4], a[5]) * inv_det;
+    b[4] = cofactor_2x2_sym(a[0], a[2], a[8]) * inv_det;
+    b[5] = cofactor_2x2(a[2], a[0], a[5], a[3]) * inv_det;
+    b[8] = cofactor_2x2_sym(a[0], a[1], a[4]) * inv_det;
+
+    // Symmetric mirror entries
+    b[3] = b[1];
+    b[6] = b[2];
+    b[7] = b[5];
+
+    true
+}
+
+// ---------- Public linear solvers ----------
+
+/// Solve a 2×2 linear system `A * x = b` for `x`. Returns `false` if `A` is
+/// singular (`|det A| <= f32::EPSILON`); the failure is logged via `arlog_e!`.
+///
+/// `A` is laid out row-major as `[A00, A01, A10, A11]`.
+///
+/// C++ equivalent: `SolveLinearSystem2x2<T>` from `linear_algebra.h:210` —
+/// **live** at `detectors/harris.cpp:633` (sub-pixel refinement of Harris
+/// corners). Callers in tight loops (e.g. RANSAC) may want to pre-filter
+/// degenerate systems to avoid log-flood.
+#[inline(always)]
+pub fn solve_linear_system_2x2(x: &mut [f32; 2], a: &[f32; 4], b: &[f32; 2]) -> bool {
+    let mut a_inv = [0.0_f32; 4];
+    if !matrix_inverse_2x2(&mut a_inv, a, f32::EPSILON) {
+        arlog_e!(
+            "solve_linear_system_2x2: matrix is singular (|det| <= {})",
+            f32::EPSILON
+        );
+        return false;
+    }
+    multiply_2x2_2x1(x, &a_inv, b);
+    true
+}
+
+/// Solve a symmetric 3×3 linear system `A * x = b` for `x`. Returns `false`
+/// if `A` is singular (`|det A| <= f32::EPSILON`); the failure is logged via
+/// `arlog_e!`.
+///
+/// Caller must ensure `A` is symmetric (only the upper-triangular entries are
+/// read).
+///
+/// C++ equivalent: `SolveSymmetricLinearSystem3x3<T>` from `linear_algebra.h:228`
+/// — **live** at `detectors/DoG_scale_invariant_detector.cpp:510` (sub-pixel
+/// refinement of DoG keypoints).
+#[inline(always)]
+pub fn solve_symmetric_linear_system_3x3(x: &mut [f32; 3], a: &[f32; 9], b: &[f32; 3]) -> bool {
+    let mut a_inv = [0.0_f32; 9];
+    if !matrix_inverse_symmetric_3x3(&mut a_inv, a, f32::EPSILON) {
+        arlog_e!(
+            "solve_symmetric_linear_system_3x3: matrix is singular (|det| <= {})",
+            f32::EPSILON
+        );
+        return false;
+    }
+    multiply_3x3_3x1(x, &a_inv, b);
+    true
+}
+
+// ============================================================================
+// linear_solvers.h Functions
+// ============================================================================
+//
+// Ported from `KPM/FreakMatcher/math/linear_solvers.h` (411 lines).
+//
+// Live entrypoint in upstream:
+//   - SolveNullVector8x9Destructive → homography_estimation/homography_solver.h:197
+//
+// `SolveTridiagonalDestructive` is defined in `linear_solvers.h:385` but
+// never called anywhere in upstream — ported for completeness.
+
+/// Project a 9-vector `a` onto the orthogonal complement of a normalized basis
+/// vector `e`, accumulating into `x`: `x -= dot(a, e) * e`.
+///
+/// C++ equivalent: `AccumulateProjection9<T>` from `linear_solvers.h:50` —
+/// reached transitively inside `solve_null_vector_8x9_destructive` during
+/// Gram-Schmidt orthogonalization.
+#[inline(always)]
+pub fn accumulate_projection_9<T>(x: &mut [T; 9], e: &[T; 9], a: &[T; 9])
+where
+    T: Mul<Output = T> + Add<Output = T> + SubAssign + Copy,
+{
+    let d = dot_product_9(a, e);
+    x[0] -= d * e[0];
+    x[1] -= d * e[1];
+    x[2] -= d * e[2];
+    x[3] -= d * e[3];
+    x[4] -= d * e[4];
+    x[5] -= d * e[5];
+    x[6] -= d * e[6];
+    x[7] -= d * e[7];
+    x[8] -= d * e[8];
+}
+
+/// One step of column-pivoted Gram-Schmidt on the 8×9 matrix used by the DLT
+/// homography solver.
+///
+/// Consolidates the 8 C++ functions `OrthogonalizePivot8x9Basis0..7` from
+/// `linear_solvers.h:69-260` into a single function parameterized by `step`
+/// (0..=7). Step 0 is special-cased: there is no previous basis to project
+/// against, and the function additionally seeds `q[9..72]` from `a[9..72]`.
+/// Steps 1..=7 follow a uniform pattern: project the remaining `8 - step`
+/// columns onto the previous basis vector, find the pivot column (largest
+/// squared-norm), swap it to position `step` (in both `q` and `a` so that the
+/// homography reconstruction still tracks the input correspondences), and
+/// normalize the pivot column in `q`.
+///
+/// Returns `false` if the pivot squared-norm is exactly zero (rank-deficient
+/// system); the caller logs at the public solver level.
+#[inline(always)]
+fn orthogonalize_pivot_8x9_basis(step: usize, q: &mut [f32; 72], a: &mut [f32; 72]) -> bool {
+    debug_assert!(step < 8);
+
+    // Step 0 — no previous basis; seed Q from A.
+    if step == 0 {
+        let mut ss = [0.0_f32; 8];
+        for (i, ss_i) in ss.iter_mut().enumerate() {
+            let base = i * 9;
+            let mut s = 0.0_f32;
+            for j in 0..9 {
+                s += a[base + j] * a[base + j];
+            }
+            *ss_i = s;
+        }
+        let pivot = (1..8).fold(0_usize, |best, i| if ss[i] > ss[best] { i } else { best });
+        if ss[pivot] == 0.0 {
+            return false;
+        }
+        if pivot > 0 {
+            for j in 0..9 {
+                a.swap(j, pivot * 9 + j);
+            }
+        }
+        let inv_norm = 1.0 / ss[pivot].sqrt();
+        for j in 0..9 {
+            q[j] = a[j] * inv_norm;
+        }
+        // Seed remaining columns of Q from A
+        q[9..72].copy_from_slice(&a[9..72]);
+        return true;
+    }
+
+    let base = step * 9;
+    let prev_base = base - 9;
+    let remaining = 8 - step;
+
+    // Project remaining columns onto the previous basis q[prev_base..base]:
+    //   for col in step..8: q[col*9..col*9+9] -= dot(a[col*9..], q[prev_base..]) * q[prev_base..]
+    for col in step..8 {
+        let col_base = col * 9;
+        let mut d = 0.0_f32;
+        for j in 0..9 {
+            d += a[col_base + j] * q[prev_base + j];
+        }
+        for j in 0..9 {
+            q[col_base + j] -= d * q[prev_base + j];
+        }
+    }
+
+    // Find pivot among remaining columns of Q (largest squared-norm).
+    let mut ss = [0.0_f32; 7];
+    for (i, ss_i) in ss.iter_mut().take(remaining).enumerate() {
+        let col_base = (step + i) * 9;
+        let mut s = 0.0_f32;
+        for j in 0..9 {
+            s += q[col_base + j] * q[col_base + j];
+        }
+        *ss_i = s;
+    }
+    let pivot = (1..remaining).fold(0_usize, |best, i| if ss[i] > ss[best] { i } else { best });
+    if ss[pivot] == 0.0 {
+        return false;
+    }
+
+    // Swap pivot to position `step` in both Q and A.
+    if pivot > 0 {
+        for j in 0..9 {
+            q.swap(base + j, base + pivot * 9 + j);
+            a.swap(base + j, base + pivot * 9 + j);
+        }
+    }
+
+    // Normalize the pivot column.
+    let inv_norm = 1.0 / ss[pivot].sqrt();
+    for j in 0..9 {
+        q[base + j] *= inv_norm;
+    }
+
+    true
+}
+
+/// Orthogonalize the `i`-th identity row against the basis `Q`, returning the
+/// pre-normalization residual norm. The orthogonalized residual is written
+/// into `x` (normalized to unit length); returns 0.0 if the residual collapses
+/// to zero.
+///
+/// C++ equivalent: `OrthogonalizeIdentity8x9<T>(x, Q, i)` from
+/// `linear_solvers.h:294` and the `OrthogonalizeIdentityRow0` special case
+/// from `linear_solvers.h:270` (which is just this function with `i = 0`).
+#[inline(always)]
+fn orthogonalize_identity_row(x: &mut [f32; 9], q: &[f32; 72], i: usize) -> f32 {
+    // x = e_i - sum_{k=0..8} Q[k*9 + i] * Q[k*9..k*9+9]
+    //   where e_i is the i-th identity column (1 at position i, 0 elsewhere).
+    for j in 0..9 {
+        x[j] = -q[i] * q[j];
+    }
+    x[i] += 1.0;
+
+    for k in 1..8 {
+        let q_base = k * 9;
+        let s = -q[q_base + i];
+        for j in 0..9 {
+            x[j] += s * q[q_base + j];
+        }
+    }
+
+    let ss = sum_squares_9(x);
+    if ss == 0.0 {
+        return 0.0;
+    }
+    let w = ss.sqrt();
+    let inv_w = 1.0 / w;
+    for elem in x.iter_mut() {
+        *elem *= inv_w;
+    }
+    w
+}
+
+/// Recover the null vector of the orthonormal basis `Q[72]` (8 basis vectors
+/// of length 9). For each of the 9 identity columns, project it onto the
+/// orthogonal complement of `Q`; the column with the largest residual norm is
+/// the null direction.
+///
+/// Returns `false` if all residuals collapse to zero (degenerate system).
+///
+/// C++ equivalent: `OrthogonalizeIdentity8x9<T>(x, Q)` dispatcher from
+/// `linear_solvers.h:317`.
+#[inline(always)]
+fn orthogonalize_identity_8x9(x: &mut [f32; 9], q: &[f32; 72]) -> bool {
+    let mut all_x = [[0.0_f32; 9]; 9];
+    let mut all_w = [0.0_f32; 9];
+
+    for i in 0..9 {
+        all_w[i] = orthogonalize_identity_row(&mut all_x[i], q, i);
+    }
+
+    let pivot = max_index_9(&all_w);
+    if all_w[pivot] == 0.0 {
+        return false;
+    }
+    *x = all_x[pivot];
+    true
+}
+
+/// Solve for the null vector `x` of an 8×9 matrix `A` such that `A * x = 0`.
+/// The matrix `A` is destroyed in the process (column-swaps during pivoting).
+/// Uses QR decomposition via column-pivoted modified Gram-Schmidt.
+///
+/// `A` is laid out row-major: 8 rows of 9 elements each, total 72 elements.
+///
+/// **Sign ambiguity**: a null vector is defined only up to sign. Different
+/// implementations (or even the same implementation on different inputs) may
+/// produce vectors that differ by a global sign flip. Callers comparing to a
+/// reference implementation should compare `|dot(x_a, x_b)|` to `1.0`, not
+/// element-wise.
+///
+/// Returns `false` if a column is rank-deficient (squared-norm exactly zero
+/// at any Gram-Schmidt step). Failure is logged via `arlog_e!`.
+///
+/// C++ equivalent: `SolveNullVector8x9Destructive<T>` from
+/// `linear_solvers.h:349` — **live** at
+/// `homography_estimation/homography_solver.h:197` as the algorithmic core
+/// of the DLT homography solver.
+#[inline(always)]
+pub fn solve_null_vector_8x9_destructive(x: &mut [f32; 9], a: &mut [f32; 72]) -> bool {
+    let mut q = [0.0_f32; 72];
+    for step in 0..8 {
+        if !orthogonalize_pivot_8x9_basis(step, &mut q, a) {
+            arlog_e!(
+                "solve_null_vector_8x9_destructive: rank-deficient at step {}",
+                step
+            );
+            return false;
+        }
+    }
+    if !orthogonalize_identity_8x9(x, &q) {
+        arlog_e!("solve_null_vector_8x9_destructive: identity-orthogonalization failed");
+        return false;
+    }
+    true
+}
+
+/// Solve a tridiagonal linear system `A * x = v` using the Thomas algorithm.
+///
+/// Layout:
+/// - `a` (length `n - 1`): below-diagonal entries `a[i] = A[i+1, i]`
+/// - `b` (length `n`): diagonal entries `b[i] = A[i, i]`
+/// - `c` (length `n`, mutated): above-diagonal entries `c[i] = A[i, i+1]`,
+///   over-allocated by one (last entry unused but writable for the algorithm)
+/// - `x` (length `n`): on entry, the right-hand side `v`; on exit, the solution
+///
+/// Returns `false` if `b[0] == 0` or any forward-elimination divisor is zero.
+/// Failure is logged via `arlog_e!`.
+///
+/// C++ equivalent: `SolveTridiagonalDestructive<T>` from `linear_solvers.h:385`
+/// — defined but **never called** anywhere in the upstream WebARKitLib
+/// FreakMatcher (verified at submodule rev 656436e36b). Ported for completeness.
+#[inline(always)]
+pub fn solve_tridiagonal_destructive(x: &mut [f32], a: &[f32], b: &[f32], c: &mut [f32]) -> bool {
+    let n = x.len();
+    debug_assert_eq!(
+        b.len(),
+        n,
+        "solve_tridiagonal_destructive: b.len() must equal x.len()"
+    );
+    debug_assert_eq!(
+        c.len(),
+        n,
+        "solve_tridiagonal_destructive: c.len() must equal x.len()"
+    );
+    debug_assert_eq!(
+        a.len(),
+        n - 1,
+        "solve_tridiagonal_destructive: a.len() must equal x.len() - 1"
+    );
+
+    if b[0] == 0.0 {
+        arlog_e!("solve_tridiagonal_destructive: b[0] is zero (no leading pivot)");
+        return false;
+    }
+    c[0] /= b[0];
+    x[0] /= b[0];
+
+    // Forward elimination
+    for i in 1..n {
+        let d = b[i] - a[i - 1] * c[i - 1];
+        if d == 0.0 {
+            arlog_e!(
+                "solve_tridiagonal_destructive: zero divisor at row {} (singular system)",
+                i
+            );
+            return false;
+        }
+        let m = 1.0 / d;
+        c[i] *= m;
+        x[i] = (x[i] - a[i - 1] * x[i - 1]) * m;
+    }
+
+    // Back substitution
+    for i in (0..n - 1).rev() {
+        x[i] -= c[i] * x[i + 1];
+    }
+
+    true
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -937,6 +1596,344 @@ mod tests {
             result,
             expected
         );
+    }
+
+    // ========================================================================
+    // linear_algebra.h Tests (M6-2)
+    // ========================================================================
+
+    #[test]
+    fn test_dot_product_4() {
+        let a = [1.0_f32, 2.0, 3.0, 4.0];
+        let b = [5.0_f32, 6.0, 7.0, 8.0];
+        // 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
+        assert_eq!(dot_product_4(&a, &b), 70.0);
+    }
+
+    #[test]
+    fn test_dot_product_9() {
+        let a = [1.0_f32; 9];
+        let b = [2.0_f32; 9];
+        assert_eq!(dot_product_9(&a, &b), 18.0); // 1*2 * 9 = 18
+
+        let a = [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        // sum_{i=1..9} i*i = 285
+        assert_eq!(dot_product_9(&a, &a), 285.0);
+    }
+
+    #[test]
+    fn test_sum_squares_9() {
+        let x = [3.0_f32, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(sum_squares_9(&x), 25.0);
+    }
+
+    #[test]
+    fn test_scale_vector_4() {
+        let mut dst = [0.0_f32; 4];
+        let src = [1.0_f32, 2.0, 3.0, 4.0];
+        scale_vector_4(&mut dst, &src, 2.0);
+        assert_eq!(dst, [2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_scale_vector_8() {
+        let mut dst = [0.0_f32; 8];
+        let src = [1.0_f32; 8];
+        scale_vector_8(&mut dst, &src, 3.0);
+        assert_eq!(dst, [3.0; 8]);
+    }
+
+    #[test]
+    fn test_scale_vector_9() {
+        let mut dst = [0.0_f32; 9];
+        let src = [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        scale_vector_9(&mut dst, &src, -1.0);
+        assert_eq!(dst, [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0]);
+    }
+
+    #[test]
+    fn test_accumulate_scaled_vector_9() {
+        let mut dst = [10.0_f32; 9];
+        let src = [1.0_f32; 9];
+        accumulate_scaled_vector_9(&mut dst, &src, 2.0);
+        assert_eq!(dst, [12.0; 9]);
+    }
+
+    #[test]
+    fn test_add_scaled_vectors_4() {
+        let mut w = [0.0_f32; 4];
+        let u = [1.0_f32, 2.0, 3.0, 4.0];
+        let v = [10.0_f32, 20.0, 30.0, 40.0];
+        // w = 2*u + 3*v
+        add_scaled_vectors_4(&mut w, &u, &v, 2.0, 3.0);
+        assert_eq!(w, [32.0, 64.0, 96.0, 128.0]);
+    }
+
+    #[test]
+    fn test_update_outer_product_2x2() {
+        let mut a = [0.0_f32, 0.0, 99.0, 0.0]; // a[2] is the mirror entry, untouched
+        let x = [3.0_f32, 4.0];
+        update_outer_product_2x2(&mut a, &x);
+        assert_eq!(a[0], 9.0); // x0*x0
+        assert_eq!(a[1], 12.0); // x0*x1
+        assert_eq!(a[2], 99.0); // untouched
+        assert_eq!(a[3], 16.0); // x1*x1
+    }
+
+    #[test]
+    fn test_update_gauss_newton_operations_2x2() {
+        let mut b = [10.0_f32, 20.0];
+        let j = [2.0_f32, 3.0];
+        // b -= J * residual; residual = 4
+        update_gauss_newton_operations_2x2(&mut b, &j, 4.0);
+        assert_eq!(b, [10.0 - 8.0, 20.0 - 12.0]);
+    }
+
+    #[test]
+    fn test_cofactor_2x2_4arg() {
+        // det([[1, 2], [3, 4]]) = 1*4 - 2*3 = -2
+        assert_eq!(cofactor_2x2(1.0_f32, 2.0, 3.0, 4.0), -2.0);
+    }
+
+    #[test]
+    fn test_cofactor_2x2_sym_3arg() {
+        // det of symmetric [[2, 1], [1, 3]] = 2*3 - 1*1 = 5
+        assert_eq!(cofactor_2x2_sym(2.0_f32, 1.0, 3.0), 5.0);
+    }
+
+    #[test]
+    fn test_determinant_2x2() {
+        assert_eq!(determinant_2x2(&[1.0_f32, 2.0, 3.0, 4.0]), -2.0);
+        assert_eq!(determinant_2x2(&[2.0_f32, 0.0, 0.0, 5.0]), 10.0);
+    }
+
+    #[test]
+    fn test_determinant_symmetric_3x3() {
+        // Identity → det = 1
+        let identity = [1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert!((determinant_symmetric_3x3(&identity) - 1.0).abs() < 1e-5);
+
+        // 2*I → det = 8
+        let two_identity = [2.0_f32, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0];
+        assert!((determinant_symmetric_3x3(&two_identity) - 8.0).abs() < 1e-5);
+
+        // [[2,1,1],[1,2,1],[1,1,2]] (symmetric) → det = 4
+        let sym = [2.0_f32, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0];
+        assert!(
+            (determinant_symmetric_3x3(&sym) - 4.0).abs() < 1e-5,
+            "got {}",
+            determinant_symmetric_3x3(&sym)
+        );
+    }
+
+    #[test]
+    fn test_multiply_2x2_2x1() {
+        let mut y = [0.0_f32; 2];
+        let a = [1.0_f32, 2.0, 3.0, 4.0]; // [[1,2],[3,4]]
+        let x = [5.0_f32, 6.0];
+        multiply_2x2_2x1(&mut y, &a, &x);
+        assert_eq!(y, [1.0 * 5.0 + 2.0 * 6.0, 3.0 * 5.0 + 4.0 * 6.0]); // [17, 39]
+    }
+
+    #[test]
+    fn test_multiply_3x3_3x1() {
+        let mut y = [0.0_f32; 3];
+        let a = [1.0_f32, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]; // identity
+        let x = [7.0_f32, 8.0, 9.0];
+        multiply_3x3_3x1(&mut y, &a, &x);
+        assert_eq!(y, x);
+    }
+
+    #[test]
+    fn test_matrix_inverse_2x2() {
+        let mut b = [0.0_f32; 4];
+        // A = [[1, 2], [3, 4]], det = -2; A^-1 = [[-2, 1], [1.5, -0.5]]
+        let a = [1.0_f32, 2.0, 3.0, 4.0];
+        assert!(matrix_inverse_2x2(&mut b, &a, f32::EPSILON));
+        assert!((b[0] - (-2.0)).abs() < 1e-5);
+        assert!((b[1] - 1.0).abs() < 1e-5);
+        assert!((b[2] - 1.5).abs() < 1e-5);
+        assert!((b[3] - (-0.5)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_matrix_inverse_2x2_singular() {
+        let mut b = [0.0_f32; 4];
+        // A = [[1, 2], [2, 4]], det = 0
+        let a = [1.0_f32, 2.0, 2.0, 4.0];
+        assert!(!matrix_inverse_2x2(&mut b, &a, f32::EPSILON));
+    }
+
+    #[test]
+    fn test_matrix_inverse_symmetric_3x3() {
+        let mut b = [0.0_f32; 9];
+        // A = 2*I → A^-1 = 0.5*I
+        let a = [2.0_f32, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0];
+        assert!(matrix_inverse_symmetric_3x3(&mut b, &a, f32::EPSILON));
+        let expected = [0.5_f32, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5];
+        for i in 0..9 {
+            assert!(
+                (b[i] - expected[i]).abs() < 1e-5,
+                "b[{}]={}, expected={}",
+                i,
+                b[i],
+                expected[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_matrix_inverse_symmetric_3x3_singular() {
+        let mut b = [0.0_f32; 9];
+        // Rank-2 symmetric matrix: outer product v*v^T with v=(1,2,3)
+        // det = 0
+        let a = [1.0_f32, 2.0, 3.0, 2.0, 4.0, 6.0, 3.0, 6.0, 9.0];
+        assert!(!matrix_inverse_symmetric_3x3(&mut b, &a, f32::EPSILON));
+    }
+
+    #[test]
+    fn test_solve_linear_system_2x2() {
+        // A = [[2, 1], [1, 3]], x_known = [1, 2], b = A*x = [4, 7]
+        let a = [2.0_f32, 1.0, 1.0, 3.0];
+        let b = [4.0_f32, 7.0];
+        let mut x = [0.0_f32; 2];
+        assert!(solve_linear_system_2x2(&mut x, &a, &b));
+        assert!((x[0] - 1.0).abs() < 1e-4, "x[0]={}", x[0]);
+        assert!((x[1] - 2.0).abs() < 1e-4, "x[1]={}", x[1]);
+    }
+
+    #[test]
+    fn test_solve_linear_system_2x2_singular() {
+        let a = [1.0_f32, 2.0, 2.0, 4.0]; // det = 0
+        let b = [1.0_f32, 2.0];
+        let mut x = [0.0_f32; 2];
+        assert!(!solve_linear_system_2x2(&mut x, &a, &b));
+    }
+
+    #[test]
+    fn test_solve_symmetric_linear_system_3x3() {
+        // A = symmetric [[2,1,1],[1,2,1],[1,1,2]], x_known = [1, 2, 3]
+        // b = A * x_known = [2+2+3, 1+4+3, 1+2+6] = [7, 8, 9]
+        let a = [2.0_f32, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0, 2.0];
+        let b = [7.0_f32, 8.0, 9.0];
+        let mut x = [0.0_f32; 3];
+        assert!(solve_symmetric_linear_system_3x3(&mut x, &a, &b));
+        assert!((x[0] - 1.0).abs() < 1e-4, "x[0]={}", x[0]);
+        assert!((x[1] - 2.0).abs() < 1e-4, "x[1]={}", x[1]);
+        assert!((x[2] - 3.0).abs() < 1e-4, "x[2]={}", x[2]);
+    }
+
+    #[test]
+    fn test_solve_symmetric_linear_system_3x3_singular() {
+        let a = [1.0_f32, 2.0, 3.0, 2.0, 4.0, 6.0, 3.0, 6.0, 9.0]; // rank-1, det=0
+        let b = [1.0_f32, 1.0, 1.0];
+        let mut x = [0.0_f32; 3];
+        assert!(!solve_symmetric_linear_system_3x3(&mut x, &a, &b));
+    }
+
+    // ========================================================================
+    // linear_solvers.h Tests (M6-2)
+    // ========================================================================
+
+    #[test]
+    fn test_accumulate_projection_9() {
+        // e is a unit vector along axis 0
+        let e = [1.0_f32, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let a = [1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let mut x = a; // start equal to a
+        accumulate_projection_9(&mut x, &e, &a);
+        // dot(a, e) = a[0] = 1; x[0] should become 0; others unchanged
+        assert!(x[0].abs() < 1e-6);
+        for i in 1..9 {
+            assert_eq!(x[i], a[i]);
+        }
+    }
+
+    /// Build the 8x9 DLT design matrix from 4 point correspondences.
+    /// Each correspondence (p, q) contributes 2 rows.
+    fn dlt_8x9(p: &[(f32, f32); 4], q: &[(f32, f32); 4]) -> [f32; 72] {
+        let mut a = [0.0_f32; 72];
+        for k in 0..4 {
+            let (u, v) = p[k];
+            let (up, vp) = q[k];
+            let row_u = [-u, -v, -1.0, 0.0, 0.0, 0.0, up * u, up * v, up];
+            let row_v = [0.0, 0.0, 0.0, -u, -v, -1.0, vp * u, vp * v, vp];
+            a[k * 18..k * 18 + 9].copy_from_slice(&row_u);
+            a[k * 18 + 9..k * 18 + 18].copy_from_slice(&row_v);
+        }
+        a
+    }
+
+    #[test]
+    fn test_solve_null_vector_8x9_destructive() {
+        // Known homography H = [1.5, 0.1, 0.0,  0.2, 1.3, 0.0,  0.0, 0.0, 1.0]
+        // Apply to 4 source points → 4 target points; build 8x9 design matrix;
+        // solve_null_vector should recover ±H.
+        let p = [(1.0_f32, 1.0), (2.0, 1.0), (1.0, 2.0), (3.0, 4.0)];
+        let q = [(1.6_f32, 1.5), (3.1, 1.7), (1.7, 2.8), (4.9, 5.8)];
+
+        let mut a = dlt_8x9(&p, &q);
+        let a_check = a; // keep a copy because solve destroys A
+
+        let mut x = [0.0_f32; 9];
+        assert!(solve_null_vector_8x9_destructive(&mut x, &mut a));
+
+        // |A * x| should be approximately zero, per row
+        for row in 0..8 {
+            let dot: f32 = (0..9).map(|j| a_check[row * 9 + j] * x[j]).sum();
+            assert!(
+                dot.abs() < 1e-4,
+                "row {} residual = {} exceeds tolerance",
+                row,
+                dot
+            );
+        }
+
+        // x should be unit length (normalized null vector)
+        let norm_sq: f32 = (0..9).map(|j| x[j] * x[j]).sum();
+        assert!(
+            (norm_sq - 1.0).abs() < 1e-4,
+            "null vector not unit length: |x|^2 = {}",
+            norm_sq
+        );
+    }
+
+    #[test]
+    fn test_solve_tridiagonal_destructive() {
+        // 5x5 tridiagonal: diagonal = 2, off-diagonal = 1
+        // x_known = [1, 2, 3, 4, 5]
+        // v = A * x_known computed by hand:
+        //   row 0: 2*1 + 1*2           = 4
+        //   row 1: 1*1 + 2*2 + 1*3     = 8
+        //   row 2: 1*2 + 2*3 + 1*4     = 12
+        //   row 3: 1*3 + 2*4 + 1*5     = 16
+        //   row 4: 1*4 + 2*5           = 14
+        let a = [1.0_f32, 1.0, 1.0, 1.0]; // below-diagonal (n-1 entries)
+        let b = [2.0_f32, 2.0, 2.0, 2.0, 2.0]; // diagonal
+        let mut c = [1.0_f32, 1.0, 1.0, 1.0, 0.0]; // above-diagonal (over-allocated)
+        let mut x = [4.0_f32, 8.0, 12.0, 16.0, 14.0];
+
+        assert!(solve_tridiagonal_destructive(&mut x, &a, &b, &mut c));
+        let expected = [1.0_f32, 2.0, 3.0, 4.0, 5.0];
+        for i in 0..5 {
+            assert!(
+                (x[i] - expected[i]).abs() < 1e-5,
+                "x[{}] = {}, expected {}",
+                i,
+                x[i],
+                expected[i]
+            );
+        }
+    }
+
+    #[test]
+    fn test_solve_tridiagonal_destructive_singular() {
+        // b[0] == 0 → no leading pivot
+        let a = [1.0_f32];
+        let b = [0.0_f32, 1.0];
+        let mut c = [1.0_f32, 0.0];
+        let mut x = [1.0_f32, 1.0];
+        assert!(!solve_tridiagonal_destructive(&mut x, &a, &b, &mut c));
     }
 }
 
