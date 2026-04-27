@@ -11,13 +11,13 @@
 
 ### Live in upstream production code
 
-| Function | Direct caller | Role |
-|----------|---------------|------|
-| `SolveNullVector8x9Destructive` | `homography_estimation/homography_solver.h:197` | DLT homography solver — takes the 8×9 design matrix from 4 point correspondences and recovers the homography as the null vector. Algorithmic core of M6-3. |
-| `SolveSymmetricLinearSystem3x3` | `detectors/DoG_scale_invariant_detector.cpp:510` | Sub-pixel keypoint refinement in the DoG scale-space detector — solves `Ax = b` with `A` the local Hessian. |
-| `SolveLinearSystem2x2` | `detectors/harris.cpp:633` | Sub-pixel refinement in the Harris corner detector. |
+| Function | Direct caller | Role | Reachable in OUR build? |
+|----------|---------------|------|------------------------|
+| `SolveNullVector8x9Destructive` | `homography_estimation/homography_solver.h:197` | DLT homography solver — takes the 8×9 design matrix from 4 point correspondences and recovers the homography as the null vector. Algorithmic core of M6-3. | ✅ Yes |
+| `SolveSymmetricLinearSystem3x3` | `detectors/DoG_scale_invariant_detector.cpp:510` | Sub-pixel keypoint refinement in the DoG scale-space detector — solves `Ax = b` with `A` the local Hessian. | ✅ Yes |
+| `SolveLinearSystem2x2` | `detectors/harris.cpp:633` | Sub-pixel refinement in the Harris corner detector. | ❌ **No** — `harris.cpp` is not in `crates/core/build.rs`'s compiled-sources list, and no compiled file includes `harris.h`. Effectively dead code in our build context. |
 
-These three are the **production entrypoints** for everything in M6-2. They will run on every frame of feature matching.
+So in the WebARKitLib-rs build context, **only 2 of the 3 "live" entrypoints are actually reachable** — `SolveNullVector8x9Destructive` and `SolveSymmetricLinearSystem3x3`. `SolveLinearSystem2x2` joins `SolveTridiagonalDestructive`, `UpdateOuterProduct2x2`, and `UpdateGaussNewtonOperations2x2` in the dead-code-but-still-ported category. It is still ported (with a doc comment noting this) and still gets a dual-mode FFI bridge — the bridge is harmless and validates the function works correctly should `harris.cpp` ever be added to the build.
 
 ### Dead code in upstream (defined but never called)
 
