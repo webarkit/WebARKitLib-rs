@@ -1182,7 +1182,6 @@ mod tests {
         assert!((m.cf - -42.0).abs() < 1e-9);
     }
 
-<<<<<<< fix/confidence-cutoff
     #[test]
     fn test_confidence_cutoff_template_clears_low_cf() {
         let mut markers = vec![ARMarkerInfo::default()];
@@ -1287,7 +1286,8 @@ mod tests {
         assert_eq!(
             markers[0].cutoff_phase,
             crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
-=======
+        )
+    }
     /// Verifies cutoff_phase is set to None on a successful template match.
     #[test]
     fn test_cutoff_phase_none_on_template_success() {
@@ -1344,7 +1344,6 @@ mod tests {
         assert_eq!(
             marker.cutoff_phase,
             ARMarkerInfoCutoffPhase::PatternExtraction
->>>>>>> dev
         );
     }
 }
