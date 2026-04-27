@@ -988,10 +988,16 @@ fn matrix_inverse_symmetric_3x3(b: &mut [f32; 9], a: &[f32; 9], threshold: f32) 
 ///
 /// `A` is laid out row-major as `[A00, A01, A10, A11]`.
 ///
-/// C++ equivalent: `SolveLinearSystem2x2<T>` from `linear_algebra.h:210` —
-/// **live** at `detectors/harris.cpp:633` (sub-pixel refinement of Harris
-/// corners). Callers in tight loops (e.g. RANSAC) may want to pre-filter
-/// degenerate systems to avoid log-flood.
+/// C++ equivalent: `SolveLinearSystem2x2<T>` from `linear_algebra.h:210`.
+/// The only upstream call site is `detectors/harris.cpp:633` (sub-pixel
+/// refinement of Harris corners), but **`harris.cpp` is not part of our
+/// compiled C++ subset** — `crates/core/build.rs` only compiles the DoG
+/// pipeline (`DoG_scale_invariant_detector.cpp`, `pyramid.cpp`,
+/// `gradients.cpp`, `orientation_assignment.cpp`, `freak.cpp`,
+/// `hough_similarity_voting.cpp`, plus the visual-database facade), and no
+/// compiled file includes `harris.h`. So this function is effectively dead
+/// code in the WebARKitLib-rs build context. Ported for completeness; same
+/// treatment as M6-1's `fastsqrt1`.
 #[inline(always)]
 pub fn solve_linear_system_2x2(x: &mut [f32; 2], a: &[f32; 4], b: &[f32; 2]) -> bool {
     let mut a_inv = [0.0_f32; 4];
