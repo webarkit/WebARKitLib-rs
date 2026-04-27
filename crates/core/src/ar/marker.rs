@@ -45,6 +45,7 @@ pub const AR_AREA_MIN: i32 = 70;
 pub const AR_SQUARE_FIT_THRESH: f64 = 0.05;
 pub const AR_CHAIN_MAX: usize = 10000;
 pub const AR_SQUARE_MAX: usize = 30;
+pub const AR_CONFIDENCE_CUTOFF_DEFAULT: f64 = 0.5;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ImageProcMode {
@@ -1011,6 +1012,58 @@ fn finalize_marker_id_cf_dir(marker: &mut ARMarkerInfo, patt_detect_mode: i32) {
     // Mixed modes: do nothing.
 }
 
+/// Cull low-confidence marker IDs after matching.
+///
+/// Mirrors `confidenceCutoff()` from `arDetectMarker.c`.
+pub fn confidence_cutoff(
+    marker_info: &mut [ARMarkerInfo],
+    marker_num: i32,
+    patt_detect_mode: i32,
+    cutoff: f64,
+) {
+    use crate::types::ARMarkerInfoCutoffPhase;
+
+    let n = marker_num as usize;
+
+    if patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_COLOR
+        || patt_detect_mode == crate::pattern::AR_TEMPLATE_MATCHING_MONO
+    {
+        for m in &mut marker_info[..n] {
+            if m.id >= 0 && m.cf < cutoff {
+                m.id = -1;
+                m.id_patt = -1;
+                m.cutoff_phase = ARMarkerInfoCutoffPhase::MatchConfidence;
+            }
+        }
+    } else if patt_detect_mode == crate::types::AR_MATRIX_CODE_DETECTION {
+        for m in &mut marker_info[..n] {
+            if m.id >= 0 && m.cf < cutoff {
+                m.id = -1;
+                m.id_matrix = -1;
+                m.cutoff_phase = ARMarkerInfoCutoffPhase::MatchConfidence;
+            }
+        }
+    } else {
+        // Mixed mode (AR_TEMPLATE_MATCHING_*_AND_MATRIX_CODE_DETECTION)
+        for m in &mut marker_info[..n] {
+            let mut cf_ok = false;
+            if m.id_patt >= 0 && m.cf_patt < cutoff {
+                m.id_patt = -1;
+            } else {
+                cf_ok = true;
+            }
+            if m.id_matrix >= 0 && m.cf_matrix < cutoff {
+                m.id_matrix = -1;
+            } else {
+                cf_ok = true;
+            }
+            if !cf_ok {
+                m.cutoff_phase = ARMarkerInfoCutoffPhase::MatchConfidence;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1129,6 +1182,112 @@ mod tests {
         assert!((m.cf - -42.0).abs() < 1e-9);
     }
 
+<<<<<<< fix/confidence-cutoff
+    #[test]
+    fn test_confidence_cutoff_template_clears_low_cf() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id = 10;
+        markers[0].id_patt = 10;
+        markers[0].cf = 0.49;
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id, -1);
+        assert_eq!(markers[0].id_patt, -1);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
+        );
+    }
+
+    #[test]
+    fn test_confidence_cutoff_matrix_clears_low_cf() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id = 25;
+        markers[0].id_matrix = 25;
+        markers[0].cf = 0.3;
+
+        confidence_cutoff(&mut markers, 1, crate::types::AR_MATRIX_CODE_DETECTION, 0.5);
+
+        assert_eq!(markers[0].id, -1);
+        assert_eq!(markers[0].id_matrix, -1);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
+        );
+    }
+
+    #[test]
+    fn test_confidence_cutoff_template_keeps_high_cf() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id = 12;
+        markers[0].id_patt = 12;
+        markers[0].cf = 0.95;
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id, 12);
+        assert_eq!(markers[0].id_patt, 12);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None
+        );
+    }
+
+    #[test]
+    fn test_confidence_cutoff_mixed_clears_independently() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id_patt = 2;
+        markers[0].cf_patt = 0.2;
+        markers[0].id_matrix = 8;
+        markers[0].cf_matrix = 0.9;
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id_patt, -1);
+        assert_eq!(markers[0].id_matrix, 8);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None
+        );
+    }
+
+    #[test]
+    fn test_confidence_cutoff_mixed_both_fail_sets_phase() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id_patt = 4;
+        markers[0].cf_patt = 0.3;
+        markers[0].id_matrix = 5;
+        markers[0].cf_matrix = 0.4;
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id_patt, -1);
+        assert_eq!(markers[0].id_matrix, -1);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
+=======
     /// Verifies cutoff_phase is set to None on a successful template match.
     #[test]
     fn test_cutoff_phase_none_on_template_success() {
@@ -1185,6 +1344,7 @@ mod tests {
         assert_eq!(
             marker.cutoff_phase,
             ARMarkerInfoCutoffPhase::PatternExtraction
+>>>>>>> dev
         );
     }
 }

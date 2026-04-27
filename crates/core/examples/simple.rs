@@ -39,7 +39,7 @@ use std::fs::File;
 use webarkitlib_rs::{
     arlog_e, arlog_i,
     image_proc::ARImageProcInfo,
-    marker::ar_detect_marker,
+    marker::{ar_detect_marker, confidence_cutoff, AR_CONFIDENCE_CUTOFF_DEFAULT},
     pattern::ar_patt_load,
     pose::{ar_3d_create_handle, ar_3d_delete_handle, ar_get_trans_mat_square},
     types::{
@@ -235,6 +235,13 @@ fn main() {
     // Run the marker detection pipeline
     match ar_detect_marker(&mut ar_handle, &frame) {
         Ok(_) => {
+            confidence_cutoff(
+                &mut *ar_handle.marker_info,
+                ar_handle.marker_num,
+                ar_handle.ar_pattern_detection_mode,
+                AR_CONFIDENCE_CUTOFF_DEFAULT,
+            );
+
             arlog_i!("Detection pipeline finished successfully.");
             arlog_i!("Detected {} potential markers.", ar_handle.marker_num);
 
