@@ -145,6 +145,50 @@ pub enum ARMarkerInfoCutoffPhase {
     HeuristicTroublesomeMatrixCodes,
 }
 
+/// Error variants returned by pattern and matrix matching functions.
+/// Maps 1:1 to [`ARMarkerInfoCutoffPhase`] — use `.into()` to convert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchError {
+    /// Generic match failure (C result code -1).
+    Generic,
+    /// Insufficient contrast (C result code -2).
+    Contrast,
+    /// Matrix barcode locator pattern not found (C result code -3).
+    BarcodeNotFound,
+    /// Matrix barcode ECC decoding failed (C result code -4).
+    BarcodeEdcFail,
+    /// Heuristic: troublesome matrix code pattern (C result code -5).
+    HeuristicTroublesomeMatrixCodes,
+    /// Pattern extraction from image failed (C result code -6).
+    PatternExtraction,
+}
+
+/// Success payload returned by pattern and matrix matching functions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MatchOk {
+    /// Matched marker ID (template: pattern index; matrix: decoded integer).
+    pub id: i32,
+    /// Orientation (0–3, 90° increments).
+    pub dir: i32,
+    /// Confidence value (0.0–1.0; 1.0 for matrix codes).
+    pub cf: f64,
+    /// Number of errors corrected by ECC (0 for codes without ECC, always 0 for template).
+    pub error_corrected: i32,
+}
+
+impl From<MatchError> for ARMarkerInfoCutoffPhase {
+    fn from(e: MatchError) -> Self {
+        match e {
+            MatchError::Generic => Self::MatchGeneric,
+            MatchError::Contrast => Self::MatchContrast,
+            MatchError::BarcodeNotFound => Self::MatchBarcodeNotFound,
+            MatchError::BarcodeEdcFail => Self::MatchBarcodeEdcFail,
+            MatchError::HeuristicTroublesomeMatrixCodes => Self::HeuristicTroublesomeMatrixCodes,
+            MatchError::PatternExtraction => Self::PatternExtraction,
+        }
+    }
+}
+
 /// Describes a detected trapezoidal area (a candidate for a marker match).
 ///
 /// This serves as the primary output of marker detection. It contains both raw properties
@@ -590,5 +634,53 @@ mod tests {
     fn test_ar3dstereohandle_default_initialization() {
         let handle = AR3DStereoHandle::default();
         assert_eq!(handle.icp_stereo_handle, std::ptr::null_mut());
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_generic() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::Generic),
+            ARMarkerInfoCutoffPhase::MatchGeneric
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_contrast() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::Contrast),
+            ARMarkerInfoCutoffPhase::MatchContrast
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_barcode_not_found() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::BarcodeNotFound),
+            ARMarkerInfoCutoffPhase::MatchBarcodeNotFound
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_barcode_edc_fail() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::BarcodeEdcFail),
+            ARMarkerInfoCutoffPhase::MatchBarcodeEdcFail
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_heuristic() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::HeuristicTroublesomeMatrixCodes),
+            ARMarkerInfoCutoffPhase::HeuristicTroublesomeMatrixCodes
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_pattern_extraction() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::PatternExtraction),
+            ARMarkerInfoCutoffPhase::PatternExtraction
+        );
     }
 }
