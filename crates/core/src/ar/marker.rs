@@ -66,8 +66,12 @@ pub enum ImageProcMode {
 ///    template matching (via `ar_patt_get_image` + `pattern_match`) **or**
 ///    matrix-code reading (via [`crate::matrix::ar_matrix_code_get_id`]),
 ///    depending on `ar_handle.ar_pattern_detection_mode`.
+/// 5. **Confidence cutoff** — [`confidence_cutoff`] removes markers with
+///    confidence below `AR_CONFIDENCE_CUTOFF_DEFAULT` (0.5).
 ///
 /// Results are written into `ar_handle.marker_info` (up to `AR_SQUARE_MAX` markers).
+///
+/// Mirrors the C `arDetectMarker()` entry point from `arDetectMarker.c:80-300`.
 ///
 /// # Example
 /// ```rust,no_run
@@ -117,6 +121,7 @@ pub fn ar_detect_marker(
     };
 
     let thresh = ar_handle.ar_labeling_thresh as u8;
+    // TODO: port AR_LABELING_THRESH_MODE_*_AUTO variants (bracketing, median, etc.) from C
     let label_mode = if ar_handle.ar_labeling_mode == 0 {
         crate::labeling::LabelingMode::BlackRegion
     } else {
@@ -184,12 +189,14 @@ pub fn ar_detect_marker(
     };
 
     let param_ltf = unsafe { &(*ar_handle.ar_param_lt).param_ltf };
+    // SAFETY: ar_param_lt is checked for null above; ARHandle invariants ensure it's valid
 
     let patt_handle_opt = if !ar_handle.patt_handle.is_null() {
         Some(unsafe { &*ar_handle.patt_handle })
     } else {
         None
     };
+    // SAFETY: patt_handle is checked for null above; ARHandle invariants ensure it's valid
 
     ar_get_marker_info(
         color_buff,
@@ -215,6 +222,15 @@ pub fn ar_detect_marker(
         );
     }
 
+    confidence_cutoff(
+        &mut *ar_handle.marker_info,
+        ar_handle.marker_num,
+        ar_handle.ar_pattern_detection_mode,
+        AR_CONFIDENCE_CUTOFF_DEFAULT,
+    );
+// TODO: port arDetectMarker.c:300+ tracking history merge (out of scope for this issue)
+
+    
     Ok(())
 }
 
@@ -1015,7 +1031,7 @@ fn finalize_marker_id_cf_dir(marker: &mut ARMarkerInfo, patt_detect_mode: i32) {
 /// Cull low-confidence marker IDs after matching.
 ///
 /// Mirrors `confidenceCutoff()` from `arDetectMarker.c`.
-pub fn confidence_cutoff(
+pub(crate) fn confidence_cutoff(
     marker_info: &mut [ARMarkerInfo],
     marker_num: i32,
     patt_detect_mode: i32,
@@ -1287,6 +1303,94 @@ mod tests {
             markers[0].cutoff_phase,
             crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
         )
+    }
+
+    /// Verifies zero markers detected (empty input) does not crash.
+    #[test]
+    fn test_confidence_cutoff_zero_markers_detected() {
+        let mut markers = vec![ARMarkerInfo::default(); 5];
+
+        // Call with marker_num=0 (no markers to process)
+        confidence_cutoff(
+            &mut markers,
+            0,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.5,
+        );
+
+        // All markers should remain unchanged
+        for m in &markers {
+            assert_eq!(m.id, -1); // default value
+        }
+    }
+
+    /// Verifies matrix mode with all markers above cutoff (no eviction).
+    #[test]
+    fn test_confidence_cutoff_matrix_keeps_high_cf() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id = 15;
+        markers[0].id_matrix = 15;
+        markers[0].cf = 0.88;
+
+        confidence_cutoff(&mut markers, 1, crate::types::AR_MATRIX_CODE_DETECTION, 0.5);
+
+        assert_eq!(markers[0].id, 15);
+        assert_eq!(markers[0].id_matrix, 15);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None
+        );
+    }
+
+    /// Verifies template mode with mixed pass/fail markers (some cleared, some kept).
+    #[test]
+    fn test_confidence_cutoff_template_mixed_pass_fail() {
+        let mut markers = vec![
+            ARMarkerInfo::default(),
+            ARMarkerInfo::default(),
+            ARMarkerInfo::default(),
+        ];
+        // Marker 0: low CF, should be cleared
+        markers[0].id = 3;
+        markers[0].id_patt = 3;
+        markers[0].cf = 0.2;
+        // Marker 1: high CF, should be kept
+        markers[1].id = 7;
+        markers[1].id_patt = 7;
+        markers[1].cf = 0.9;
+        // Marker 2: low CF, should be cleared
+        markers[2].id = 11;
+        markers[2].id_patt = 11;
+        markers[2].cf = 0.3;
+
+        confidence_cutoff(
+            &mut markers,
+            3,
+            crate::pattern::AR_TEMPLATE_MATCHING_MONO,
+            0.5,
+        );
+
+        // Marker 0: cleared
+        assert_eq!(markers[0].id, -1);
+        assert_eq!(markers[0].id_patt, -1);
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
+        );
+        // Marker 1: kept
+        assert_eq!(markers[1].id, 7);
+        assert_eq!(markers[1].id_patt, 7);
+        assert_eq!(
+            markers[1].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None
+        );
+        // Marker 2: cleared
+        assert_eq!(markers[2].id, -1);
+        assert_eq!(markers[2].id_patt, -1);
+        assert_eq!(
+            markers[2].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::MatchConfidence
+        );
     }
     /// Verifies cutoff_phase is set to None on a successful template match.
     #[test]
