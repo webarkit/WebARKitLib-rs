@@ -228,9 +228,8 @@ pub fn ar_detect_marker(
         ar_handle.ar_pattern_detection_mode,
         AR_CONFIDENCE_CUTOFF_DEFAULT,
     );
-// TODO: port arDetectMarker.c:300+ tracking history merge (out of scope for this issue)
+    // TODO: port arDetectMarker.c:300+ tracking history merge (out of scope for this issue)
 
-    
     Ok(())
 }
 
