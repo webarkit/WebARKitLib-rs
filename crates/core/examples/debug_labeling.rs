@@ -7,13 +7,13 @@
 
 use image::{ImageReader, Rgb, RgbImage};
 use webarkitlib_rs::{
+    arlog_i,
     labeling::{ar_labeling, ImageProcMode, LabelingMode},
     types::ARLabelInfo,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    std::env::set_var("RUST_LOG", "trace");
-    env_logger::init();
+    webarkitlib_rs::arlog::ar_log_init_default();
 
     let image_path = "crates/core/examples/Data/gem_05_3x3.png";
     let image_path_buf = std::path::PathBuf::from(image_path);
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         image_path_buf
     };
 
-    println!("Loading image {}...", final_image_path.display());
+    arlog_i!("Loading image {}...", final_image_path.display());
     let full_img = ImageReader::open(&final_image_path)
         .expect(&format!("Failed to open {}", final_image_path.display()))
         .decode()
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .expect("Labeling failed");
 
-    println!("Found {} labels.", label_info.label_num);
+    arlog_i!("Found {} labels.", label_info.label_num);
 
     // Save as colorized image
     let mut out_img = RgbImage::new(width, height);
@@ -82,14 +82,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     out_img.save("crates/core/examples/Data/debug_labels.png")?;
-    println!("Saved debug_labels.png");
+    arlog_i!("Saved debug_labels.png");
 
     // Print stats for largest components
     let mut labels: Vec<usize> = (0..label_info.label_num as usize).collect();
     labels.sort_by_key(|&idx| std::cmp::Reverse(label_info.area[idx]));
 
     for &idx in labels.iter().take(10) {
-        println!(
+        arlog_i!(
             "Label #{} : Area={}, Clip={:?}",
             idx + 1,
             label_info.area[idx],

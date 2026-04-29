@@ -46,13 +46,16 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::path::PathBuf;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
+use webarkitlib_rs::arlog_e;
 
 fn bench_ar2_gen_feature_map(c: &mut Criterion) {
+    webarkitlib_rs::arlog::ar_log_init_default();
+
     // Locate the pinball fixture relative to the crate root.
     let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     path.push("examples/Data/pinball.jpg");
     if !path.exists() {
-        eprintln!("Skipping bench: missing {}", path.display());
+        arlog_e!("Skipping bench: missing {}", path.display());
         return;
     }
 
