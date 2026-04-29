@@ -986,6 +986,7 @@ pub fn ar_get_marker_info(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{ARMarkerInfo, ARMarkerInfoCutoffPhase};
 
     #[test]
     fn test_ar_detect_marker2_empty() {
@@ -1008,4 +1009,89 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(marker2_num, 0);
     }
+
+   /// AC: ar_detect_marker returns Err when buff_luma is missing.
+    #[test]
+    fn test_ar_detect_marker_missing_luma_returns_err() {
+        let mut handle = crate::types::ARHandle::default();
+        let frame = crate::types::AR2VideoBufferT {
+            buff: Some(vec![0u8; 10]),
+            buff_luma: None,
+            ..Default::default()
+        };
+
+        let result = ar_detect_marker(&mut handle, &frame);
+        assert!(result.is_err());
+    }
+
+    /// AC: ar_detect_marker returns Err when buff is missing.
+    #[test]
+    fn test_ar_detect_marker_missing_buff_returns_err() {
+        let mut handle = crate::types::ARHandle::default();
+        let frame = crate::types::AR2VideoBufferT {
+            buff: None,
+            buff_luma: Some(vec![0u8; 10]),
+            ..Default::default()
+        };
+
+        let result = ar_detect_marker(&mut handle, &frame);
+        assert!(result.is_err());
+    }
+
+    /// AC: ar_detect_marker returns Err when ar_param_lt is null.
+    #[test]
+    fn test_ar_detect_marker_null_param_lt_returns_err() {
+        let mut handle = crate::types::ARHandle {
+            xsize: 4,
+            ysize: 4,
+            ar_param_lt: std::ptr::null_mut(),
+            ..Default::default()
+        };
+        let pixel_count = (handle.xsize * handle.ysize) as usize;
+        let frame = crate::types::AR2VideoBufferT {
+            buff: Some(vec![0u8; pixel_count * 3]),
+            buff_luma: Some(vec![0u8; pixel_count]),
+            ..Default::default()
+        };
+
+        let result = ar_detect_marker(&mut handle, &frame);
+        assert!(result.is_err());
+    }
+
+    /// AC: Zero markers — blank frame produces marker_num == 0.
+    #[test]
+    fn test_ar_detect_marker_blank_frame_zero_markers() {
+        use crate::types::{ARParam, ARParamLT};
+
+        let param = ARParam {
+            xsize: 4,
+            ysize: 4,
+            ..Default::default()
+        };
+        let param_lt = Box::new(ARParamLT::new_basic(param.clone()));
+        let param_lt_ptr = Box::into_raw(param_lt);
+
+        let mut handle = crate::types::ARHandle {
+            xsize: 4,
+            ysize: 4,
+            ar_param_lt: param_lt_ptr,
+            ..Default::default()
+        };
+
+        let pixel_count = 16usize;
+        let frame = crate::types::AR2VideoBufferT {
+            buff: Some(vec![128u8; pixel_count * 3]),
+            buff_luma: Some(vec![128u8; pixel_count]),
+            ..Default::default()
+        };
+
+        let result = ar_detect_marker(&mut handle, &frame);
+
+        // Cleanup
+        unsafe { drop(Box::from_raw(param_lt_ptr)); }
+
+        assert!(result.is_ok());
+        assert_eq!(handle.marker_num, 0, "blank frame should produce zero markers");
+    }
 }
+
