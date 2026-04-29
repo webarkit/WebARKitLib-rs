@@ -40,4 +40,5 @@
 //! FreakMatcher feature detector. Functions are ported from the C++ WebARKitLib
 //! implementation and optimized for performance.
 
+pub mod homography;
 pub mod math;
