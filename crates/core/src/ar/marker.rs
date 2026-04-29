@@ -1456,7 +1456,7 @@ mod tests {
     fn test_confidence_cutoff_mono_matrix_template_passes_matrix_fails() {
         let mut markers = vec![ARMarkerInfo::default()];
         markers[0].id_patt = 3;
-        markers[0].cf_patt = 0.8;   // passes
+        markers[0].cf_patt = 0.8; // passes
         markers[0].id_matrix = 9;
         markers[0].cf_matrix = 0.2; // fails
 
@@ -1467,7 +1467,7 @@ mod tests {
             0.5,
         );
 
-        assert_eq!(markers[0].id_patt, 3,    "template should survive");
+        assert_eq!(markers[0].id_patt, 3, "template should survive");
         assert_eq!(markers[0].id_matrix, -1, "matrix should be evicted");
         assert_eq!(
             markers[0].cutoff_phase,
@@ -1482,7 +1482,7 @@ mod tests {
     fn test_confidence_cutoff_mono_matrix_matrix_passes_template_fails() {
         let mut markers = vec![ARMarkerInfo::default()];
         markers[0].id_patt = 3;
-        markers[0].cf_patt = 0.1;   // fails
+        markers[0].cf_patt = 0.1; // fails
         markers[0].id_matrix = 9;
         markers[0].cf_matrix = 0.9; // passes
 
@@ -1494,7 +1494,7 @@ mod tests {
         );
 
         assert_eq!(markers[0].id_patt, -1, "template should be evicted");
-        assert_eq!(markers[0].id_matrix, 9,  "matrix should survive");
+        assert_eq!(markers[0].id_matrix, 9, "matrix should survive");
         assert_eq!(
             markers[0].cutoff_phase,
             crate::types::ARMarkerInfoCutoffPhase::None,
@@ -1522,7 +1522,7 @@ mod tests {
         );
 
         assert_eq!(markers[0].id, -1, "cf=0.75 should fail threshold=0.8");
-        assert_eq!(markers[1].id, 2,  "cf=0.85 should pass threshold=0.8");
+        assert_eq!(markers[1].id, 2, "cf=0.85 should pass threshold=0.8");
     }
 
     /// Verifies cf == cutoff exactly is KEPT (implementation uses strict <).
@@ -1540,7 +1540,10 @@ mod tests {
             0.5,
         );
 
-        assert_eq!(markers[0].id, 5, "cf exactly at cutoff should be kept (strict <)");
+        assert_eq!(
+            markers[0].id, 5,
+            "cf exactly at cutoff should be kept (strict <)"
+        );
         assert_eq!(
             markers[0].cutoff_phase,
             crate::types::ARMarkerInfoCutoffPhase::None
@@ -1567,18 +1570,27 @@ mod tests {
             crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
         );
 
-        assert_eq!(m.id, -42,  "combined mode should not overwrite id");
+        assert_eq!(m.id, -42, "combined mode should not overwrite id");
         assert_eq!(m.dir, -42, "combined mode should not overwrite dir");
-        assert!((m.cf - -42.0).abs() < 1e-9, "combined mode should not overwrite cf");
+        assert!(
+            (m.cf - -42.0).abs() < 1e-9,
+            "combined mode should not overwrite cf"
+        );
     }
 
     /// Verifies markers beyond marker_num are not touched.
     #[test]
     fn test_confidence_cutoff_respects_marker_num_boundary() {
         let mut markers = vec![ARMarkerInfo::default(); 3];
-        markers[0].id = 1; markers[0].id_patt = 1; markers[0].cf = 0.1; // fails
-        markers[1].id = 2; markers[1].id_patt = 2; markers[1].cf = 0.9; // passes
-        markers[2].id = 3; markers[2].id_patt = 3; markers[2].cf = 0.1; // outside range
+        markers[0].id = 1;
+        markers[0].id_patt = 1;
+        markers[0].cf = 0.1; // fails
+        markers[1].id = 2;
+        markers[1].id_patt = 2;
+        markers[1].cf = 0.9; // passes
+        markers[2].id = 3;
+        markers[2].id_patt = 3;
+        markers[2].cf = 0.1; // outside range
 
         confidence_cutoff(
             &mut markers,
@@ -1588,15 +1600,23 @@ mod tests {
         );
 
         assert_eq!(markers[0].id, -1, "marker 0 should be evicted");
-        assert_eq!(markers[1].id, 2,  "marker 1 should be kept");
-        assert_eq!(markers[2].id, 3,  "marker 2 is outside marker_num and must not be touched");
+        assert_eq!(markers[1].id, 2, "marker 1 should be kept");
+        assert_eq!(
+            markers[2].id, 3,
+            "marker 2 is outside marker_num and must not be touched"
+        );
     }
 
     /// Verifies MatchOk carries correct fields for a successful template match.
     #[test]
     fn test_match_ok_fields() {
         use crate::types::MatchOk;
-        let ok = MatchOk { id: 5, dir: 3, cf: 0.91, error_corrected: 0 };
+        let ok = MatchOk {
+            id: 5,
+            dir: 3,
+            cf: 0.91,
+            error_corrected: 0,
+        };
         assert_eq!(ok.id, 5);
         assert_eq!(ok.dir, 3);
         assert!((ok.cf - 0.91).abs() < 1e-9);
@@ -1622,9 +1642,6 @@ mod tests {
         use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
         let mut marker = ARMarkerInfo::default();
         marker.cutoff_phase = MatchError::Generic.into();
-        assert_eq!(
-            marker.cutoff_phase,
-            ARMarkerInfoCutoffPhase::MatchGeneric
-        );
+        assert_eq!(marker.cutoff_phase, ARMarkerInfoCutoffPhase::MatchGeneric);
     }
 }
