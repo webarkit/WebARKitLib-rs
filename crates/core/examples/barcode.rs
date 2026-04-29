@@ -1,6 +1,7 @@
 use clap::Parser;
 use image::ImageReader;
 use std::fs::File;
+use webarkitlib_rs::arlog_i;
 use webarkitlib_rs::marker::ar_detect_marker;
 use webarkitlib_rs::types::{
     AR2VideoBufferT, AR2VideoTimestampT, ARHandle, ARMatrixCodeType, ARParam, ARParamLT,
@@ -55,14 +56,13 @@ fn resolve_path<'a>(candidates: &[&'a str]) -> &'a str {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Initialize Logging
-    std::env::set_var("RUST_LOG", "trace");
-    env_logger::init();
+    webarkitlib_rs::arlog::ar_log_init_default();
 
     let args = Args::parse();
 
     let code_type = parse_matrix_code_type(&args.matrix_code_type)?;
-    println!("WebARKitLib-rs v{}", version::get_version());
-    println!(
+    arlog_i!("WebARKitLib-rs v{}", version::get_version());
+    arlog_i!(
         "WebARKitLib-rs Barcode Detection Example (matrix_code_type={:?})",
         code_type
     );
@@ -75,9 +75,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let param_file = File::open(camera_para_path)
         .map_err(|e| format!("Failed to open camera parameters at {camera_para_path}: {e}"))?;
     let mut param = ARParam::load(param_file).expect("Failed to read camera parameters");
-    println!(
+    arlog_i!(
         "Loaded camera parameters from {}: xsize={}, ysize={}",
-        camera_para_path, param.xsize, param.ysize
+        camera_para_path,
+        param.xsize,
+        param.ysize
     );
 
     // 3. Resolve image path
@@ -89,14 +91,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let image_path = image_path_str.as_str();
 
-    println!("Loading image {}...", image_path);
+    arlog_i!("Loading image {}...", image_path);
     let full_img = ImageReader::open(image_path)
         .map_err(|e| format!("Failed to open image at {image_path}: {e}"))?
         .decode()
         .map_err(|e| format!("Failed to decode image at {image_path}: {e}"))?;
     let width = full_img.width() as i32;
     let height = full_img.height() as i32;
-    println!("Image dimensions: {}x{}", width, height);
+    arlog_i!("Image dimensions: {}x{}", width, height);
 
     // Derive output directory
     let data_dir = std::path::Path::new(image_path)
@@ -126,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for thresh in thresholds {
-        println!("\n--- Testing BlackRegion, Threshold: {} ---", thresh);
+        arlog_i!("--- Testing BlackRegion, Threshold: {} ---", thresh);
 
         let mut ar_handle = ARHandle::default();
         ar_handle.xsize = width;
@@ -165,18 +167,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         if let Ok(_) = ar_detect_marker(&mut ar_handle, &frame) {
-            println!("Found {} square candidates.", ar_handle.marker2_num);
-            println!("Found {} valid barcode markers.", ar_handle.marker_num);
+            arlog_i!("Found {} square candidates.", ar_handle.marker2_num);
+            arlog_i!("Found {} valid barcode markers.", ar_handle.marker_num);
             let mut found_valid = false;
             for i in 0..ar_handle.marker_num as usize {
                 let m = &ar_handle.marker_info[i];
-                println!("  >> MATCH: ID={}, CF={:.4}", m.id_matrix, m.cf_matrix);
+                arlog_i!("  >> MATCH: ID={}, CF={:.4}", m.id_matrix, m.cf_matrix);
                 if m.id_matrix >= 0 {
                     found_valid = true;
                 }
             }
             if found_valid {
-                println!("Valid matrix code found! Stopping loop.");
+                arlog_i!("Valid matrix code found! Stopping loop.");
                 break;
             }
         }
