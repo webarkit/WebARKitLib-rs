@@ -41,8 +41,12 @@
 #include <math/math_utils.h>
 #include <math/linear_algebra.h>
 #include <math/linear_solvers.h>
+#include <homography_estimation/robust_homography.h>
+#include <Eigen/Core>
+#include <unsupported/Eigen/MatrixFunctions>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 struct KpmOpaqueHandle {
@@ -310,6 +314,69 @@ int webarkit_cpp_solve_symmetric_linear_system_3x3(float x[3], const float a[9],
 
 int webarkit_cpp_solve_null_vector_8x9_destructive(float x[9], float a[72]) {
     return vision::SolveNullVector8x9Destructive<float>(x, a) ? 1 : 0;
+}
+
+/* ---- Dual-mode validation: homography bridges (Milestone 6, #65) ---- */
+
+/* Compute exp(M) for a 3x3 matrix using Eigen's MatrixExp.
+ * This is the ground-truth oracle for `mat3_exp_pade` (the Rust Padé(3,3)
+ * replacement that eliminates Eigen from the pure-Rust path).
+ * Input/output: row-major 9-element float arrays. */
+void webarkit_cpp_mat3_exp_pade_via_eigen(float out[9], const float in[9]) {
+    Eigen::Matrix<float, 3, 3> m;
+    // Eigen stores column-major by default; copy element-by-element so
+    // that `m(row, col)` matches the row-major `in[row*3 + col]` layout.
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            m(row, col) = in[row * 3 + col];
+        }
+    }
+    Eigen::Matrix<float, 3, 3> e = m.exp();
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            out[row * 3 + col] = e(row, col);
+        }
+    }
+}
+
+/* Run the RANSAC step of robust homography estimation (no IRLS polish).
+ * Allocates the std::vector scratch buffers internally. */
+int webarkit_cpp_preemptive_robust_homography(float h[9],
+                                              const float* p,
+                                              const float* q,
+                                              int num_points,
+                                              float scale,
+                                              int num_hypotheses,
+                                              int max_trials,
+                                              int chunk_size) {
+    if (!h || !p || !q || num_points < 4 || num_hypotheses <= 0) {
+        return 0;
+    }
+    std::vector<float> hyp(static_cast<size_t>(9) * static_cast<size_t>(num_hypotheses));
+    std::vector<int> tmp_i(static_cast<size_t>(num_points));
+    std::vector<std::pair<float, int>> hyp_costs(static_cast<size_t>(num_hypotheses));
+
+    bool ok = vision::PreemptiveRobustHomography<float>(
+        h, p, q, num_points, /*test_points=*/nullptr, /*num_test_points=*/0,
+        hyp, tmp_i, hyp_costs,
+        scale, num_hypotheses, max_trials, chunk_size);
+    return ok ? 1 : 0;
+}
+
+/* Run the full RobustHomography<float>::find pipeline (RANSAC + IRLS polish). */
+int webarkit_cpp_robust_homography_find(float h[9],
+                                        const float* p,
+                                        const float* q,
+                                        int num_points,
+                                        float scale,
+                                        int num_hypotheses,
+                                        int max_trials,
+                                        int chunk_size) {
+    if (!h || !p || !q || num_points < 4 || num_hypotheses <= 0) {
+        return 0;
+    }
+    vision::RobustHomography<float> estimator(scale, num_hypotheses, max_trials, chunk_size);
+    return estimator.find(h, p, q, num_points) ? 1 : 0;
 }
 
 } // extern "C"
