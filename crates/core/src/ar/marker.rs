@@ -1449,4 +1449,182 @@ mod tests {
             ARMarkerInfoCutoffPhase::PatternExtraction
         );
     }
+
+    /// Verifies confidence_cutoff with mono+matrix combined mode,
+    /// where template passes but matrix fails.
+    #[test]
+    fn test_confidence_cutoff_mono_matrix_template_passes_matrix_fails() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id_patt = 3;
+        markers[0].cf_patt = 0.8;   // passes
+        markers[0].id_matrix = 9;
+        markers[0].cf_matrix = 0.2; // fails
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id_patt, 3,    "template should survive");
+        assert_eq!(markers[0].id_matrix, -1, "matrix should be evicted");
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None,
+            "phase should be None when at least one match survives"
+        );
+    }
+
+    /// Verifies confidence_cutoff with mono+matrix combined mode,
+    /// where matrix passes but template fails.
+    #[test]
+    fn test_confidence_cutoff_mono_matrix_matrix_passes_template_fails() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id_patt = 3;
+        markers[0].cf_patt = 0.1;   // fails
+        markers[0].id_matrix = 9;
+        markers[0].cf_matrix = 0.9; // passes
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id_patt, -1, "template should be evicted");
+        assert_eq!(markers[0].id_matrix, 9,  "matrix should survive");
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None,
+            "phase should be None when at least one match survives"
+        );
+    }
+
+    /// Verifies confidence_cutoff with a custom (non-0.5) threshold.
+    #[test]
+    fn test_confidence_cutoff_custom_threshold() {
+        let mut markers = vec![ARMarkerInfo::default(); 2];
+        markers[0].id = 1;
+        markers[0].id_patt = 1;
+        markers[0].cf = 0.75; // passes 0.7 but fails 0.8
+
+        markers[1].id = 2;
+        markers[1].id_patt = 2;
+        markers[1].cf = 0.85; // passes both
+
+        confidence_cutoff(
+            &mut markers,
+            2,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.8,
+        );
+
+        assert_eq!(markers[0].id, -1, "cf=0.75 should fail threshold=0.8");
+        assert_eq!(markers[1].id, 2,  "cf=0.85 should pass threshold=0.8");
+    }
+
+    /// Verifies cf == cutoff exactly is KEPT (implementation uses strict <).
+    #[test]
+    fn test_confidence_cutoff_exactly_at_boundary() {
+        let mut markers = vec![ARMarkerInfo::default()];
+        markers[0].id = 5;
+        markers[0].id_patt = 5;
+        markers[0].cf = 0.5; // 0.5 < 0.5 is false, so survives
+
+        confidence_cutoff(
+            &mut markers,
+            1,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id, 5, "cf exactly at cutoff should be kept (strict <)");
+        assert_eq!(
+            markers[0].cutoff_phase,
+            crate::types::ARMarkerInfoCutoffPhase::None
+        );
+    }
+
+    /// Verifies finalize_marker_id_cf_dir for mono+matrix combined mode
+    /// leaves finals untouched.
+    #[test]
+    fn test_finalize_marker_id_cf_dir_mono_matrix_leaves_finals_alone() {
+        let mut m = ARMarkerInfo::default();
+        m.id = -42;
+        m.dir = -42;
+        m.cf = -42.0;
+        m.id_patt = 1;
+        m.dir_patt = 1;
+        m.cf_patt = 0.6;
+        m.id_matrix = 2;
+        m.dir_matrix = 2;
+        m.cf_matrix = 0.7;
+
+        finalize_marker_id_cf_dir(
+            &mut m,
+            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
+        );
+
+        assert_eq!(m.id, -42,  "combined mode should not overwrite id");
+        assert_eq!(m.dir, -42, "combined mode should not overwrite dir");
+        assert!((m.cf - -42.0).abs() < 1e-9, "combined mode should not overwrite cf");
+    }
+
+    /// Verifies markers beyond marker_num are not touched.
+    #[test]
+    fn test_confidence_cutoff_respects_marker_num_boundary() {
+        let mut markers = vec![ARMarkerInfo::default(); 3];
+        markers[0].id = 1; markers[0].id_patt = 1; markers[0].cf = 0.1; // fails
+        markers[1].id = 2; markers[1].id_patt = 2; markers[1].cf = 0.9; // passes
+        markers[2].id = 3; markers[2].id_patt = 3; markers[2].cf = 0.1; // outside range
+
+        confidence_cutoff(
+            &mut markers,
+            2,
+            crate::pattern::AR_TEMPLATE_MATCHING_COLOR,
+            0.5,
+        );
+
+        assert_eq!(markers[0].id, -1, "marker 0 should be evicted");
+        assert_eq!(markers[1].id, 2,  "marker 1 should be kept");
+        assert_eq!(markers[2].id, 3,  "marker 2 is outside marker_num and must not be touched");
+    }
+
+    /// Verifies MatchOk carries correct fields for a successful template match.
+    #[test]
+    fn test_match_ok_fields() {
+        use crate::types::MatchOk;
+        let ok = MatchOk { id: 5, dir: 3, cf: 0.91, error_corrected: 0 };
+        assert_eq!(ok.id, 5);
+        assert_eq!(ok.dir, 3);
+        assert!((ok.cf - 0.91).abs() < 1e-9);
+        assert_eq!(ok.error_corrected, 0);
+    }
+
+    /// Verifies cutoff_phase is set to MatchBarcodeEdcFail when matrix decoding
+    /// returns MatchError::BarcodeEdcFail.
+    #[test]
+    fn test_cutoff_phase_set_on_barcode_edc_fail() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
+        let mut marker = ARMarkerInfo::default();
+        marker.cutoff_phase = MatchError::BarcodeEdcFail.into();
+        assert_eq!(
+            marker.cutoff_phase,
+            ARMarkerInfoCutoffPhase::MatchBarcodeEdcFail
+        );
+    }
+
+    /// Verifies cutoff_phase is set to MatchGeneric for a generic match failure.
+    #[test]
+    fn test_cutoff_phase_set_on_match_generic() {
+        use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
+        let mut marker = ARMarkerInfo::default();
+        marker.cutoff_phase = MatchError::Generic.into();
+        assert_eq!(
+            marker.cutoff_phase,
+            ARMarkerInfoCutoffPhase::MatchGeneric
+        );
+    }
 }
