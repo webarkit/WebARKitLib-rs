@@ -50,6 +50,16 @@ pub const AR_MATRIX_CODE_DETECTION: i32 = 2;
 pub const AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION: i32 = 3;
 pub const AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION: i32 = 4;
 
+/// C equivalent: AR_NOUSE_TRACKING_HISTORY
+/// Skip tracking history; only apply confidence cutoff on each frame independently.
+pub const AR_NOUSE_TRACKING_HISTORY: i32 = 0;
+/// C equivalent: AR_USE_TRACKING_HISTORY
+/// Use full tracking history with resurrection of lost markers from previous frames.
+pub const AR_USE_TRACKING_HISTORY: i32 = 1;
+/// C equivalent: AR_USE_TRACKING_HISTORY_V2
+/// Use tracking history (merge + aging) but without resurrection of lost markers.
+pub const AR_USE_TRACKING_HISTORY_V2: i32 = 2;
+
 /// A structure to hold a timestamp in seconds and microseconds, with arbitrary epoch.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[repr(C)]
