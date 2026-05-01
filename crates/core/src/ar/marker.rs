@@ -67,11 +67,22 @@ pub enum ImageProcMode {
 ///    matrix-code reading (via [`crate::matrix::ar_matrix_code_get_id`]),
 ///    depending on `ar_handle.ar_pattern_detection_mode`.
 /// 5. **Confidence cutoff** — [`confidence_cutoff`] removes markers with
-///    confidence below `AR_CONFIDENCE_CUTOFF_DEFAULT` (0.5).
+///    confidence below `AR_CONFIDENCE_CUTOFF_DEFAULT` (0.5). When
+///    `ar_marker_extraction_mode != AR_NOUSE_TRACKING_HISTORY` the cutoff
+///    runs *after* the history merge (see phase 6).
+/// 6. **History merge & temporal tracking** — when
+///    `ar_marker_extraction_mode != AR_NOUSE_TRACKING_HISTORY`:
+///    weak current detections inherit `cf` from confident history records
+///    (so they survive the cutoff), then history is aged (`count++`,
+///    expired at `count >= 4`) and the surviving current markers are
+///    saved back into history. In `AR_USE_TRACKING_HISTORY` mode (but not
+///    `_V2`), history records that have no counterpart in the current
+///    frame are also re-inserted as detections (resurrection). See
+///    [issue #96](https://github.com/webarkit/WebARKitLib-rs/issues/96).
 ///
 /// Results are written into `ar_handle.marker_info` (up to `AR_SQUARE_MAX` markers).
 ///
-/// Mirrors the C `arDetectMarker()` entry point from `arDetectMarker.c:80-300`.
+/// Mirrors the C `arDetectMarker()` entry point from `arDetectMarker.c:80-322`.
 ///
 /// # Example
 /// ```rust,no_run
@@ -89,6 +100,7 @@ pub enum ImageProcMode {
 ///     }
 /// }
 /// ```
+#[allow(clippy::needless_range_loop)]
 pub fn ar_detect_marker(
     ar_handle: &mut crate::types::ARHandle,
     frame: &crate::types::AR2VideoBufferT,
@@ -222,13 +234,256 @@ pub fn ar_detect_marker(
         );
     }
 
+    let pdm = ar_handle.ar_pattern_detection_mode;
+    let extraction_mode = ar_handle.ar_marker_extraction_mode;
+    let debug = ar_handle.ar_debug != 0;
+
+    // Phase 1 (arDetectMarker.c:191-194): if no tracking history is requested,
+    // run the cutoff and stop here.
+    if extraction_mode == crate::types::AR_NOUSE_TRACKING_HISTORY {
+        confidence_cutoff(
+            &mut *ar_handle.marker_info,
+            ar_handle.marker_num,
+            pdm,
+            AR_CONFIDENCE_CUTOFF_DEFAULT,
+        );
+        return Ok(());
+    }
+
+    let history = &mut *ar_handle.history;
+    let marker_info = &mut *ar_handle.marker_info;
+
+    // Phase 2 (arDetectMarker.c:200-270): pre-cutoff history merge. For each
+    // history record, find the closest current marker by area-and-position
+    // proximity and, if the history record has a higher confidence, copy its
+    // identity (id/cf/dir) onto the current marker so it survives the cutoff.
+    let history_num = ar_handle.history_num as usize;
+    let marker_num = ar_handle.marker_num as usize;
+    for i in 0..history_num {
+        let mut rlenmin: f64 = 0.5;
+        let mut cid: i32 = -1;
+        for j in 0..marker_num {
+            let m_area = marker_info[j].area;
+            if m_area == 0 {
+                continue;
+            }
+            let rarea = history[i].marker.area as f64 / m_area as f64;
+            if !(0.7..=1.43).contains(&rarea) {
+                continue;
+            }
+            let dx = history[i].marker.pos[0] - marker_info[j].pos[0];
+            let dy = history[i].marker.pos[1] - marker_info[j].pos[1];
+            let rlen = (dx * dx + dy * dy) / m_area as f64;
+            if rlen < rlenmin {
+                rlenmin = rlen;
+                cid = j as i32;
+            }
+        }
+        if cid < 0 {
+            continue;
+        }
+        let cidx = cid as usize;
+
+        if pdm == crate::pattern::AR_TEMPLATE_MATCHING_COLOR
+            || pdm == crate::pattern::AR_TEMPLATE_MATCHING_MONO
+            || pdm == crate::types::AR_MATRIX_CODE_DETECTION
+        {
+            // Single mode: one identity per marker.
+            if marker_info[cidx].cf < history[i].marker.cf {
+                marker_info[cidx].cf = history[i].marker.cf;
+                marker_info[cidx].id = history[i].marker.id;
+
+                let mut k_rot: i32 = 0;
+                let mut rmin = f64::INFINITY;
+                for j_rot in 0..4 {
+                    let mut sum = 0.0;
+                    for kk in 0..4 {
+                        let vx = marker_info[cidx].vertex[(j_rot + kk) % 4][0];
+                        let vy = marker_info[cidx].vertex[(j_rot + kk) % 4][1];
+                        let dx = history[i].marker.vertex[kk][0] - vx;
+                        let dy = history[i].marker.vertex[kk][1] - vy;
+                        sum += dx * dx + dy * dy;
+                    }
+                    if sum < rmin {
+                        rmin = sum;
+                        k_rot = j_rot as i32;
+                    }
+                }
+                let cdir = (history[i].marker.dir - k_rot + 4).rem_euclid(4);
+                marker_info[cidx].dir = cdir;
+
+                if pdm == crate::types::AR_MATRIX_CODE_DETECTION {
+                    marker_info[cidx].id_matrix = history[i].marker.id;
+                    marker_info[cidx].cf_matrix = history[i].marker.cf;
+                    marker_info[cidx].dir_matrix = cdir;
+                } else {
+                    marker_info[cidx].id_patt = history[i].marker.id;
+                    marker_info[cidx].cf_patt = history[i].marker.cf;
+                    marker_info[cidx].dir_patt = cdir;
+                }
+            }
+        } else if pdm == crate::types::AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION
+            || pdm == crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION
+        {
+            // Combined mode: keep both template and matrix identities.
+            if marker_info[cidx].cf_patt < history[i].marker.cf_patt
+                || marker_info[cidx].cf_matrix < history[i].marker.cf_matrix
+            {
+                marker_info[cidx].cf_patt = history[i].marker.cf_patt;
+                marker_info[cidx].id_patt = history[i].marker.id_patt;
+                marker_info[cidx].cf_matrix = history[i].marker.cf_matrix;
+                marker_info[cidx].id_matrix = history[i].marker.id_matrix;
+
+                let mut k_rot: i32 = 0;
+                let mut rmin = f64::INFINITY;
+                for j_rot in 0..4 {
+                    let mut sum = 0.0;
+                    for kk in 0..4 {
+                        let vx = marker_info[cidx].vertex[(j_rot + kk) % 4][0];
+                        let vy = marker_info[cidx].vertex[(j_rot + kk) % 4][1];
+                        let dx = history[i].marker.vertex[kk][0] - vx;
+                        let dy = history[i].marker.vertex[kk][1] - vy;
+                        sum += dx * dx + dy * dy;
+                    }
+                    if sum < rmin {
+                        rmin = sum;
+                        k_rot = j_rot as i32;
+                    }
+                }
+                let cdir = k_rot;
+                marker_info[cidx].dir_patt = (history[i].marker.dir_patt - cdir + 4).rem_euclid(4);
+                marker_info[cidx].dir_matrix =
+                    (history[i].marker.dir_matrix - cdir + 4).rem_euclid(4);
+            }
+        } else {
+            arlog_e!(
+                "ar_detect_marker: unsupported ar_pattern_detection_mode={}",
+                pdm
+            );
+            return Err("Unsupported ar_pattern_detection_mode");
+        }
+    }
+
+    if debug {
+        arlog_d!(
+            "history merge complete: history_num={}, marker_num={}",
+            ar_handle.history_num,
+            ar_handle.marker_num
+        );
+    }
+
+    // Phase 3 (arDetectMarker.c:272): cutoff after the merge so that markers
+    // whose cf has been raised by the merge survive.
     confidence_cutoff(
-        &mut *ar_handle.marker_info,
+        marker_info,
         ar_handle.marker_num,
-        ar_handle.ar_pattern_detection_mode,
+        pdm,
         AR_CONFIDENCE_CUTOFF_DEFAULT,
     );
-    // TODO: port arDetectMarker.c:300+ tracking history merge (out of scope for this issue)
+
+    // Phase 4 (arDetectMarker.c:275-281): aging. Each history record's count
+    // is incremented and records that reach 4 frames without an update are
+    // dropped (the array is compacted in place).
+    {
+        let mut j = 0usize;
+        for i in 0..ar_handle.history_num as usize {
+            history[i].count += 1;
+            if history[i].count < 4 {
+                if i != j {
+                    history[j] = history[i].clone();
+                }
+                j += 1;
+            }
+        }
+        ar_handle.history_num = j as i32;
+    }
+
+    if debug {
+        arlog_d!("history aged: history_num={}", ar_handle.history_num);
+    }
+
+    // Phase 5 (arDetectMarker.c:284-298): save current markers into history.
+    // For each detected marker (id >= 0), upsert by id; new ids fill empty
+    // slots up to AR_SQUARE_MAX, then we stop.
+    let marker_num_after_cutoff = ar_handle.marker_num as usize;
+    for i in 0..marker_num_after_cutoff {
+        if marker_info[i].id < 0 {
+            continue;
+        }
+        let mut slot: Option<usize> = None;
+        for k in 0..ar_handle.history_num as usize {
+            if history[k].marker.id == marker_info[i].id {
+                slot = Some(k);
+                break;
+            }
+        }
+        let s = match slot {
+            Some(k) => k,
+            None => {
+                if ar_handle.history_num as usize == AR_SQUARE_MAX {
+                    break;
+                }
+                let new_slot = ar_handle.history_num as usize;
+                ar_handle.history_num += 1;
+                new_slot
+            }
+        };
+        history[s].marker = marker_info[i].clone();
+        history[s].count = 1;
+    }
+
+    if debug {
+        arlog_d!(
+            "history saved: history_num={} after upsert",
+            ar_handle.history_num
+        );
+    }
+
+    // Phase 6 (arDetectMarker.c:300-302): _V2 stops before resurrection so
+    // that lost markers do NOT reappear as virtual detections.
+    if extraction_mode == crate::types::AR_USE_TRACKING_HISTORY_V2 {
+        return Ok(());
+    }
+
+    // Phase 7 (arDetectMarker.c:304-321): resurrection. Any history record
+    // that has no counterpart in the current frame is re-inserted into
+    // marker_info, giving the caller a virtual detection.
+    let history_num_post_save = ar_handle.history_num as usize;
+    for i in 0..history_num_post_save {
+        let h_area = history[i].marker.area;
+        let h_x = history[i].marker.pos[0];
+        let h_y = history[i].marker.pos[1];
+        let mnum_curr = ar_handle.marker_num as usize;
+        let mut found = false;
+        for jj in 0..mnum_curr {
+            let m_area = marker_info[jj].area;
+            if m_area == 0 {
+                continue;
+            }
+            let rarea = h_area as f64 / m_area as f64;
+            if !(0.7..=1.43).contains(&rarea) {
+                continue;
+            }
+            let dx = h_x - marker_info[jj].pos[0];
+            let dy = h_y - marker_info[jj].pos[1];
+            let rlen = (dx * dx + dy * dy) / m_area as f64;
+            if rlen < 0.5 {
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            let mn = ar_handle.marker_num as usize;
+            if mn < AR_SQUARE_MAX {
+                marker_info[mn] = history[i].marker.clone();
+                ar_handle.marker_num += 1;
+            }
+        }
+    }
+
+    if debug {
+        arlog_d!("resurrection complete: marker_num={}", ar_handle.marker_num);
+    }
 
     Ok(())
 }
