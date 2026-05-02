@@ -100,7 +100,6 @@ pub enum ImageProcMode {
 ///     }
 /// }
 /// ```
-#[allow(clippy::needless_range_loop)]
 pub fn ar_detect_marker(
     ar_handle: &mut crate::types::ARHandle,
     frame: &crate::types::AR2VideoBufferT,
@@ -250,15 +249,80 @@ pub fn ar_detect_marker(
         return Ok(());
     }
 
+    // Phase 2 (arDetectMarker.c:200-270): pre-cutoff history merge.
+    history_merge_pre_cutoff(ar_handle)?;
+    if debug {
+        arlog_d!(
+            "history merge complete: history_num={}, marker_num={}",
+            ar_handle.history_num,
+            ar_handle.marker_num
+        );
+    }
+
+    // Phase 3 (arDetectMarker.c:272): cutoff after the merge so that markers
+    // whose cf has been raised by the merge survive.
+    confidence_cutoff(
+        &mut *ar_handle.marker_info,
+        ar_handle.marker_num,
+        pdm,
+        AR_CONFIDENCE_CUTOFF_DEFAULT,
+    );
+
+    // Phase 4 (arDetectMarker.c:275-281): age & compact history.
+    history_age(ar_handle);
+    if debug {
+        arlog_d!("history aged: history_num={}", ar_handle.history_num);
+    }
+
+    // Phase 5 (arDetectMarker.c:284-298): save current markers into history.
+    history_save_current(ar_handle);
+    if debug {
+        arlog_d!(
+            "history saved: history_num={} after upsert",
+            ar_handle.history_num
+        );
+    }
+
+    // Phase 6 (arDetectMarker.c:300-302): _V2 stops before resurrection so
+    // that lost markers do NOT reappear as virtual detections.
+    if extraction_mode == crate::types::AR_USE_TRACKING_HISTORY_V2 {
+        return Ok(());
+    }
+
+    // Phase 7 (arDetectMarker.c:304-321): resurrection.
+    history_resurrect(ar_handle);
+    if debug {
+        arlog_d!("resurrection complete: marker_num={}", ar_handle.marker_num);
+    }
+
+    Ok(())
+}
+
+/// Phase 2 of the tracking history pipeline: pre-cutoff history merge.
+///
+/// For each history record finds the closest current marker by area-and-position
+/// proximity (`rarea ∈ [0.7, 1.43]` and minimum `rlen` below `0.5`). When a
+/// confident history record matches a low-confidence current detection, the
+/// identity (`id`/`cf` and the rotation `dir`) is copied onto the current
+/// marker so it survives the subsequent confidence cutoff.
+///
+/// Single-mode (`COLOR` / `MONO` / `MATRIX_CODE_DETECTION`) and combined-mode
+/// (`*_AND_MATRIX_CODE_DETECTION`) compute the rotation correction `cdir`
+/// differently — see `arDetectMarker.c:222-235` (single) vs `:255-267`
+/// (combined).
+///
+/// Mirrors `arDetectMarker.c:200-270`.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn history_merge_pre_cutoff(
+    ar_handle: &mut crate::types::ARHandle,
+) -> Result<(), &'static str> {
+    let pdm = ar_handle.ar_pattern_detection_mode;
+    let history_num = ar_handle.history_num as usize;
+    let marker_num = ar_handle.marker_num as usize;
+
     let history = &mut *ar_handle.history;
     let marker_info = &mut *ar_handle.marker_info;
 
-    // Phase 2 (arDetectMarker.c:200-270): pre-cutoff history merge. For each
-    // history record, find the closest current marker by area-and-position
-    // proximity and, if the history record has a higher confidence, copy its
-    // identity (id/cf/dir) onto the current marker so it survives the cutoff.
-    let history_num = ar_handle.history_num as usize;
-    let marker_num = ar_handle.marker_num as usize;
     for i in 0..history_num {
         let mut rlenmin: f64 = 0.5;
         let mut cid: i32 = -1;
@@ -357,61 +421,61 @@ pub fn ar_detect_marker(
             }
         } else {
             arlog_e!(
-                "ar_detect_marker: unsupported ar_pattern_detection_mode={}",
+                "history_merge_pre_cutoff: unsupported ar_pattern_detection_mode={}",
                 pdm
             );
             return Err("Unsupported ar_pattern_detection_mode");
         }
     }
+    Ok(())
+}
 
-    if debug {
-        arlog_d!(
-            "history merge complete: history_num={}, marker_num={}",
-            ar_handle.history_num,
-            ar_handle.marker_num
-        );
-    }
+/// Phase 4 of the tracking history pipeline: aging.
+///
+/// Increments the `count` of every history record and drops those that have
+/// reached `count >= 4` (the surviving records are compacted in place at the
+/// front of the array).
+///
+/// Mirrors `arDetectMarker.c:275-281`.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn history_age(ar_handle: &mut crate::types::ARHandle) {
+    let history_num = ar_handle.history_num as usize;
+    let history = &mut *ar_handle.history;
 
-    // Phase 3 (arDetectMarker.c:272): cutoff after the merge so that markers
-    // whose cf has been raised by the merge survive.
-    confidence_cutoff(
-        marker_info,
-        ar_handle.marker_num,
-        pdm,
-        AR_CONFIDENCE_CUTOFF_DEFAULT,
-    );
-
-    // Phase 4 (arDetectMarker.c:275-281): aging. Each history record's count
-    // is incremented and records that reach 4 frames without an update are
-    // dropped (the array is compacted in place).
-    {
-        let mut j = 0usize;
-        for i in 0..ar_handle.history_num as usize {
-            history[i].count += 1;
-            if history[i].count < 4 {
-                if i != j {
-                    history[j] = history[i].clone();
-                }
-                j += 1;
+    let mut j = 0usize;
+    for i in 0..history_num {
+        history[i].count += 1;
+        if history[i].count < 4 {
+            if i != j {
+                history[j] = history[i].clone();
             }
+            j += 1;
         }
-        ar_handle.history_num = j as i32;
     }
+    ar_handle.history_num = j as i32;
+}
 
-    if debug {
-        arlog_d!("history aged: history_num={}", ar_handle.history_num);
-    }
+/// Phase 5 of the tracking history pipeline: save current markers into history.
+///
+/// For each detected marker with `id >= 0`, upserts a record into `history`
+/// keyed by `id`. New ids fill empty slots up to `AR_SQUARE_MAX`; once the
+/// cap is reached the loop stops (further markers are dropped).
+///
+/// Mirrors `arDetectMarker.c:284-298`.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn history_save_current(ar_handle: &mut crate::types::ARHandle) {
+    let marker_num = ar_handle.marker_num as usize;
+    let mut history_num = ar_handle.history_num as usize;
 
-    // Phase 5 (arDetectMarker.c:284-298): save current markers into history.
-    // For each detected marker (id >= 0), upsert by id; new ids fill empty
-    // slots up to AR_SQUARE_MAX, then we stop.
-    let marker_num_after_cutoff = ar_handle.marker_num as usize;
-    for i in 0..marker_num_after_cutoff {
+    let history = &mut *ar_handle.history;
+    let marker_info = &*ar_handle.marker_info;
+
+    for i in 0..marker_num {
         if marker_info[i].id < 0 {
             continue;
         }
         let mut slot: Option<usize> = None;
-        for k in 0..ar_handle.history_num as usize {
+        for k in 0..history_num {
             if history[k].marker.id == marker_info[i].id {
                 slot = Some(k);
                 break;
@@ -420,42 +484,41 @@ pub fn ar_detect_marker(
         let s = match slot {
             Some(k) => k,
             None => {
-                if ar_handle.history_num as usize == AR_SQUARE_MAX {
+                if history_num == AR_SQUARE_MAX {
                     break;
                 }
-                let new_slot = ar_handle.history_num as usize;
-                ar_handle.history_num += 1;
+                let new_slot = history_num;
+                history_num += 1;
                 new_slot
             }
         };
         history[s].marker = marker_info[i].clone();
         history[s].count = 1;
     }
+    ar_handle.history_num = history_num as i32;
+}
 
-    if debug {
-        arlog_d!(
-            "history saved: history_num={} after upsert",
-            ar_handle.history_num
-        );
-    }
-
-    // Phase 6 (arDetectMarker.c:300-302): _V2 stops before resurrection so
-    // that lost markers do NOT reappear as virtual detections.
-    if extraction_mode == crate::types::AR_USE_TRACKING_HISTORY_V2 {
-        return Ok(());
-    }
-
-    // Phase 7 (arDetectMarker.c:304-321): resurrection. Any history record
-    // that has no counterpart in the current frame is re-inserted into
-    // marker_info, giving the caller a virtual detection.
+/// Phase 7 of the tracking history pipeline: resurrection.
+///
+/// Any history record that has no counterpart in the current frame
+/// (`rarea ∈ [0.7, 1.43]` and `rlen < 0.5`) is re-inserted into `marker_info`
+/// as a virtual detection, up to `AR_SQUARE_MAX`.
+///
+/// Mirrors `arDetectMarker.c:304-321`.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn history_resurrect(ar_handle: &mut crate::types::ARHandle) {
     let history_num_post_save = ar_handle.history_num as usize;
+    let mut marker_num = ar_handle.marker_num as usize;
+
+    let history = &*ar_handle.history;
+    let marker_info = &mut *ar_handle.marker_info;
+
     for i in 0..history_num_post_save {
         let h_area = history[i].marker.area;
         let h_x = history[i].marker.pos[0];
         let h_y = history[i].marker.pos[1];
-        let mnum_curr = ar_handle.marker_num as usize;
         let mut found = false;
-        for jj in 0..mnum_curr {
+        for jj in 0..marker_num {
             let m_area = marker_info[jj].area;
             if m_area == 0 {
                 continue;
@@ -472,20 +535,12 @@ pub fn ar_detect_marker(
                 break;
             }
         }
-        if !found {
-            let mn = ar_handle.marker_num as usize;
-            if mn < AR_SQUARE_MAX {
-                marker_info[mn] = history[i].marker.clone();
-                ar_handle.marker_num += 1;
-            }
+        if !found && marker_num < AR_SQUARE_MAX {
+            marker_info[marker_num] = history[i].marker.clone();
+            marker_num += 1;
         }
     }
-
-    if debug {
-        arlog_d!("resurrection complete: marker_num={}", ar_handle.marker_num);
-    }
-
-    Ok(())
+    ar_handle.marker_num = marker_num as i32;
 }
 
 /// Refine labeled regions into square (marker) candidates.
@@ -1898,5 +1953,383 @@ mod tests {
         let mut marker = ARMarkerInfo::default();
         marker.cutoff_phase = MatchError::Generic.into();
         assert_eq!(marker.cutoff_phase, ARMarkerInfoCutoffPhase::MatchGeneric);
+    }
+
+    // ---------------------------------------------------------------------
+    // Tracking history pipeline (issue #96)
+    // ---------------------------------------------------------------------
+
+    /// Documents the `AR_NOUSE_TRACKING_HISTORY` early-return path
+    /// (`arDetectMarker.c:191-194`): the merge phase is bypassed entirely so
+    /// a low-cf current detection is NOT strengthened by a confident history
+    /// record. We mirror the early-return by simply not invoking
+    /// `history_merge_pre_cutoff` and assert state is unchanged.
+    #[test]
+    fn test_history_disabled_skips_merge() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_marker_extraction_mode = crate::types::AR_NOUSE_TRACKING_HISTORY;
+        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+
+        // Strong history record.
+        handle.history[0].marker.id = 5;
+        handle.history[0].marker.cf = 0.9;
+        handle.history[0].marker.area = 10000;
+        handle.history[0].marker.pos = [100.0, 100.0];
+        handle.history_num = 1;
+
+        // Weak current detection that would be strengthened if the merge ran.
+        handle.marker_info[0].id = 5;
+        handle.marker_info[0].id_patt = 5;
+        handle.marker_info[0].cf = 0.3;
+        handle.marker_info[0].cf_patt = 0.3;
+        handle.marker_info[0].area = 10000;
+        handle.marker_info[0].pos = [100.0, 100.0];
+        handle.marker_num = 1;
+
+        // No call to history_merge_pre_cutoff: NOUSE bypass.
+
+        assert!(
+            (handle.marker_info[0].cf - 0.3).abs() < 1e-9,
+            "cf must remain weak when merge is skipped (NOUSE bypass)"
+        );
+        assert_eq!(handle.history_num, 1, "history must not be touched");
+        assert!(
+            (handle.history[0].marker.cf - 0.9).abs() < 1e-9,
+            "history record must be untouched"
+        );
+    }
+
+    /// Verifies the single-mode merge branch
+    /// (`arDetectMarker.c:218-243`): when a confident history record matches
+    /// a low-cf current detection, the history's `id`/`cf` are copied onto
+    /// the current marker and propagated to `*_patt` (template mode).
+    #[test]
+    fn test_history_merge_strengthens_weak_marker_single_mode() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+
+        // Current marker: weak.
+        handle.marker_info[0].area = 10000;
+        handle.marker_info[0].pos = [100.0, 100.0];
+        handle.marker_info[0].cf = 0.3;
+        handle.marker_info[0].cf_patt = 0.3;
+        handle.marker_info[0].id = 5;
+        handle.marker_info[0].id_patt = 5;
+        handle.marker_info[0].dir = 0;
+        // vertex left at default (zeros) — same as history below, so the
+        // rotation search yields k_rot = 0.
+        handle.marker_num = 1;
+
+        // History: strong record at the same area/position.
+        handle.history[0].marker.area = 10000;
+        handle.history[0].marker.pos = [100.0, 100.0];
+        handle.history[0].marker.cf = 0.9;
+        handle.history[0].marker.id = 5;
+        handle.history[0].marker.dir = 2;
+        handle.history_num = 1;
+
+        history_merge_pre_cutoff(&mut handle).unwrap();
+
+        assert!(
+            (handle.marker_info[0].cf - 0.9).abs() < 1e-9,
+            "cf must be raised to history value"
+        );
+        assert_eq!(handle.marker_info[0].id, 5);
+        assert!(
+            (handle.marker_info[0].cf_patt - 0.9).abs() < 1e-9,
+            "cf_patt must be propagated"
+        );
+        assert_eq!(handle.marker_info[0].dir, 2, "dir must mirror history.dir");
+        assert_eq!(handle.marker_info[0].dir_patt, 2);
+    }
+
+    /// Verifies the merge does nothing when the current marker's `cf` is
+    /// already at least as high as the history record's `cf` — the strict
+    /// `<` test at `arDetectMarker.c:219` keeps the stronger value.
+    #[test]
+    fn test_history_merge_does_nothing_when_current_cf_higher() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+
+        handle.marker_info[0].area = 10000;
+        handle.marker_info[0].pos = [100.0, 100.0];
+        handle.marker_info[0].cf = 0.95;
+        handle.marker_info[0].cf_patt = 0.95;
+        handle.marker_info[0].id = 5;
+        handle.marker_info[0].id_patt = 5;
+        handle.marker_num = 1;
+
+        handle.history[0].marker.area = 10000;
+        handle.history[0].marker.pos = [100.0, 100.0];
+        handle.history[0].marker.cf = 0.5;
+        handle.history[0].marker.id = 5;
+        handle.history_num = 1;
+
+        history_merge_pre_cutoff(&mut handle).unwrap();
+
+        assert!(
+            (handle.marker_info[0].cf - 0.95).abs() < 1e-9,
+            "cf must remain at the stronger current value"
+        );
+    }
+
+    /// Verifies the area-ratio gate
+    /// (`arDetectMarker.c:204-205`): when `rarea = h_area / m_area` falls
+    /// outside `[0.7, 1.43]`, the history record is not paired with the
+    /// current marker and the merge is skipped.
+    #[test]
+    fn test_history_merge_skips_when_area_ratio_out_of_range() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+
+        handle.marker_info[0].area = 10000;
+        handle.marker_info[0].pos = [100.0, 100.0];
+        handle.marker_info[0].cf = 0.3;
+        handle.marker_info[0].cf_patt = 0.3;
+        handle.marker_info[0].id = 5;
+        handle.marker_info[0].id_patt = 5;
+        handle.marker_num = 1;
+
+        // rarea = 5000 / 10000 = 0.5 < 0.7 → out of range.
+        handle.history[0].marker.area = 5000;
+        handle.history[0].marker.pos = [100.0, 100.0];
+        handle.history[0].marker.cf = 0.9;
+        handle.history[0].marker.id = 5;
+        handle.history_num = 1;
+
+        history_merge_pre_cutoff(&mut handle).unwrap();
+
+        assert!(
+            (handle.marker_info[0].cf - 0.3).abs() < 1e-9,
+            "cf must remain unchanged: area ratio out of range"
+        );
+    }
+
+    /// Verifies the combined-mode merge branch
+    /// (`arDetectMarker.c:248-267`): when either `cf_patt` or `cf_matrix` is
+    /// weaker than its history counterpart, both pairs (template + matrix)
+    /// are copied from the history record and the per-mode `dir_*` are
+    /// recomputed via `cdir = k_rot` (no `(dir - k + 4) % 4` shift on cdir).
+    #[test]
+    fn test_history_merge_combined_mode_updates_both_cfs() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_pattern_detection_mode =
+            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION;
+
+        handle.marker_info[0].area = 10000;
+        handle.marker_info[0].pos = [100.0, 100.0];
+        handle.marker_info[0].cf_patt = 0.4;
+        handle.marker_info[0].cf_matrix = 0.4;
+        handle.marker_info[0].id_patt = 1;
+        handle.marker_info[0].id_matrix = 7;
+        handle.marker_num = 1;
+
+        handle.history[0].marker.area = 10000;
+        handle.history[0].marker.pos = [100.0, 100.0];
+        handle.history[0].marker.cf_patt = 0.85;
+        handle.history[0].marker.cf_matrix = 0.85;
+        handle.history[0].marker.id_patt = 99;
+        handle.history[0].marker.id_matrix = 88;
+        handle.history[0].marker.dir_patt = 1;
+        handle.history[0].marker.dir_matrix = 3;
+        handle.history_num = 1;
+
+        history_merge_pre_cutoff(&mut handle).unwrap();
+
+        assert!(
+            (handle.marker_info[0].cf_patt - 0.85).abs() < 1e-9,
+            "cf_patt must be raised"
+        );
+        assert!(
+            (handle.marker_info[0].cf_matrix - 0.85).abs() < 1e-9,
+            "cf_matrix must be raised"
+        );
+        assert_eq!(handle.marker_info[0].id_patt, 99);
+        assert_eq!(handle.marker_info[0].id_matrix, 88);
+        // With identical (zero) vertices the rotation search yields k_rot=0,
+        // so cdir=0 and dir_patt/dir_matrix come straight from history.
+        assert_eq!(handle.marker_info[0].dir_patt, 1);
+        assert_eq!(handle.marker_info[0].dir_matrix, 3);
+    }
+
+    /// Verifies aging (`arDetectMarker.c:275-281`): every record's `count`
+    /// is incremented and records that reach `count == 4` are dropped.
+    /// Surviving records are compacted to the front of the array.
+    #[test]
+    fn test_aging_increments_count_and_expires_old_records() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+
+        handle.history[0].marker.id = 10;
+        handle.history[0].count = 0;
+        handle.history[1].marker.id = 20;
+        handle.history[1].count = 2;
+        handle.history[2].marker.id = 30;
+        handle.history[2].count = 3; // becomes 4 → expelled
+        handle.history_num = 3;
+
+        history_age(&mut handle);
+
+        assert_eq!(handle.history_num, 2, "record with count=3 must expire");
+        assert_eq!(handle.history[0].marker.id, 10);
+        assert_eq!(handle.history[0].count, 1, "count incremented");
+        assert_eq!(handle.history[1].marker.id, 20);
+        assert_eq!(handle.history[1].count, 3, "count incremented");
+    }
+
+    /// Verifies save (`arDetectMarker.c:284-295`) updates an existing record
+    /// in place when the `id` already exists in history.
+    #[test]
+    fn test_save_updates_existing_history_record_by_id() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+
+        handle.history[0].marker.id = 7;
+        handle.history[0].marker.area = 1000;
+        handle.history[0].count = 2;
+        handle.history_num = 1;
+
+        handle.marker_info[0].id = 7;
+        handle.marker_info[0].area = 5000;
+        handle.marker_num = 1;
+
+        history_save_current(&mut handle);
+
+        assert_eq!(handle.history_num, 1, "no new slot allocated for known id");
+        assert_eq!(handle.history[0].count, 1, "count reset on save");
+        assert_eq!(
+            handle.history[0].marker.area, 5000,
+            "marker overwritten with current value"
+        );
+    }
+
+    /// Verifies save (`arDetectMarker.c:297-298`) creates a new record when
+    /// the `id` is not already present in history.
+    #[test]
+    fn test_save_creates_new_record_for_new_id() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+
+        handle.history_num = 0;
+
+        handle.marker_info[0].id = 42;
+        handle.marker_info[0].area = 7777;
+        handle.marker_num = 1;
+
+        history_save_current(&mut handle);
+
+        assert_eq!(handle.history_num, 1);
+        assert_eq!(handle.history[0].marker.id, 42);
+        assert_eq!(handle.history[0].marker.area, 7777);
+        assert_eq!(handle.history[0].count, 1);
+    }
+
+    /// Verifies the `AR_SQUARE_MAX` cap on save
+    /// (`arDetectMarker.c:296-297`): when history is already full, a new id
+    /// is dropped silently and `history_num` stays at the cap.
+    #[test]
+    fn test_save_respects_ar_square_max_cap() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+
+        // Fill history with AR_SQUARE_MAX records.
+        for k in 0..AR_SQUARE_MAX {
+            handle.history[k].marker.id = k as i32;
+            handle.history[k].count = 1;
+        }
+        handle.history_num = AR_SQUARE_MAX as i32;
+
+        // A new id that doesn't exist in history.
+        handle.marker_info[0].id = 100;
+        handle.marker_info[0].area = 5555;
+        handle.marker_num = 1;
+
+        history_save_current(&mut handle);
+
+        assert_eq!(
+            handle.history_num as usize, AR_SQUARE_MAX,
+            "history_num must not exceed the cap"
+        );
+        // The record at index 0 must be untouched (id=0 from setup).
+        assert_eq!(handle.history[0].marker.id, 0);
+    }
+
+    /// Verifies the `AR_USE_TRACKING_HISTORY_V2` early-return
+    /// (`arDetectMarker.c:300-302`): resurrection is bypassed, so an
+    /// undetected history record does NOT become a virtual detection.
+    #[test]
+    fn test_v2_mode_skips_resurrection() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY_V2;
+
+        handle.history[0].marker.id = 9;
+        handle.history[0].marker.area = 5000;
+        handle.history[0].marker.pos = [50.0, 50.0];
+        handle.history_num = 1;
+
+        handle.marker_num = 0;
+
+        // V2 bypass: no call to history_resurrect.
+
+        assert_eq!(
+            handle.marker_num, 0,
+            "marker_num must stay 0 when resurrection is skipped"
+        );
+    }
+
+    /// Verifies resurrection (`arDetectMarker.c:304-321`): a history record
+    /// with no current counterpart is re-inserted into `marker_info` as a
+    /// virtual detection.
+    #[test]
+    fn test_resurrection_reinserts_missing_history_marker() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY;
+
+        handle.history[0].marker.id = 9;
+        handle.history[0].marker.area = 5000;
+        handle.history[0].marker.pos = [50.0, 50.0];
+        handle.history_num = 1;
+
+        handle.marker_num = 0;
+
+        history_resurrect(&mut handle);
+
+        assert_eq!(handle.marker_num, 1, "history record must be resurrected");
+        assert_eq!(handle.marker_info[0].id, 9);
+        assert_eq!(handle.marker_info[0].area, 5000);
+    }
+
+    /// Verifies resurrection skips records whose `id`/area/position match an
+    /// already-detected current marker (`arDetectMarker.c:307-313` early
+    /// `break`), so we don't duplicate detections.
+    #[test]
+    fn test_resurrection_does_not_duplicate_existing_marker() {
+        use crate::types::ARHandle;
+        let mut handle = ARHandle::default();
+        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY;
+
+        handle.history[0].marker.area = 5000;
+        handle.history[0].marker.pos = [50.0, 50.0];
+        handle.history_num = 1;
+
+        // Current marker: rarea = 5000/5200 ≈ 0.96 ∈ [0.7,1.43],
+        // rlen = (1+1)/5200 ≈ 3.8e-4 < 0.5 → counts as a match.
+        handle.marker_info[0].area = 5200;
+        handle.marker_info[0].pos = [51.0, 51.0];
+        handle.marker_num = 1;
+
+        history_resurrect(&mut handle);
+
+        assert_eq!(
+            handle.marker_num, 1,
+            "no resurrection: history record is already represented"
+        );
     }
 }
