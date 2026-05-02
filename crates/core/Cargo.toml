@@ -100,6 +100,15 @@ required-features = ["log-helpers"]
 name = "debug_labeling"
 required-features = ["log-helpers"]
 
+# Issue #103 diagnostic — see docs/issue-103-fix-plan.md
+[[example]]
+name = "dump_patt"
+required-features = ["log-helpers"]
+
+[[example]]
+name = "diff_patt"
+required-features = ["log-helpers"]
+
 [[bench]]
 name = "marker_bench"
 harness = false

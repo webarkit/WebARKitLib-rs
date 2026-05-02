@@ -187,6 +187,18 @@ elseif(NOT WIN32)
     target_link_libraries(c_benchmark m)
 endif()
 
+# ── Pattern-extraction diagnostic dumper (issue #103) ──
+# Sibling of c_benchmark; runs detection once, re-extracts the matched patch
+# via arPattGetImage, and dumps it for byte-comparison with the Rust port.
+# See ../data/README.md and ../../docs/issue-103-fix-plan.md.
+add_executable(dump_patt ${AR_CORE_SOURCES} "dump_patt.c")
+target_compile_definitions(dump_patt PRIVATE ${COMMON_DEFS})
+if(WIN32 AND MSVC)
+    target_compile_options(dump_patt PRIVATE /W3 /Z7)
+elseif(NOT WIN32)
+    target_link_libraries(dump_patt m)
+endif()
+
 # ── KPM targets (fixture generator + benchmark) ──
 # These require libjpeg-9f (bootstrapped) and are NOT built by default.
 # Build manually with: cmake --build . --target kpm_dump_fixtures
