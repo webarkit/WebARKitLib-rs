@@ -266,22 +266,15 @@ fn main() {
         .and_then(|mut f| f.write_all(meta.as_bytes()))
         .expect("write rs_ext_patt_meta.txt");
 
-    arlog_i!(
-        "Wrote {} ({} bytes)",
-        bin_path.display(),
-        ext_patt.len()
-    );
+    arlog_i!("Wrote {} ({} bytes)", bin_path.display(), ext_patt.len());
     arlog_i!("Wrote {}", meta_path.display());
-    arlog_i!(
-        "cf={:.4} id={} dir={}",
-        marker.cf,
-        marker.id,
-        marker.dir
-    );
+    arlog_i!("cf={:.4} id={} dir={}", marker.cf, marker.id, marker.dir);
 }
 
 fn arg_or_default(args: &[String], idx: usize, default: &str) -> String {
-    args.get(idx).cloned().unwrap_or_else(|| default.to_string())
+    args.get(idx)
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn mode_name(m: i32) -> &'static str {
