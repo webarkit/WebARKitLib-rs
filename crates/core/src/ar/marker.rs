@@ -82,6 +82,19 @@ pub enum ImageProcMode {
 ///
 /// Results are written into `ar_handle.marker_info` (up to `AR_SQUARE_MAX` markers).
 ///
+/// # Frame buffer contract
+///
+/// `frame.buff` MUST hold data in the format declared by
+/// `ar_handle.ar_pixel_format`. ARToolKit5's `video2.c:682` documents this
+/// contract: when `ar_pixel_format == MONO`, `buff` IS the luma data
+/// (and `buff_luma` is just an alias to it); otherwise `buff` holds the
+/// declared format and `buff_luma` is a separately-converted greyscale view.
+///
+/// Mismatching the buffer layout against the declared format used to
+/// produce silent low-confidence matches (see
+/// [issue #103](https://github.com/webarkit/WebARKitLib-rs/issues/103));
+/// `ar_detect_marker` now rejects such mismatches up front.
+///
 /// Mirrors the C `arDetectMarker()` entry point from `arDetectMarker.c:80-322`.
 ///
 /// # Example
@@ -130,6 +143,43 @@ pub fn ar_detect_marker(
             return Err("AR2VideoBufferT requires buff to be available");
         }
     };
+
+    // Frame-buffer contract (artoolkit5/video2.c:682, issue #103): when
+    // ar_pixel_size > 0 (i.e. a known fixed bytes-per-pixel format), `buff`
+    // length must equal xsize * ysize * pixel_size. Sub-sampled formats
+    // (NV21, 420v, 420f) have pixel_size == 0 and are skipped.
+    let pixel_size = ar_handle.ar_pixel_size as usize;
+    if pixel_size > 0 {
+        let expected = (ar_handle.xsize as usize) * (ar_handle.ysize as usize) * pixel_size;
+        if color_buff.len() != expected {
+            arlog_e!(
+                "ar_detect_marker: AR2VideoBufferT.buff length {} does not match \
+                 expected {} for {}x{} {:?} (pixel_size={}). \
+                 buff must hold data in the format declared by ar_pixel_format \
+                 (cf. artoolkit5 video2.c:682).",
+                color_buff.len(),
+                expected,
+                ar_handle.xsize,
+                ar_handle.ysize,
+                ar_handle.ar_pixel_format,
+                pixel_size
+            );
+            return Err("AR2VideoBufferT.buff length mismatches ar_pixel_format");
+        }
+    }
+    // Buff_luma is always 1 byte per pixel.
+    let expected_luma = (ar_handle.xsize as usize) * (ar_handle.ysize as usize);
+    if luma_buff.len() != expected_luma {
+        arlog_e!(
+            "ar_detect_marker: AR2VideoBufferT.buff_luma length {} does not match \
+             expected {} for {}x{} (1 byte/pixel)",
+            luma_buff.len(),
+            expected_luma,
+            ar_handle.xsize,
+            ar_handle.ysize
+        );
+        return Err("AR2VideoBufferT.buff_luma length mismatches xsize*ysize");
+    }
 
     let thresh = ar_handle.ar_labeling_thresh as u8;
     // TODO: port AR_LABELING_THRESH_MODE_*_AUTO variants (bracketing, median, etc.) from C
