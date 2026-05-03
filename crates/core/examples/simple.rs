@@ -218,12 +218,15 @@ fn main() {
 
     let luma_buffer_vec = luma_img.into_raw();
     let mut out_img = color_img.clone();
-    let color_buffer_vec = color_img.into_raw();
 
-    // Construct the AR2VideoBufferT pointing to our image data
+    // ARToolKit5's contract (cf. artoolkit5/video2.c:682): `buff` MUST hold
+    // data in the format declared by ar_pixel_format. When pixel_format is
+    // MONO, that means buff IS the luma data — buffLuma is just an alias.
+    // Feeding RGBA into buff while declaring MONO produces silent low-cf
+    // detections (see issue #103).
     let frame = AR2VideoBufferT {
-        buff: Some(color_buffer_vec),     // Color data
-        buff_luma: Some(luma_buffer_vec), // Gray data used for binarization
+        buff: Some(luma_buffer_vec.clone()), // pixfmt=MONO → buff IS luma
+        buff_luma: Some(luma_buffer_vec.clone()),
         buf_planes: None,
         buf_plane_count: 0,
         fill_flag: true,
