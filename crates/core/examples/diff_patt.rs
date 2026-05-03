@@ -99,7 +99,9 @@ fn main() {
     let c_var = variance(&c_bytes);
     let rs_var = variance(&rs_bytes);
     if c_var == 0.0 {
-        arlog_e!("WARN: C buffer has zero variance (all bytes identical) — comparison may be misleading");
+        arlog_e!(
+            "WARN: C buffer has zero variance (all bytes identical) — comparison may be misleading"
+        );
     }
     if rs_var == 0.0 {
         arlog_e!("WARN: Rust buffer has zero variance (all bytes identical) — comparison may be misleading");
@@ -139,7 +141,9 @@ fn main() {
 }
 
 fn arg_or(args: &[String], idx: usize, default: &str) -> String {
-    args.get(idx).cloned().unwrap_or_else(|| default.to_string())
+    args.get(idx)
+        .cloned()
+        .unwrap_or_else(|| default.to_string())
 }
 
 fn variance(buf: &[u8]) -> f64 {
