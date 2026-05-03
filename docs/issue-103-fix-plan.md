@@ -154,11 +154,20 @@ Classify divergence:
 | R-B3 | Rust/C floating-point rounding diverges sub-LSB | `u8` integer division after extraction absorbs FP noise; cf parity to `1e-6` is stretch, not blocker |
 | R-B4 | Hidden coupling with `pattern_match` (extraction fix exposes a dormant matcher bug) | Decision #9 already in place — judge by diagnostic + size, decide fold-in vs PR-C |
 
-## 9. Findings — PR-A smoke run (2026-05-02)
+## 9. Findings — PR-A diagnostic runs (2026-05-02 / 2026-05-03)
 
-The Rust-side `dump_patt` was run end-to-end against `benchmarks/data/img.jpg`
-+ `patt.hiro`. **It produced `cf = 0.892460`, `id = 0`, `dir = 1`** — well above
-the 0.7 acceptance bar — using the same library code path as `simple.rs`.
+Both dumpers were run end-to-end against `benchmarks/data/img.jpg`
++ `patt.hiro`:
+
+- `dump_patt` (Rust) → `cf ≈ 0.892460`, `id = 0`, `dir = 1`
+- `dump_patt` (C)    → `cf ≈ 0.85`, `id = 0` on the same inputs
+
+Both are well above the 0.7 acceptance bar, so the Rust port is *functionally*
+correct on this path. The two confidence values are however **not** identical,
+and `diff_patt` reports the patches are not byte-equal either. There is some
+sub-LSB / arithmetic drift between the Rust port and the C reference. That
+residual divergence is recorded as a follow-up (§10) — it does not block the
+fix for #103's reported symptom.
 
 The only difference between `dump_patt.rs` and `simple.rs` is the
 `AR2VideoBufferT` setup:
@@ -225,6 +234,7 @@ violates that contract.
 - Issue #103 point 3 — `patt_ratio` correctness vs. the value used by `mk_patt`. Separate brainstorm.
 - Issue #103 point 4 — `patt.hiro` / `ar_patt_load` byte-order, header parsing, channel ordering. Separate brainstorm.
 - Auto-thresholding (BRACKETING / ADAPTIVE / MEDIAN / OTSU) — pre-existing TODO at `crates/core/src/ar/marker.rs:124`. Unrelated.
-- Eventual full pixel-format coverage in `ar_patt_get_image` (BGR, BGRA, ABGR, ARGB, RGB565, 2vuy, yuvs) — incremental, post-PR-B. Now lower priority since the active path is verified correct.
+- Eventual full pixel-format coverage in `ar_patt_get_image` (BGR, BGRA, ABGR, ARGB, RGB565, 2vuy, yuvs) — incremental, post-PR-B. Now lower priority since the active path is functionally verified.
+- **Strict byte-equality between Rust and C `ext_patt`** (i.e. cf parity within `1e-6`). PR-A ran the diagnostic end-to-end and found Rust `cf ≈ 0.89` vs C `cf ≈ 0.85` on hiro — same id, both above cutoff, but not bit-identical. Likely candidates for the drift: averaging arithmetic (luma weighting / `total_div` rounding) or sub-LSB perspective rounding. Worth a focused follow-up once PR-B closes the immediate symptom.
 - Eventual CI parity test (Approach 2 from the brainstorm) — adds ARToolKit5 build deps to CI; defer until parity is locally trusted.
 - PR-B (revised): fix `simple.rs` frame contract + add `ar_detect_marker` sanity check + doc-comment the contract referencing `video2.c:682`.
