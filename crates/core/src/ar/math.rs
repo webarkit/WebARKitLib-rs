@@ -43,20 +43,11 @@ use std::ops::Mul;
 /// Matrix structure
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
+#[derive(Default)]
 pub struct ARMat {
     pub m: Vec<ARdouble>,
     pub row: i32,
     pub clm: i32,
-}
-
-impl Default for ARMat {
-    fn default() -> Self {
-        Self {
-            m: Vec::new(),
-            row: 0,
-            clm: 0,
-        }
-    }
 }
 
 impl ARMat {
@@ -105,9 +96,7 @@ impl ARMat {
             }
             if mmax != k {
                 for j in k..dimen {
-                    let work = ap[k * dimen + j];
-                    ap[k * dimen + j] = ap[mmax * dimen + j];
-                    ap[mmax * dimen + j] = work;
+                    ap.swap(k * dimen + j, mmax * dimen + j);
                 }
                 is += 1;
             }
@@ -146,17 +135,14 @@ impl ARMat {
             return Ok(());
         }
 
-        let mut nos = vec![0; dimen];
-        for n in 0..dimen {
-            nos[n] = n;
-        }
+        let mut nos: Vec<usize> = (0..dimen).collect();
 
         for n in 0..dimen {
             let mut p = 0.0;
             let mut ip = -1isize;
 
             for i in n..dimen {
-                let pbuf = self.m[i * dimen + 0].abs();
+                let pbuf = self.m[i * dimen].abs();
                 if p < pbuf {
                     p = pbuf;
                     ip = i as isize;
@@ -169,17 +155,13 @@ impl ARMat {
 
             let ip = ip as usize;
 
-            let nwork = nos[ip];
-            nos[ip] = nos[n];
-            nos[n] = nwork;
+            nos.swap(ip, n);
 
             for j in 0..dimen {
-                let work = self.m[ip * dimen + j];
-                self.m[ip * dimen + j] = self.m[n * dimen + j];
-                self.m[n * dimen + j] = work;
+                self.m.swap(ip * dimen + j, n * dimen + j);
             }
 
-            let work = self.m[n * dimen + 0];
+            let work = self.m[n * dimen];
             for j in 1..dimen {
                 self.m[n * dimen + j - 1] = self.m[n * dimen + j] / work;
             }
@@ -187,7 +169,7 @@ impl ARMat {
 
             for i in 0..dimen {
                 if i != n {
-                    let work = self.m[i * dimen + 0];
+                    let work = self.m[i * dimen];
                     for j in 1..dimen {
                         self.m[i * dimen + j - 1] =
                             self.m[i * dimen + j] - work * self.m[n * dimen + j - 1];
@@ -207,9 +189,7 @@ impl ARMat {
             }
             nos[j] = nos[n];
             for i in 0..dimen {
-                let work = self.m[i * dimen + j];
-                self.m[i * dimen + j] = self.m[i * dimen + n];
-                self.m[i * dimen + n] = work;
+                self.m.swap(i * dimen + j, i * dimen + n);
             }
         }
 
@@ -224,6 +204,7 @@ impl ARMat {
     }
 
     /// Tridiagonalize symmetric matrix (port of arVecTridiagonalize)
+    #[allow(clippy::needless_range_loop)]
     pub fn tridiagonalize(
         &mut self,
         d: &mut [ARdouble],
@@ -408,15 +389,14 @@ pub fn qrm(a: &mut ARMat, dv: &mut [ARdouble]) -> Result<(), &'static str> {
         dv[h] = dv[k];
         dv[k] = t;
         for i in 0..dim {
-            let w = a.m[h * dim + i];
-            a.m[h * dim + i] = a.m[k * dim + i];
-            a.m[k * dim + i] = w;
+            a.m.swap(h * dim + i, k * dim + i);
         }
     }
     Ok(())
 }
 
 impl ARMat {
+    #[allow(clippy::needless_range_loop)]
     pub fn ex(&self, mean: &mut [ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -440,6 +420,7 @@ impl ARMat {
         Ok(())
     }
 
+    #[allow(clippy::needless_range_loop)]
     pub fn center(&mut self, mean: &[ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -636,7 +617,7 @@ impl ARMat {
     }
 }
 
-impl<'a, 'b> Mul<&'b ARMat> for &'a ARMat {
+impl<'b> Mul<&'b ARMat> for &ARMat {
     type Output = Result<ARMat, &'static str>;
 
     /// Multiplies two matrices (`self` * `rhs`).
@@ -653,14 +634,12 @@ impl<'a, 'b> Mul<&'b ARMat> for &'a ARMat {
 
         for r in 0..(dest.row as usize) {
             for c in 0..(dest.clm as usize) {
-                let mut sum = 0.0;
-                let mut p1_idx = r * a_clm;
-                let mut p2_idx = c;
-                for _ in 0..a_clm {
-                    sum += self.m[p1_idx] * rhs.m[p2_idx];
-                    p1_idx += 1;
-                    p2_idx += b_clm;
-                }
+                let row_a = &self.m[r * a_clm..(r + 1) * a_clm];
+                let sum: f64 = row_a
+                    .iter()
+                    .zip((c..).step_by(b_clm))
+                    .map(|(&a, bi)| a * rhs.m[bi])
+                    .sum();
                 dest.m[r * dest_clm + c] = sum;
             }
         }
@@ -672,20 +651,11 @@ impl<'a, 'b> Mul<&'b ARMat> for &'a ARMat {
 /// Float Matrix structure (Explicit f32 variant)
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
+#[derive(Default)]
 pub struct ARMatf {
     pub m: Vec<f32>,
     pub row: i32,
     pub clm: i32,
-}
-
-impl Default for ARMatf {
-    fn default() -> Self {
-        Self {
-            m: Vec::new(),
-            row: 0,
-            clm: 0,
-        }
-    }
 }
 
 impl ARMatf {
@@ -700,7 +670,7 @@ impl ARMatf {
     }
 }
 
-impl<'a, 'b> Mul<&'b ARMatf> for &'a ARMatf {
+impl<'b> Mul<&'b ARMatf> for &ARMatf {
     type Output = Result<ARMatf, &'static str>;
 
     /// Multiplies two matrices (`self` * `rhs`).
@@ -717,14 +687,12 @@ impl<'a, 'b> Mul<&'b ARMatf> for &'a ARMatf {
 
         for r in 0..(dest.row as usize) {
             for c in 0..(dest.clm as usize) {
-                let mut sum = 0.0;
-                let mut p1_idx = r * a_clm;
-                let mut p2_idx = c;
-                for _ in 0..a_clm {
-                    sum += self.m[p1_idx] * rhs.m[p2_idx];
-                    p1_idx += 1;
-                    p2_idx += b_clm;
-                }
+                let row_a = &self.m[r * a_clm..(r + 1) * a_clm];
+                let sum: f32 = row_a
+                    .iter()
+                    .zip((c..).step_by(b_clm))
+                    .map(|(&a, bi)| a * rhs.m[bi])
+                    .sum();
                 dest.m[r * dest_clm + c] = sum;
             }
         }
@@ -736,18 +704,10 @@ impl<'a, 'b> Mul<&'b ARMatf> for &'a ARMatf {
 /// Vector structure
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
+#[derive(Default)]
 pub struct ARVec {
     pub v: Vec<ARdouble>,
     pub clm: i32,
-}
-
-impl Default for ARVec {
-    fn default() -> Self {
-        Self {
-            v: Vec::new(),
-            clm: 0,
-        }
-    }
 }
 
 impl ARVec {

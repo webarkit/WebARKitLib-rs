@@ -50,6 +50,16 @@ pub const AR_MATRIX_CODE_DETECTION: i32 = 2;
 pub const AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION: i32 = 3;
 pub const AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION: i32 = 4;
 
+/// C equivalent: AR_NOUSE_TRACKING_HISTORY
+/// Skip tracking history; only apply confidence cutoff on each frame independently.
+pub const AR_NOUSE_TRACKING_HISTORY: i32 = 0;
+/// C equivalent: AR_USE_TRACKING_HISTORY
+/// Use full tracking history with resurrection of lost markers from previous frames.
+pub const AR_USE_TRACKING_HISTORY: i32 = 1;
+/// C equivalent: AR_USE_TRACKING_HISTORY_V2
+/// Use tracking history (merge + aging) but without resurrection of lost markers.
+pub const AR_USE_TRACKING_HISTORY_V2: i32 = 2;
+
 /// A structure to hold a timestamp in seconds and microseconds, with arbitrary epoch.
 #[derive(Debug, Clone, PartialEq, Default)]
 #[repr(C)]
@@ -130,8 +140,9 @@ impl Default for ARMarkerInfo2 {
 
 /// Result codes returned by arDetectMarker to report state of individual detected trapezoidal regions.
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMarkerInfoCutoffPhase {
+    #[default]
     None = 0,
     PatternExtraction,
     MatchGeneric,
@@ -144,9 +155,47 @@ pub enum ARMarkerInfoCutoffPhase {
     HeuristicTroublesomeMatrixCodes,
 }
 
-impl Default for ARMarkerInfoCutoffPhase {
-    fn default() -> Self {
-        ARMarkerInfoCutoffPhase::None
+/// Error variants returned by pattern and matrix matching functions.
+/// Maps 1:1 to [`ARMarkerInfoCutoffPhase`] — use `.into()` to convert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MatchError {
+    /// Generic match failure (C result code -1).
+    Generic,
+    /// Insufficient contrast (C result code -2).
+    Contrast,
+    /// Matrix barcode locator pattern not found (C result code -3).
+    BarcodeNotFound,
+    /// Matrix barcode ECC decoding failed (C result code -4).
+    BarcodeEdcFail,
+    /// Heuristic: troublesome matrix code pattern (C result code -5).
+    HeuristicTroublesomeMatrixCodes,
+    /// Pattern extraction from image failed (C result code -6).
+    PatternExtraction,
+}
+
+/// Success payload returned by pattern and matrix matching functions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MatchOk {
+    /// Matched marker ID (template: pattern index; matrix: decoded integer).
+    pub id: i32,
+    /// Orientation (0–3, 90° increments).
+    pub dir: i32,
+    /// Confidence value (0.0–1.0; 1.0 for matrix codes).
+    pub cf: f64,
+    /// Number of errors corrected by ECC (0 for codes without ECC, always 0 for template).
+    pub error_corrected: i32,
+}
+
+impl From<MatchError> for ARMarkerInfoCutoffPhase {
+    fn from(e: MatchError) -> Self {
+        match e {
+            MatchError::Generic => Self::MatchGeneric,
+            MatchError::Contrast => Self::MatchContrast,
+            MatchError::BarcodeNotFound => Self::MatchBarcodeNotFound,
+            MatchError::BarcodeEdcFail => Self::MatchBarcodeEdcFail,
+            MatchError::HeuristicTroublesomeMatrixCodes => Self::HeuristicTroublesomeMatrixCodes,
+            MatchError::PatternExtraction => Self::PatternExtraction,
+        }
     }
 }
 
@@ -290,19 +339,10 @@ impl ARParamLT {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ARTrackingHistory {
     pub marker: ARMarkerInfo,
     pub count: i32,
-}
-
-impl Default for ARTrackingHistory {
-    fn default() -> Self {
-        Self {
-            marker: ARMarkerInfo::default(),
-            count: 0,
-        }
-    }
 }
 
 pub type ARLabelingLabelType = i16;
@@ -352,8 +392,9 @@ pub struct ARImageProcInfo {
 }
 
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARPixelFormat {
+    #[default]
     Invalid = -1,
     RGB = 0,
     BGR,
@@ -372,15 +413,10 @@ pub enum ARPixelFormat {
     NV21,
 }
 
-impl Default for ARPixelFormat {
-    fn default() -> Self {
-        ARPixelFormat::Invalid
-    }
-}
-
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARLabelingThreshMode {
+    #[default]
     Manual = 0,
     AutoMedian,
     AutoOtsu,
@@ -388,16 +424,11 @@ pub enum ARLabelingThreshMode {
     AutoBracketing,
 }
 
-impl Default for ARLabelingThreshMode {
-    fn default() -> Self {
-        ARLabelingThreshMode::Manual
-    }
-}
-
 #[repr(i32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMatrixCodeType {
     /// 3x3 Matrix Code (Default)
+    #[default]
     Code3x3 = 0x03,
     /// 3x3 Matrix Code with Parity (6,5)
     Code3x3Parity65 = 0x03 | 0x100,
@@ -417,12 +448,6 @@ pub enum ARMatrixCodeType {
     Code5x5BCH2277 = 0x05 | 0x600,
     /// 6x6 Matrix Code
     Code6x6 = 0x06,
-}
-
-impl Default for ARMatrixCodeType {
-    fn default() -> Self {
-        ARMatrixCodeType::Code3x3
-    }
 }
 
 /// Structure holding state of an instance of the square marker tracker.
@@ -460,11 +485,12 @@ pub struct ARHandle {
 
 impl ARHandle {
     pub fn new(param: ARParam) -> Self {
-        let mut handle = ARHandle::default();
-        handle.xsize = param.xsize;
-        handle.ysize = param.ysize;
         // In the full port, arParamLT would be initialized here too.
-        handle
+        ARHandle {
+            xsize: param.xsize,
+            ysize: param.ysize,
+            ..ARHandle::default()
+        }
     }
 
     pub fn set_pixel_format(&mut self, format: ARPixelFormat) {
@@ -618,5 +644,53 @@ mod tests {
     fn test_ar3dstereohandle_default_initialization() {
         let handle = AR3DStereoHandle::default();
         assert_eq!(handle.icp_stereo_handle, std::ptr::null_mut());
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_generic() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::Generic),
+            ARMarkerInfoCutoffPhase::MatchGeneric
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_contrast() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::Contrast),
+            ARMarkerInfoCutoffPhase::MatchContrast
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_barcode_not_found() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::BarcodeNotFound),
+            ARMarkerInfoCutoffPhase::MatchBarcodeNotFound
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_barcode_edc_fail() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::BarcodeEdcFail),
+            ARMarkerInfoCutoffPhase::MatchBarcodeEdcFail
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_heuristic() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::HeuristicTroublesomeMatrixCodes),
+            ARMarkerInfoCutoffPhase::HeuristicTroublesomeMatrixCodes
+        );
+    }
+
+    #[test]
+    fn test_match_error_to_cutoff_phase_pattern_extraction() {
+        assert_eq!(
+            ARMarkerInfoCutoffPhase::from(MatchError::PatternExtraction),
+            ARMarkerInfoCutoffPhase::PatternExtraction
+        );
     }
 }

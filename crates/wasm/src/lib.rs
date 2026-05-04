@@ -103,7 +103,7 @@ impl WasmARHandle {
         let param = ARParam::load(cursor)
             .map_err(|e| JsValue::from_str(&format!("Failed to load param: {}", e)))?;
 
-        let ar3d_handle = ar_3d_create_handle(&param).map_err(|e| JsValue::from_str(e))?;
+        let ar3d_handle = ar_3d_create_handle(&param).map_err(JsValue::from_str)?;
 
         let mut handle = ARHandle::new(param.clone());
         handle.set_pixel_format(ARPixelFormat::RGBA);
@@ -128,8 +128,7 @@ impl WasmARHandle {
             return Err(JsValue::from_str("Pattern handle is null"));
         }
         let patt_handle = unsafe { &mut *self.handle.patt_handle };
-        let idx = ar_patt_load_from_buffer(patt_handle, patt_content)
-            .map_err(|e| JsValue::from_str(e))?;
+        let idx = ar_patt_load_from_buffer(patt_handle, patt_content).map_err(JsValue::from_str)?;
         Ok(idx)
     }
 
@@ -231,7 +230,7 @@ impl WasmARHandle {
             ..Default::default()
         };
 
-        ar_detect_marker(&mut self.handle, &video_buffer).map_err(|e| JsValue::from_str(e))?;
+        ar_detect_marker(&mut self.handle, &video_buffer).map_err(JsValue::from_str)?;
 
         let mut results = Vec::new();
         for i in 0..self.handle.marker_num as usize {
@@ -256,8 +255,8 @@ impl WasmARHandle {
             });
         }
 
-        Ok(serde_wasm_bindgen::to_value(&results)
-            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?)
+        serde_wasm_bindgen::to_value(&results)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
     }
 
     /// Get the current threshold used for binarization.
@@ -276,7 +275,7 @@ impl WasmARHandle {
         let ar3d_ref = unsafe { &*self.ar3d_handle };
 
         let icp_error = ar_get_trans_mat_square(ar3d_ref, marker_info, width, &mut conv)
-            .map_err(|e| JsValue::from_str(e))?;
+            .map_err(JsValue::from_str)?;
 
         // Flatten 3x4 to 12 floats
         let mut flat = [0.0f32; 12];
@@ -291,8 +290,8 @@ impl WasmARHandle {
             icp_error: icp_error as f32,
         };
 
-        Ok(serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?)
+        serde_wasm_bindgen::to_value(&result)
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))
     }
 }
 
@@ -547,13 +546,13 @@ impl WasmNFTHandle {
         }
 
         if self.surface_set.cont_num <= 0 {
-            return Ok(serde_wasm_bindgen::to_value(&NFTTrackingResult {
+            return serde_wasm_bindgen::to_value(&NFTTrackingResult {
                 found: false,
                 matrix: vec![0.0; 12],
                 error: -1.0,
                 cont_num: 0,
             })
-            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)))?);
+            .map_err(|e| JsValue::from_str(&format!("Serialization error: {}", e)));
         }
 
         // Convert RGBA to grayscale.

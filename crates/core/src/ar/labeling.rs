@@ -95,6 +95,7 @@ pub enum ImageProcMode {
 ///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
 /// arlog_i!("{} regions found", label_info.label_num);
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn ar_labeling(
     image: &[u8],
     xsize: i32,
@@ -301,15 +302,15 @@ pub fn ar_labeling(
                     n_count = unique_count;
 
                     let mut final_label = neighbors[0];
-                    for k in 1..n_count {
-                        if neighbors[k] != final_label {
-                            final_label = do_union(work, &mut work2, final_label, neighbors[k]);
+                    for &nb in &neighbors[1..n_count] {
+                        if nb != final_label {
+                            final_label = do_union(work, &mut work2, final_label, nb);
                         }
                     }
                     label_img[p_idx] = final_label as crate::types::ARLabelingLabelType;
 
                     let l = (final_label as usize - 1) * 7;
-                    work2[l + 0] += 1;
+                    work2[l] += 1;
                     work2[l + 1] += i as i64;
                     work2[l + 2] += j as i64;
                     if work2[l + 3] > i as i64 {
@@ -338,7 +339,7 @@ pub fn ar_labeling(
                     label_img[p_idx] = wk_max as crate::types::ARLabelingLabelType;
 
                     let l = (wk_max - 1) * 7;
-                    work2[l + 0] = 1; // area
+                    work2[l] = 1; // area
                     work2[l + 1] = i as i64; // pos[0]
                     work2[l + 2] = j as i64; // pos[1]
                     work2[l + 3] = i as i64; // clip[0] (xmin)
@@ -421,11 +422,11 @@ pub fn ar_labeling(
         if work[k - 1] == k as i32 {
             // It's a root
             let src = (k - 1) * 7;
-            if work2[src + 0] > 0 {
+            if work2[src] > 0 {
                 let dense_idx = label_map[k - 1];
                 if dense_idx > 0 {
                     let i = (dense_idx - 1) as usize;
-                    label_info.area[i] = work2[src + 0] as i32;
+                    label_info.area[i] = work2[src] as i32;
                     label_info.pos[i][0] = work2[src + 1] as ARdouble;
                     label_info.pos[i][1] = work2[src + 2] as ARdouble;
                     label_info.clip[i][0] = work2[src + 3] as i32;

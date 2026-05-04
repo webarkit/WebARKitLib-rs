@@ -64,7 +64,7 @@ fn marker_detection_benchmark(c: &mut Criterion) {
     let width = 429;
     let height = 317;
 
-    let mut param_ltf = ARParamLTf::new_basic(width, height);
+    let param_ltf = ARParamLTf::new_basic(width, height);
     let mut param_lt = Box::new(ARParamLT {
         param: param.clone(),
         param_ltf,
@@ -73,7 +73,7 @@ fn marker_detection_benchmark(c: &mut Criterion) {
     let mut ar_handle = ARHandle::default();
     ar_handle.xsize = width;
     ar_handle.ysize = height;
-    ar_handle.ar_pixel_format = ARPixelFormat::Invalid;
+    ar_handle.set_pixel_format(ARPixelFormat::MONO);
     ar_handle.ar_labeling_thresh = 100; // Standard threshold
     ar_handle.ar_param_lt = &mut *param_lt;
 

@@ -199,6 +199,7 @@ pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i3
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `patt_size` - Size of the pattern grid.
 /// * `filename` - Destination path for the saved pattern file.
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 pub fn ar_patt_save(
     image: &[u8],
     xsize: usize,
@@ -334,21 +335,18 @@ pub fn ar_patt_delete_handle(patt_handle: ARPattHandle) {
 }
 
 /// Matches the unwarped square marker against loaded templates via NCC (Normalized Cross Correlation).
+#[allow(clippy::needless_range_loop)]
 pub fn pattern_match(
     patt_handle: &ARPattHandle,
     mode: i32,
     data: &[u8],
     size: i32,
-    code: &mut i32,
-    dir: &mut i32,
-    cf: &mut ARdouble,
-) -> Result<(), &'static str> {
+) -> Result<crate::types::MatchOk, crate::types::MatchError> {
+    use crate::types::{MatchError, MatchOk};
+
     if size <= 0 {
-        *code = 0;
-        *dir = 0;
-        *cf = -1.0;
         arlog_e!("pattern_match: invalid size={}", size);
-        return Err("Invalid size");
+        return Err(MatchError::PatternExtraction);
     }
 
     let size_u = size as usize;
@@ -361,7 +359,7 @@ pub fn pattern_match(
                 data.len(),
                 size_sqd_x3
             );
-            return Err("Data array too small");
+            return Err(MatchError::PatternExtraction);
         }
         let mut input = vec![0i16; size_sqd_x3];
 
@@ -381,14 +379,11 @@ pub fn pattern_match(
 
         let datapow = (sum as ARdouble).sqrt();
         if datapow / ((size as ARdouble) * 3.0f64.sqrt()) < AR_PATT_CONTRAST_THRESH1 {
-            *code = 0;
-            *dir = 0;
-            *cf = -1.0;
             arlog_d!(
                 "pattern_match(color): insufficient contrast (datapow={:.3})",
                 datapow
             );
-            return Err("Insufficient contrast");
+            return Err(MatchError::Contrast);
         }
 
         let mut res1 = -1;
@@ -421,10 +416,12 @@ pub fn pattern_match(
             }
         }
 
-        *dir = res1;
-        *code = res2;
-        *cf = max;
-        Ok(())
+        Ok(MatchOk {
+            id: res2,
+            dir: res1,
+            cf: max,
+            error_corrected: 0,
+        })
     } else if mode == AR_TEMPLATE_MATCHING_MONO {
         let size_sqd = size_u * size_u;
         if data.len() < size_sqd {
@@ -433,7 +430,7 @@ pub fn pattern_match(
                 data.len(),
                 size_sqd
             );
-            return Err("Data array too small");
+            return Err(MatchError::PatternExtraction);
         }
 
         let mut input = vec![0i16; size_sqd];
@@ -454,14 +451,11 @@ pub fn pattern_match(
 
         let datapow = (sum as ARdouble).sqrt();
         if datapow / (size as ARdouble) < AR_PATT_CONTRAST_THRESH1 {
-            *code = 0;
-            *dir = 0;
-            *cf = -1.0;
             arlog_d!(
                 "pattern_match(mono): insufficient contrast (datapow={:.3})",
                 datapow
             );
-            return Err("Insufficient contrast");
+            return Err(MatchError::Contrast);
         }
 
         let mut res1 = -1;
@@ -495,27 +489,30 @@ pub fn pattern_match(
             }
         }
 
-        *dir = res1;
-        *code = res2;
-        *cf = max;
-        Ok(())
+        Ok(MatchOk {
+            id: res2,
+            dir: res1,
+            cf: max,
+            error_corrected: 0,
+        })
     } else {
         arlog_e!("pattern_match: unsupported matching mode {}", mode);
-        Err("Unsupported matching mode")
+        Err(MatchError::Generic)
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 pub fn get_cpara(
     world: &[[ARdouble; 2]; 4],
     vertex: &[[ARdouble; 2]; 4],
     para: &mut [[ARdouble; 3]; 3],
 ) -> Result<(), &'static str> {
-    use crate::math::ARMat;
+    use super::math::ARMat;
     let mut a = ARMat::new(8, 8);
     let mut b = ARMat::new(8, 1);
 
     for i in 0..4 {
-        a.m[i * 16 + 0] = world[i][0];
+        a.m[i * 16] = world[i][0];
         a.m[i * 16 + 1] = world[i][1];
         a.m[i * 16 + 2] = 1.0;
         a.m[i * 16 + 3] = 0.0;
@@ -533,7 +530,7 @@ pub fn get_cpara(
         a.m[i * 16 + 14] = -world[i][0] * vertex[i][1];
         a.m[i * 16 + 15] = -world[i][1] * vertex[i][1];
 
-        b.m[i * 2 + 0] = vertex[i][0];
+        b.m[i * 2] = vertex[i][0];
         b.m[i * 2 + 1] = vertex[i][1];
     }
 
@@ -541,7 +538,7 @@ pub fn get_cpara(
     let c = (&a * &b)?;
 
     for i in 0..2 {
-        para[i][0] = c.m[i * 3 + 0];
+        para[i][0] = c.m[i * 3];
         para[i][1] = c.m[i * 3 + 1];
         para[i][2] = c.m[i * 3 + 2];
     }
@@ -568,6 +565,7 @@ pub fn get_cpara(
 /// * `vertex` - Array of 4 indices pointing to the corners in the coord arrays.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+#[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image(
     image_proc_mode: i32,
     patt_detect_mode: i32,
@@ -722,10 +720,17 @@ pub fn ar_patt_get_image(
                         }
                         // Note: BGR, BGRA, 2vuy, yuvs, rgb565, etc. can be expanded here.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image: unsupported pixel format {:?} for color matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image: unsupported pixel format {:?} for color matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for color matching");
                         }
                     }
@@ -756,10 +761,17 @@ pub fn ar_patt_get_image(
                         }
                         // Note: Other specific mono format decodings can be added here.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image: unsupported pixel format {:?} for mono matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image: unsupported pixel format {:?} for mono matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for mono matching");
                         }
                     }
@@ -792,6 +804,7 @@ pub fn ar_patt_get_image(
 /// * `vertex` - 4 corners of the detected marker.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+#[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image2(
     image_proc_mode: i32,
     patt_detect_mode: i32,
@@ -953,10 +966,17 @@ pub fn ar_patt_get_image2(
                         }
                         // Note: Add other specific color format decodings (e.g., RGB_565, YUVS) here as needed.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image2: unsupported pixel format {:?} for color matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image2: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image2: unsupported pixel format {:?} for color matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for color matching");
                         }
                     }
@@ -987,10 +1007,17 @@ pub fn ar_patt_get_image2(
                         }
                         // Note: Add other specific mono format decodings here as needed.
                         _ => {
-                            arlog_e!(
-                                "ar_patt_get_image2: unsupported pixel format {:?} for mono matching",
-                                pixel_format
-                            );
+                            if pixel_format == ARPixelFormat::Invalid {
+                                arlog_e!(
+                                    "ar_patt_get_image2: ar_pixel_format is Invalid — \
+                                     call ARHandle::set_pixel_format() before ar_detect_marker"
+                                );
+                            } else {
+                                arlog_e!(
+                                    "ar_patt_get_image2: unsupported pixel format {:?} for mono matching",
+                                    pixel_format
+                                );
+                            }
                             return Err("Unsupported pixel format for mono matching");
                         }
                     }
@@ -1013,19 +1040,8 @@ pub fn ar_patt_get_id(
     patt_detect_mode: i32,
     data: &[u8], // Data from the normalized region of interest (square)
     patt_size: i32,
-    code: &mut i32,
-    dir: &mut i32,
-    cf: &mut f64,
-) -> Result<(), &'static str> {
-    pattern_match(
-        patt_handle,
-        patt_detect_mode,
-        data,
-        patt_size,
-        code,
-        dir,
-        cf,
-    )
+) -> Result<crate::types::MatchOk, crate::types::MatchError> {
+    pattern_match(patt_handle, patt_detect_mode, data, patt_size)
 }
 
 #[cfg(test)]
@@ -1056,19 +1072,16 @@ mod tests {
             }
         }
 
-        let mut code = 0;
-        let mut dir = 0;
-        let mut cf = 0.0;
         let result = pattern_match(
             &handle,
             AR_TEMPLATE_MATCHING_COLOR,
             &mock_data,
             AR_PATT_SIZE1,
-            &mut code,
-            &mut dir,
-            &mut cf,
         );
         assert!(result.is_ok());
+        let ok = result.unwrap();
+        assert!(ok.cf >= 0.0);
+        assert_eq!(ok.error_corrected, 0);
     }
 
     #[test]

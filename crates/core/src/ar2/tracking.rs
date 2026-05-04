@@ -501,8 +501,7 @@ pub fn extract_visible_features(
     let mut l = 0;
     let mut l2 = 0;
 
-    for i in 0..surface_set.surface.len() {
-        let surface = &surface_set.surface[i];
+    for (i, surface) in surface_set.surface.iter().enumerate() {
         let feature_set = match &surface.feature_set {
             Some(fs) => fs,
             None => continue,
@@ -562,19 +561,19 @@ pub fn extract_visible_features(
                         flag: 0,
                     };
                     l += 1;
-                } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
+                } else if w[1] <= feature_points.maxdpi * 2.0
+                    && w[1] >= feature_points.mindpi / 2.0
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX
                 {
-                    if l2 < AR2_TRACKING_CANDIDATE_MAX {
-                        candidate2[l2] = AR2TemplateCandidate {
-                            snum: i as i32,
-                            level: j as i32,
-                            num: k as i32,
-                            sx,
-                            sy,
-                            flag: 0,
-                        };
-                        l2 += 1;
-                    }
+                    candidate2[l2] = AR2TemplateCandidate {
+                        snum: i as i32,
+                        level: j as i32,
+                        num: k as i32,
+                        sx,
+                        sy,
+                        flag: 0,
+                    };
+                    l2 += 1;
                 }
             }
         }
@@ -596,8 +595,7 @@ pub fn extract_visible_features_homography(
     let mut l = 0;
     let mut l2 = 0;
 
-    for i in 0..surface_set.surface.len() {
-        let surface = &surface_set.surface[i];
+    for (i, surface) in surface_set.surface.iter().enumerate() {
         let feature_set = match &surface.feature_set {
             Some(fs) => fs,
             None => continue,
@@ -640,19 +638,19 @@ pub fn extract_visible_features_homography(
                         flag: 0,
                     };
                     l += 1;
-                } else if w[1] <= feature_points.maxdpi * 2.0 && w[1] >= feature_points.mindpi / 2.0
+                } else if w[1] <= feature_points.maxdpi * 2.0
+                    && w[1] >= feature_points.mindpi / 2.0
+                    && l2 < AR2_TRACKING_CANDIDATE_MAX
                 {
-                    if l2 < AR2_TRACKING_CANDIDATE_MAX {
-                        candidate2[l2] = AR2TemplateCandidate {
-                            snum: i as i32,
-                            level: j as i32,
-                            num: k as i32,
-                            sx,
-                            sy,
-                            flag: 0,
-                        };
-                        l2 += 1;
-                    }
+                    candidate2[l2] = AR2TemplateCandidate {
+                        snum: i as i32,
+                        level: j as i32,
+                        num: k as i32,
+                        sx,
+                        sy,
+                        flag: 0,
+                    };
+                    l2 += 1;
                 }
             }
         }
@@ -703,7 +701,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 1 {
         let mut dmax = 0.0;
         let mut j = -1;
@@ -732,7 +730,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 2 {
         let mut dmax = 0.0;
         let mut j = -1;
@@ -763,7 +761,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else if num == 3 {
         let (mut p2sinf, mut p2cosf) = (0.0, 0.0);
         let (mut p3sinf, mut p3cosf) = (0.0, 0.0);
@@ -853,7 +851,7 @@ pub fn ar2_select_template(
         if j != -1 {
             candidate[j as usize].flag = 1;
         }
-        return j;
+        j
     } else {
         // Find previous feature if still valid
         for p_cand in prev_feature.iter_mut() {
@@ -1010,6 +1008,7 @@ pub struct AR2Tracking2DResult {
     pub pos3d: [f32; 3],
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_tracking_2d_sub(
     cparam_lt: Option<&ARParamLT>,
     pix_format: ARPixelFormat,
@@ -1226,7 +1225,7 @@ pub fn ar2_tracking(
         let cparam_lt = unsafe { handle.cparam_lt.as_ref() };
         let snum = cand.snum as usize;
 
-        match ar2_tracking_2d_sub(
+        if let Ok(res) = ar2_tracking_2d_sub(
             cparam_lt,
             handle.pix_format,
             handle.xsize,
@@ -1242,33 +1241,30 @@ pub fn ar2_tracking(
             &mut handle.mf_image,
             &mut handle.templ[0], // Using index 0 for sequential
         ) {
-            Ok(res) => {
-                if res.sim > handle.sim_thresh {
-                    if handle.tracking_mode == AR2_TRACKING_6DOF {
-                        let (ix, iy) = cparam_lt
-                            .unwrap()
-                            .param_ltf
-                            .observ2ideal(res.pos2d[0], res.pos2d[1])
-                            .map_err(|_| -1)?;
-                        handle.pos2d[num as usize][0] = ix;
-                        handle.pos2d[num as usize][1] = iy;
-                    } else {
-                        handle.pos2d[num as usize][0] = res.pos2d[0];
-                        handle.pos2d[num as usize][1] = res.pos2d[1];
-                    }
-                    handle.pos3d[num as usize][0] = res.pos3d[0];
-                    handle.pos3d[num as usize][1] = res.pos3d[1];
-                    handle.pos3d[num as usize][2] = res.pos3d[2];
-
-                    handle.used_feature[num as usize].snum = cand.snum;
-                    handle.used_feature[num as usize].level = cand.level;
-                    handle.used_feature[num as usize].num = cand.num;
-                    handle.used_feature[num as usize].flag = 0;
-
-                    num += 1;
+            if res.sim > handle.sim_thresh {
+                if handle.tracking_mode == AR2_TRACKING_6DOF {
+                    let (ix, iy) = cparam_lt
+                        .unwrap()
+                        .param_ltf
+                        .observ2ideal(res.pos2d[0], res.pos2d[1])
+                        .map_err(|_| -1)?;
+                    handle.pos2d[num as usize][0] = ix;
+                    handle.pos2d[num as usize][1] = iy;
+                } else {
+                    handle.pos2d[num as usize][0] = res.pos2d[0];
+                    handle.pos2d[num as usize][1] = res.pos2d[1];
                 }
+                handle.pos3d[num as usize][0] = res.pos3d[0];
+                handle.pos3d[num as usize][1] = res.pos3d[1];
+                handle.pos3d[num as usize][2] = res.pos3d[2];
+
+                handle.used_feature[num as usize].snum = cand.snum;
+                handle.used_feature[num as usize].level = cand.level;
+                handle.used_feature[num as usize].num = cand.num;
+                handle.used_feature[num as usize].flag = 0;
+
+                num += 1;
             }
-            Err(_) => {}
         }
         i += 1;
     }
@@ -1352,10 +1348,10 @@ pub fn ar2_get_trans_mat(
     let mut dx = 0.0;
     let mut dy = 0.0;
     let mut dz = 0.0;
-    for i in 0..num {
-        dx += pos3d[i][0];
-        dy += pos3d[i][1];
-        dz += pos3d[i][2];
+    for p in &pos3d[..num] {
+        dx += p[0];
+        dy += p[1];
+        dz += p[2];
     }
     dx /= num as f32;
     dy /= num as f32;
@@ -1424,12 +1420,13 @@ pub fn ar2_get_trans_mat(
         - mat[2][1] * dy as ARdouble
         - mat[2][2] * dz as ARdouble) as f32;
 
-    err as f32
+    err
 }
 
 pub const KEEP_NUM: usize = 3;
 pub const SKIP_INTERVAL: i32 = 3;
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching(
     img: &[u8],
     mf_image: &mut [u8],
@@ -1445,15 +1442,13 @@ pub fn ar2_get_best_matching(
     val: &mut f32,
 ) -> Result<(), &'static str> {
     // Initialise mf_image for search areas
-    for ii in 0..3 {
-        if search[ii][0] < 0 {
+    for s in &search {
+        if s[0] < 0 {
             break;
         }
 
-        let px =
-            (search[ii][0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
-        let py =
-            (search[ii][1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let px = (s[0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let py = (s[1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
 
         let sx = (px - rx).max(0);
         let ex = (px + rx).min(xsize - 1);
@@ -1473,18 +1468,16 @@ pub fn ar2_get_best_matching(
     let mut cval = [0; KEEP_NUM];
     let mut ret = true;
 
-    for ii in 0..3 {
-        if search[ii][0] < 0 {
+    for s in &search {
+        if s[0] < 0 {
             if ret {
                 return Err("No valid search point");
             }
             break;
         }
 
-        let px =
-            (search[ii][0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
-        let py =
-            (search[ii][1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let px = (s[0] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
+        let py = (s[1] / (SKIP_INTERVAL + 1)) * (SKIP_INTERVAL + 1) + (SKIP_INTERVAL + 1) / 2;
 
         for j in (py - ry..=py + ry).step_by((SKIP_INTERVAL + 1) as usize) {
             if j - mtemp.yts1 * AR2_TEMP_SCALE < 0 {
@@ -1546,14 +1539,13 @@ pub fn ar2_get_best_matching(
                     img, xsize, ysize, pix_format, mtemp, i, j, &mut wval,
                 )
                 .is_ok()
+                    && wval > wval2
                 {
-                    if wval > wval2 {
-                        *bx = i;
-                        *by = j;
-                        wval2 = wval;
-                        *val = wval as f32 / 10000.0;
-                        final_ret = Ok(());
-                    }
+                    *bx = i;
+                    *by = j;
+                    wval2 = wval;
+                    *val = wval as f32 / 10000.0;
+                    final_ret = Ok(());
                 }
             }
         }
@@ -1562,6 +1554,7 @@ pub fn ar2_get_best_matching(
     final_ret
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching_sub_fine(
     img: &[u8],
     xsize: i32,
@@ -1639,13 +1632,10 @@ fn update_candidate(
         return;
     }
 
-    let mut insert_idx = *keep_num;
-    for l in 0..*keep_num {
-        if cval[l] < wval {
-            insert_idx = l;
-            break;
-        }
-    }
+    let insert_idx = cval[..*keep_num]
+        .iter()
+        .position(|&v| v < wval)
+        .unwrap_or(*keep_num);
 
     if insert_idx == *keep_num {
         if insert_idx < KEEP_NUM {

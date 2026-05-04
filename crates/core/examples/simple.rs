@@ -37,6 +37,7 @@
 use image::ImageReader;
 use std::fs::File;
 use webarkitlib_rs::{
+    arlog_e, arlog_i,
     image_proc::ARImageProcInfo,
     marker::ar_detect_marker,
     pattern::ar_patt_load,
@@ -49,9 +50,9 @@ use webarkitlib_rs::{
 };
 
 fn main() {
-    env_logger::init();
-    println!("WebARKitLib-rs v{}", version::get_version());
-    println!("WebARKitLib Example: Simple Marker Detection");
+    webarkitlib_rs::arlog::ar_log_init_default();
+    arlog_i!("WebARKitLib-rs v{}", version::get_version());
+    arlog_i!("WebARKitLib Example: Simple Marker Detection");
 
     // Use command line args or defaults
     let args: Vec<String> = std::env::args().collect();
@@ -102,7 +103,7 @@ fn main() {
     let found_jpg_path = data_dir.join("found.jpg");
 
     // Load ARParam
-    println!("Loading camera parameters from {}...", cparam_path);
+    arlog_i!("Loading camera parameters from {}...", cparam_path);
     let param_file = File::open(cparam_path).expect(&format!(
         "Failed to open camera parameters: {}",
         cparam_path
@@ -110,14 +111,14 @@ fn main() {
     let param = ARParam::load(param_file).expect("Failed to read camera parameters");
 
     // Load image
-    println!("Loading image {}...", img_path);
+    arlog_i!("Loading image {}...", img_path);
     let img = ImageReader::open(img_path)
         .expect(&format!("Failed to open image: {}", img_path))
         .decode()
         .expect("Failed to decode image");
     let width = img.width() as i32;
     let height = img.height() as i32;
-    println!("Image dimensions: {}x{}", width, height);
+    arlog_i!("Image dimensions: {}x{}", width, height);
 
     let luma_img = img.to_luma8();
     let color_img = img.to_rgba8();
@@ -125,7 +126,7 @@ fn main() {
     // SAVE RAW LUMA FOR C BENCHMARK
     {
         use std::io::Write;
-        println!("Exporting {} for C benchmark...", hiro_raw_path.display());
+        arlog_i!("Exporting {} for C benchmark...", hiro_raw_path.display());
         let mut f = File::create(&hiro_raw_path)
             .expect(&format!("Failed to create {}", hiro_raw_path.display()));
         f.write_all(luma_img.as_raw())
@@ -137,7 +138,7 @@ fn main() {
     let otsu_thresh = ipi
         .luma_hist_and_otsu(luma_img.as_raw())
         .expect("Failed to calculate Otsu threshold");
-    println!("Calculated Otsu threshold: {}", otsu_thresh);
+    arlog_i!("Calculated Otsu threshold: {}", otsu_thresh);
 
     // Debug: Save thresholded image to disk so we can see what the AR tracker sees
     let thresh_path = data_dir.join("thresh.png");
@@ -153,7 +154,7 @@ fn main() {
     thresh_img
         .save(&thresh_path)
         .expect("Failed to save thresholded image");
-    println!("Saved thresholded image to {}", thresh_path.display());
+    arlog_i!("Saved thresholded image to {}", thresh_path.display());
 
     // We mock an identity lookup table for the image size to avoid distortion failure
     let mut param_ltf = ARParamLTf::default();
@@ -175,7 +176,7 @@ fn main() {
         param_ltf,
     });
 
-    println!("Initializing AR3DHandle for pose estimation...");
+    arlog_i!("Initializing AR3DHandle for pose estimation...");
     let mut ar3d_handle_ptr = ar_3d_create_handle(&param).expect("Failed to create AR3DHandle");
 
     // Initialize the main tracking handle
@@ -183,7 +184,7 @@ fn main() {
     ar_handle.ar_debug = 1;
     ar_handle.xsize = width;
     ar_handle.ysize = height;
-    ar_handle.ar_pixel_format = ARPixelFormat::Invalid; // N/A for raw Luma
+    ar_handle.set_pixel_format(ARPixelFormat::MONO); // raw luma input
     ar_handle.ar_image_proc_mode = 0; // FrameImage
     ar_handle.ar_pattern_detection_mode = 0; // Template matching color/mono
     ar_handle.ar_labeling_mode = 0; // Black region
@@ -202,11 +203,11 @@ fn main() {
     patt_handle.patt_bw = vec![vec![0; 16 * 16 * 4]; 50];
     patt_handle.pattpow_bw = vec![0.0; 50 * 4];
 
-    println!("Loading hiro pattern from {}...", patt_path);
+    arlog_i!("Loading hiro pattern from {}...", patt_path);
     match ar_patt_load(&mut patt_handle, patt_path) {
-        Ok(idx) => println!("Pattern loaded successfully at index {}.", idx),
+        Ok(idx) => arlog_i!("Pattern loaded successfully at index {}.", idx),
         Err(e) => {
-            eprintln!("Failed to load pattern: {}", e);
+            arlog_e!("Failed to load pattern: {}", e);
             return;
         }
     }
@@ -217,34 +218,44 @@ fn main() {
 
     let luma_buffer_vec = luma_img.into_raw();
     let mut out_img = color_img.clone();
-    let color_buffer_vec = color_img.into_raw();
 
-    // Construct the AR2VideoBufferT pointing to our image data
+    // ARToolKit5's contract (cf. artoolkit5/video2.c:682): `buff` MUST hold
+    // data in the format declared by ar_pixel_format. When pixel_format is
+    // MONO, that means buff IS the luma data — buffLuma is just an alias.
+    // Feeding RGBA into buff while declaring MONO produces silent low-cf
+    // detections (see issue #103).
     let frame = AR2VideoBufferT {
-        buff: Some(color_buffer_vec),     // Color data
-        buff_luma: Some(luma_buffer_vec), // Gray data used for binarization
+        buff: Some(luma_buffer_vec.clone()), // pixfmt=MONO → buff IS luma
+        buff_luma: Some(luma_buffer_vec.clone()),
         buf_planes: None,
         buf_plane_count: 0,
         fill_flag: true,
         time: AR2VideoTimestampT { sec: 1, usec: 0 },
     };
 
-    println!("Passing image to ar_detect_marker...");
+    arlog_i!("Passing image to ar_detect_marker...");
 
     // Run the marker detection pipeline
     match ar_detect_marker(&mut ar_handle, &frame) {
         Ok(_) => {
-            println!("Detection pipeline finished successfully.");
-            println!("Detected {} potential markers.", ar_handle.marker_num);
+            arlog_i!("Detection pipeline finished successfully.");
+            arlog_i!("Detected {} potential markers.", ar_handle.marker_num);
 
             for i in 0..ar_handle.marker_num as usize {
                 let marker = &ar_handle.marker_info[i];
-                println!("Marker [{}]:", i);
-                println!("  Area: {}", marker.area);
-                println!("  Pos (X,Y): {:.2}, {:.2}", marker.pos[0], marker.pos[1]);
-                println!("  Confidence (CF): {:.4}", marker.cf);
-                println!("  Matched ID: {}", marker.id);
-                println!("  Orientation dir: {}", marker.dir);
+                arlog_i!("Marker [{}]:", i);
+                arlog_i!("  Area: {}", marker.area);
+                arlog_i!("  Pos (X,Y): {:.2}, {:.2}", marker.pos[0], marker.pos[1]);
+                arlog_i!("  Confidence (CF): {:.4}", marker.cf);
+                arlog_i!("  Matched ID: {}", marker.id);
+                arlog_i!(
+                    "  Template-match CF/ID: {:.4} / {}  (cfMatrix: {:.4}, idMatrix: {})",
+                    marker.cf_patt,
+                    marker.id_patt,
+                    marker.cf_matrix,
+                    marker.id_matrix
+                );
+                arlog_i!("  Orientation dir: {}", marker.dir);
 
                 if marker.id >= 0 {
                     let v = marker.vertex;
@@ -283,36 +294,51 @@ fn main() {
                         &mut trans_mat,
                     )
                     .unwrap_or(100000000.0);
-                    println!("  Extracted 3D Pose (ICP Error: {:.4}):", err);
-                    println!(
+                    arlog_i!("  Extracted 3D Pose (ICP Error: {:.4}):", err);
+                    arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[0][0], trans_mat[0][1], trans_mat[0][2], trans_mat[0][3]
+                        trans_mat[0][0],
+                        trans_mat[0][1],
+                        trans_mat[0][2],
+                        trans_mat[0][3]
                     );
-                    println!(
+                    arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[1][0], trans_mat[1][1], trans_mat[1][2], trans_mat[1][3]
+                        trans_mat[1][0],
+                        trans_mat[1][1],
+                        trans_mat[1][2],
+                        trans_mat[1][3]
                     );
-                    println!(
+                    arlog_i!(
                         "    [{:>8.4}, {:>8.4}, {:>8.4}, {:>8.4}]",
-                        trans_mat[2][0], trans_mat[2][1], trans_mat[2][2], trans_mat[2][3]
+                        trans_mat[2][0],
+                        trans_mat[2][1],
+                        trans_mat[2][2],
+                        trans_mat[2][3]
                     );
                 }
             }
 
-            println!("Saving results to {}...", found_jpg_path.display());
+            arlog_i!("Saving results to {}...", found_jpg_path.display());
             let rgb_img = image::DynamicImage::ImageRgba8(out_img).into_rgb8();
             rgb_img
                 .save(&found_jpg_path)
                 .expect("Failed to save found.jpg");
         }
-        Err(e) => eprintln!("Error during marker detection: {}", e),
+        Err(e) => arlog_e!("Error during marker detection: {}", e),
     }
 
     // Debug: Save colored label image to disk
-    println!("Saving debug label image...");
+    arlog_i!("Saving debug label image...");
 
     // Cleanup 3D Extrinsics Handle
     ar_3d_delete_handle(&mut ar3d_handle_ptr).expect("Failed to delete AR3DHandle");
+
+    if ar_handle.label_info.label_image.is_empty() {
+        arlog_i!("  (skipped: no label image — marker detection did not run)");
+        return;
+    }
+
     let mut color_map = std::collections::HashMap::new();
     let mut label_img = image::RgbImage::new(width as u32, height as u32);
 
@@ -338,5 +364,5 @@ fn main() {
     label_img
         .save(&label_path)
         .expect("Failed to save label.png");
-    println!("Saved label debug image to {}", label_path.display());
+    arlog_i!("Saved label debug image to {}", label_path.display());
 }

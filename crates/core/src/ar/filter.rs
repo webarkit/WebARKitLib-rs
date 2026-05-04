@@ -34,7 +34,7 @@
  *
  */
 //! # Transformation Matrix Filtering - used for smoothing AR tracking data over time.
-use crate::math::{ar_util_mat2_quat_pos, ar_util_quat_pos2_mat, ar_util_quat_slerp};
+use super::math::{ar_util_mat2_quat_pos, ar_util_quat_pos2_mat, ar_util_quat_slerp};
 use crate::types::ARdouble;
 
 /// Smooths a transformation matrix over time using a simple interpolation filter.
@@ -77,12 +77,7 @@ pub fn ar_filter_trans_mat(
         alpha = dt / (rc + dt);
     }
 
-    if alpha > 1.0 {
-        alpha = 1.0;
-    }
-    if alpha < 0.0 {
-        alpha = 0.0;
-    }
+    alpha = alpha.clamp(0.0, 1.0);
 
     // Interpolate position
     let mut p_filtered = [0.0; 3];

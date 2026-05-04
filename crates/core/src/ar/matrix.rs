@@ -26,7 +26,7 @@
 //! Matrix Code (Barcode) Marker Decoding
 //! Ported from arGetMatrixCode.c and associated ECC logic.
 
-use crate::marker::ar_get_line;
+use super::marker::ar_get_line;
 use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble};
 use crate::{arlog_d, arlog_e};
 use log::trace;
@@ -58,10 +58,10 @@ pub struct MatrixCodeResult {
 /// - `vertex` — four `[x, y]` corner coordinates in ideal (undistorted) space,
 ///   as produced by [`crate::marker::ar_get_line`].
 /// - `code_type` — selects the square dimension (`3..=6`) and ECC scheme.
-/// - `id` / `dir` / `cf` / `error_corrected` — output values.
 ///
 /// # Returns
-/// `Ok(())` on successful decode. `Err` on low contrast, missing locator pattern,
+/// `Ok(MatchOk { id, dir, cf, error_corrected })` on successful decode.
+/// `Err(MatchError::*)` on low contrast, missing locator pattern, ECC failure,
 /// or unsupported `code_type`.
 ///
 /// # Example
@@ -72,14 +72,13 @@ pub struct MatrixCodeResult {
 ///
 /// let image = vec![0u8; 640 * 480 * 3];
 /// let vertex = [[100.0, 100.0], [200.0, 100.0], [200.0, 200.0], [100.0, 200.0]];
-/// let mut id = -1i32;
-/// let mut dir = -1i32;
-/// let mut cf = 0.0f64;
-/// let mut err = 0i32;
-/// if ar_matrix_code_get_id(&image, 640, 480, &vertex, ARMatrixCodeType::default(),
-///         webarkitlib_rs::types::ARPixelFormat::RGB, 0.5,
-///         &mut id, &mut dir, &mut cf, &mut err).is_ok() {
-///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", id, dir, cf);
+/// if let Ok(ok) = ar_matrix_code_get_id(
+///     &image, 640, 480, &vertex,
+///     ARMatrixCodeType::default(),
+///     webarkitlib_rs::types::ARPixelFormat::RGB,
+///     0.5,
+/// ) {
+///     arlog_i!("Decoded barcode id={}, dir={}, cf={:.2}", ok.id, ok.dir, ok.cf);
 /// }
 /// ```
 pub fn ar_matrix_code_get_id(
@@ -90,18 +89,16 @@ pub fn ar_matrix_code_get_id(
     code_type: ARMatrixCodeType,
     pixel_format: crate::types::ARPixelFormat,
     patt_ratio: f64,
-    id: &mut i32,
-    dir: &mut i32,
-    cf: &mut f64,
-    error_corrected: &mut i32,
-) -> Result<(), &'static str> {
+) -> Result<crate::types::MatchOk, crate::types::MatchError> {
+    use crate::types::{MatchError, MatchOk};
+
     let dim = (code_type as i32) & 0xFF;
-    if dim < 3 || dim > 6 {
+    if !(3..=6).contains(&dim) {
         arlog_e!(
             "ar_matrix_code_get_id: unsupported dim={} (expected 3..=6)",
             dim
         );
-        return Err("Unsupported matrix dimension");
+        return Err(MatchError::Generic);
     }
 
     let grid_size = dim;
@@ -116,7 +113,8 @@ pub fn ar_matrix_code_get_id(
         pixel_format,
         patt_ratio,
         &mut bits,
-    )?;
+    )
+    .map_err(|_| MatchError::PatternExtraction)?;
 
     arlog_d!("ar_matrix_code_get_id: vertices v0=({:.1},{:.1}) v1=({:.1},{:.1}) v2=({:.1},{:.1}) v3=({:.1},{:.1})",
         vertex[0][0], vertex[0][1], vertex[1][0], vertex[1][1],
@@ -146,7 +144,7 @@ pub fn ar_matrix_code_get_id(
             "ar_matrix_code_get_id: low contrast range={}",
             max_val as i32 - min_val as i32
         );
-        return Err("Low contrast in matrix grid");
+        return Err(MatchError::Contrast);
     }
 
     let mut core_bits = vec![0u8; (grid_size * grid_size) as usize];
@@ -192,7 +190,7 @@ pub fn ar_matrix_code_get_id(
             "ar_matrix_code_get_id: locator pattern not found, dir_code={:?}",
             dir_code
         );
-        return Err("Barcode locator pattern not found in grid corners");
+        return Err(MatchError::BarcodeNotFound);
     }
 
     // Extract code from the dim×dim core bits.
@@ -279,21 +277,21 @@ pub fn ar_matrix_code_get_id(
         matched_dir
     );
 
-    *dir = matched_dir;
-    *cf = 1.0;
-
     // Handle decoding logic mapped from pattern types!
     if let Ok((decoded_id, err)) = decode_matrix_raw(code_raw, code_type) {
-        *id = decoded_id;
-        *error_corrected = err;
-        Ok(())
+        Ok(MatchOk {
+            id: decoded_id,
+            dir: matched_dir,
+            cf: 1.0,
+            error_corrected: err,
+        })
     } else {
         arlog_d!(
             "ar_matrix_code_get_id: decode failed for code_raw={} (dir={})",
             code_raw,
             matched_dir
         );
-        Err("Failed to decode extracted matrix code string")
+        Err(MatchError::BarcodeEdcFail)
     }
 }
 
@@ -320,10 +318,6 @@ pub fn ar_get_barcode_marker(
     );
 
     let mut marker_info = ARMarkerInfo::default();
-    let mut id = -1;
-    let mut dir = -1;
-    let mut cf = 0.0;
-    let mut error_corrected = 0;
 
     // Resolve corner coordinates from indices
     let mut resolved_vertex = [[0.0; 2]; 4];
@@ -344,7 +338,7 @@ pub fn ar_get_barcode_marker(
         &mut resolved_vertex,
     )?;
 
-    ar_matrix_code_get_id(
+    let ok = ar_matrix_code_get_id(
         image,
         ar_handle.xsize,
         ar_handle.ysize,
@@ -352,20 +346,17 @@ pub fn ar_get_barcode_marker(
         ar_handle.get_matrix_code_type(),
         ar_handle.ar_pixel_format,
         ar_handle.patt_ratio,
-        &mut id,
-        &mut dir,
-        &mut cf,
-        &mut error_corrected,
-    )?;
+    )
+    .map_err(|_| "matrix code decode failed")?;
 
-    marker_info.id_matrix = id;
-    marker_info.dir_matrix = dir;
-    marker_info.cf_matrix = cf;
+    marker_info.id_matrix = ok.id;
+    marker_info.dir_matrix = ok.dir;
+    marker_info.cf_matrix = ok.cf;
     marker_info.area = marker_info2.area;
     marker_info.pos = marker_info2.pos;
     marker_info.vertex = resolved_vertex;
     marker_info.line = line;
-    marker_info.error_corrected = error_corrected;
+    marker_info.error_corrected = ok.error_corrected;
 
     Ok(marker_info)
 }
@@ -386,6 +377,7 @@ pub fn ar_get_barcode_marker(
 ///   equal to `dim + 2` where `dim = code_type & 0xFF`.
 /// - `patt_ratio` — fraction of the square covered by data cells (0.5–0.9).
 /// - `bits` — output: `grid_size * grid_size` raw intensity values.
+#[allow(clippy::too_many_arguments)]
 fn sample_grid(
     image: &[u8],
     xsize: i32,
@@ -440,9 +432,7 @@ fn sample_grid(
             let yc = ((para[1][0] * xw + para[1][1] * yw + para[1][2]) / d) as i32;
 
             if xc >= 0 && xc < xsize && yc >= 0 && yc < ysize {
-                if y == 0 && (x == 0 || x == grid_size - 1)
-                    || y == grid_size - 1 && (x == 0 || x == grid_size - 1)
-                {
+                if (y == 0 || y == grid_size - 1) && (x == 0 || x == grid_size - 1) {
                     trace!("sample_grid: grid({},{}) -> image({},{})", x, y, xc, yc);
                 }
                 let idx = ((yc * xsize + xc) * nc) as usize;
@@ -545,5 +535,24 @@ mod tests {
         let rot1 = rotate_bits(&bits, dim, 1);
         let expected1 = vec![0, 0, 0, 0, 1, 0, 1, 1, 1];
         assert_eq!(rot1, expected1);
+    }
+
+    #[test]
+    fn test_ar_matrix_code_get_id_low_contrast_returns_match_error() {
+        use crate::types::{ARMatrixCodeType, ARPixelFormat, MatchError};
+        // 100x100 image, all the same value -> low contrast in the sampled grid
+        let image = vec![128u8; 100 * 100];
+        let vertex = [[10.0f64, 10.0], [90.0, 10.0], [90.0, 90.0], [10.0, 90.0]];
+        let result = ar_matrix_code_get_id(
+            &image,
+            100,
+            100,
+            &vertex,
+            ARMatrixCodeType::Code3x3,
+            ARPixelFormat::MONO,
+            0.5,
+        );
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), MatchError::Contrast);
     }
 }

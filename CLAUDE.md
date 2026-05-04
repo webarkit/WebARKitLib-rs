@@ -158,3 +158,30 @@ Stage 3 in `crates/core/src/ar2/feature_map.rs`.
 - [ ] No `println!` / `eprintln!` added in library code
 - [ ] CHANGELOG.md **not** touched
 - [ ] Branch is off current `dev`
+
+## 📝 Documentation & Style
+- All comments, docstrings, and commit messages must be in **English**.
+- Use `Result<T, PureCvError>` for error handling instead of `panic!`.
+- Create tests for every functions / type and benchmarks if possible.
+- Add HEADER.txt to every new file you create. You found it in `.claude\HEADER.txt`.
+
+> **CI will reject any PR that fails `cargo fmt -- --check` or `cargo clippy`.**
+
+## 🐙 Github Instructions & Conventional Commits
+- When creating a PR always start from the `dev` branch and point against `dev` branch.
+- **MANDATORY:** You must use the [Conventional Commits](https://www.conventionalcommits.org/) specification for all commit messages. This is strictly required for our automated `git-cliff` changelog generation.
+- **Format:** `<type>(<optional scope>): <description>`
+- **Allowed Types:**
+  - `feat`: A new feature or algorithm implementation.
+  - `fix`: A bug fix.
+  - `perf`: A code change that improves performance (e.g., optimizations).
+  - `doc`: Documentation only changes.
+  - `refactor`: A code change that neither fixes a bug nor adds a feature.
+  - `test`: Adding missing tests or correcting existing ones.
+  - `chore`: Changes to the build process, dependencies, or auxiliary tools.
+- **Preferred Scopes for PureCV:** Use scopes to categorize the architectural work, such as `(simd)`, `(wasm)`, `(parallel)`, `(core)`, `(imgproc)`.
+- **Examples of valid commits:**
+  - `feat(simd): implement AVX2 support for matrix multiplication`
+  - `perf(wasm): optimize memory allocation for Emscripten target`
+  - `fix(core): resolve out-of-bounds error in Row-Major layout`
+  - `doc: add usage examples for parallel processing`

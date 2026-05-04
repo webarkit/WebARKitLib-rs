@@ -109,6 +109,7 @@ fn extraction_params(level: u8) -> ExtractionParams {
 ///
 /// Returns `Some(vlen)` on success, `None` if the patch is out of bounds or
 /// has insufficient variance.
+#[allow(clippy::too_many_arguments)]
 fn make_template(
     image: &[u8],
     xsize: i32,
@@ -174,6 +175,7 @@ fn make_template(
 /// `sx` (sum of u8 values) and `sxx` (sum of squared u8 values) are
 /// accumulated as `u64` integers in all paths — no FP drift on those.
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn get_similarity(
     image: &[u8],
     xsize: i32,
@@ -209,6 +211,7 @@ fn get_similarity(
 /// `sx`/`sxx` use `u64` integer accumulation to avoid f32 rounding past
 /// 2^24. `sxy` is accumulated left-to-right in row-major order.
 #[inline]
+#[allow(clippy::too_many_arguments)]
 fn get_similarity_scalar(
     image: &[u8],
     xsize: i32,
@@ -506,6 +509,7 @@ unsafe fn get_similarity_avx2(
 /// The returned `Vec<f32>` has length `xsize * ysize`. Values of `1.0`
 /// indicate invalid / suppressed pixels; lower values indicate better
 /// (more unique) features.
+#[allow(clippy::needless_range_loop)]
 fn gen_feature_map_for_level(
     image: &[u8],
     xsize: i32,
@@ -644,6 +648,7 @@ fn gen_feature_map_for_level(
 /// Greedily select features from a feature map.
 ///
 /// Ported from `ar2SelectFeature` in the C source.
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 fn select_features(
     image: &[u8],
     xsize: i32,

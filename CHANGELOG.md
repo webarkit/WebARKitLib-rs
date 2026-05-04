@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.8] - 2026-05-04
+
+### Last action before  `Milestone 6 — Math & homography in pure Rust`
+
+### ⚙️ Miscellaneous Tasks
+
+- Pass --features log-helpers when running simple example
+- Remove accidental .DS_Store from repo changes
+- Convert println!/eprintln! to arlog_*! in examples and bench
+
+### 🎨 Styling
+
+- Apply cargo fmt --all (fixes CI fmt check)
+- *(core)* Fix formatting issues
+- *(marker)* Apply cargo fmt
+- *(diagnostic)* Apply stable rustfmt wrapping (#104 CI)
+
+### 🐛 Bug Fixes
+
+- *(clippy)* Clear all warnings and add clippy -D warnings to CI
+- *(clippy)* Fix 5 CI-only clippy warnings (explicit_counter_loop, manual_checked_ops)
+- *(marker)* Populate cf_patt/id_patt and copy to final id/cf per mode
+- *(core)* Port confidence_cutoff from C and add regression tests (issue #92)
+- *(marker)* Wire cutoff_phase from MatchOk/MatchError result codes (#88)
+- *(marker)* Resolve merge conflict in cutoff_phase tests
+- *(simple,marker)* Honour the buff/pixel_format contract (#103)
+
+### 📚 Documentation
+
+- *(issue-86)* Add implementation plan
+- Update CLAUDE.md with documentation and style guidelines
+- *(issue-103)* Correct findings — Rust/C cf close but not byte-equal
+
+### 🚀 Features
+
+- *(marker)* Add finalize_marker_id_cf_dir helper
+- *(types)* Add MatchOk, MatchError, From<MatchError> for ARMarkerInfoCutoffPhase
+- *(core)* Add ar_detect_marker orchestrator for full marker detection pipeline
+- *(types)* Add AR tracking history mode constants (#101)
+- *(marker)* Port arDetectMarker tracking history pipeline (#96)
+- *(diagnostic)* Add dump_patt + diff_patt for issue #103
+
+### 🚜 Refactor
+
+- *(core)* Move AR modules into ar/ subfolder (closes #82)
+- *(types)* Defer MatchOk.global_id field to issue #89
+- *(pattern)* Pattern_match returns Result<MatchOk, MatchError>
+- *(matrix)* Ar_matrix_code_get_id returns Result<MatchOk, MatchError>
+
+### 🧪 Testing
+
+- *(marker)* Add failing tests for finalize_marker_id_cf_dir helper
+- *(marker)* Add confidence_cutoff edge case and mode-specific unit tests (#96)
+- *(marker)* Extract history phases as helpers and add 12 unit tests (#96)
+
 ## [0.3.7] - 2026-04-23
 
 ### 🐛 Bug Fixes
