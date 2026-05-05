@@ -94,6 +94,23 @@ required-features = ["log-helpers"]
 name = "nft_marker_gen"
 required-features = ["log-helpers"]
 
+[[example]]
+name = "barcode"
+required-features = ["log-helpers"]
+
+[[example]]
+name = "debug_labeling"
+required-features = ["log-helpers"]
+
+# Issue #103 diagnostic — see docs/issue-103-fix-plan.md
+[[example]]
+name = "dump_patt"
+required-features = ["log-helpers"]
+
+[[example]]
+name = "diff_patt"
+required-features = ["log-helpers"]
+
 [[bench]]
 name = "marker_bench"
 harness = false
@@ -105,3 +122,4 @@ harness = false
 [[bench]]
 name = "feature_map_bench"
 harness = false
+required-features = ["log-helpers"]
