@@ -41,7 +41,7 @@
 //! The 4D transformation space is binned, and matches vote for their corresponding bins.
 //! The bin with the most votes determines the winning transformation.
 
-use crate::arlog;
+use crate::{arlog_d, arlog_e, arlog_i};
 use crate::kpm::backend::KpmError;
 use std::collections::HashMap;
 
@@ -505,6 +505,7 @@ pub fn find_hough_similarity(
 /// * `all_matches` - All matches to filter
 /// * `max_hough_index` - The winning bin index
 /// * `bin_delta` - Maximum bin distance to be considered an inlier
+#[allow(unused_variables)]
 pub fn find_hough_matches(
     out_matches: &mut Vec<Match>,
     voting: &HoughSimilarityVoting,
@@ -512,12 +513,12 @@ pub fn find_hough_matches(
     max_hough_index: i32,
     bin_delta: i32,
 ) -> Result<(), KpmError> {
-    let (max_bx, max_by, max_ba, max_bs) = voting.params.bins_from_index(max_hough_index);
+    let (_max_bx, _max_by, _max_ba, _max_bs) = voting.params.bins_from_index(max_hough_index);
     out_matches.clear();
 
     for m in all_matches {
-        // For now, accept all matches (stub: needs FeaturePoint access for real filtering)
-        // This will be properly implemented once we have the actual point data flow
+        // TODO: Implement actual filtering once feature point data is available.
+        // Currently accepts all matches; should filter by bin_delta proximity.
         out_matches.push(*m);
     }
 
