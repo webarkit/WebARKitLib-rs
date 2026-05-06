@@ -41,4 +41,11 @@
 //! implementation and optimized for performance.
 
 pub mod homography;
+pub mod hough;
 pub mod math;
+
+// Public re-exports for convenience
+pub use hough::{
+    BinParams, DoGScaleInvariantDetector, FeaturePoint, find_features, find_hough_matches,
+    find_hough_similarity, GaussianScaleSpacePyramid, HoughSimilarityVoting, Keyframe, Match,
+};
