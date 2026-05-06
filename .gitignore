@@ -35,3 +35,9 @@ crates/wasm/pkg/
 !crates/wasm/pkg/README.md
 !crates/wasm/pkg/package.json
 .DS_Store
+
+# Claude Code worktrees (local development)
+.claude/worktrees/
+
+# Local analysis files
+issue-*-analysis.md
