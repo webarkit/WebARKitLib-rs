@@ -72,14 +72,14 @@ fn main() {
     let marker_name = "pinball";
 
     arlog_i!("Loading NFT marker: '{}'", marker_name);
-    println!("========================================\n");
+    arlog_i!("========================================");
 
     // ---------------------------------------------------------------
     // Step 1: Load KPM data (.fset3)
     //   C++: kpmLoadRefDataSet(datasetPathname, "fset3", &refDataSet)
     // ---------------------------------------------------------------
     let fset3_path = data_dir.join(format!("{}.fset3", marker_name));
-    println!("Reading {}.fset3 ...", marker_name);
+    arlog_i!("Reading {}.fset3 ...", marker_name);
 
     let ref_data = KpmRefDataSet::load(&fset3_path).expect("failed to load .fset3");
 
@@ -89,31 +89,35 @@ fn main() {
     //   kpmMergeRefDataSet(&refDataSet, &refDataSet2)
     // Here we just load a single marker (page 0).
     let page_no = 0;
-    println!("  Assigned page no. {}", page_no);
-    println!(
+    arlog_i!("  Assigned page no. {}", page_no);
+    arlog_i!(
         "  KPM features: {}, pages: {}",
-        ref_data.num, ref_data.page_num
+        ref_data.num,
+        ref_data.page_num
     );
     for page in &ref_data.page_info {
-        println!(
+        arlog_i!(
             "  Page {}: {} images in pyramid",
-            page.page_no, page.image_num
+            page.page_no,
+            page.image_num
         );
         for img in &page.image_info {
-            println!(
+            arlog_i!(
                 "    image_no={}, {}x{}",
-                img.image_no, img.width, img.height
+                img.image_no,
+                img.width,
+                img.height
             );
         }
     }
-    println!("  Done.\n");
+    arlog_i!("  Done.");
 
     // ---------------------------------------------------------------
     // Step 2: Load AR2 image set (.iset)
     //   C++: loaded internally by ar2ReadSurfaceSet → imageSet
     // ---------------------------------------------------------------
     let iset_path = data_dir.join(format!("{}.iset", marker_name));
-    println!("Reading {}.iset ...", marker_name);
+    arlog_i!("Reading {}.iset ...", marker_name);
 
     let image_set = AR2ImageSetT::load(&iset_path).expect("failed to load .iset");
 
@@ -126,14 +130,14 @@ fn main() {
     let height_nft = base.ysize;
     let dpi_nft = base.dpi;
 
-    println!("  NFT num. of ImageSet: {}", image_set.num());
-    println!("  NFT marker width    : {}", width_nft);
-    println!("  NFT marker height   : {}", height_nft);
-    println!("  NFT marker dpi      : {:.0}", dpi_nft);
+    arlog_i!("  NFT num. of ImageSet: {}", image_set.num());
+    arlog_i!("  NFT marker width    : {}", width_nft);
+    arlog_i!("  NFT marker height   : {}", height_nft);
+    arlog_i!("  NFT marker dpi      : {:.0}", dpi_nft);
 
     // Print all scales.
     for (i, scale) in image_set.scale.iter().enumerate() {
-        println!(
+        arlog_i!(
             "    scale[{}]: {}x{} @ {:.1} DPI ({} bytes)",
             i,
             scale.xsize,
@@ -142,25 +146,25 @@ fn main() {
             scale.img_bw.len()
         );
     }
-    println!("  Done.\n");
+    arlog_i!("  Done.");
 
     // ---------------------------------------------------------------
     // Step 3: Load AR2 feature set (.fset)
     //   C++: loaded internally by ar2ReadSurfaceSet → featureSet
     // ---------------------------------------------------------------
     let fset_path = data_dir.join(format!("{}.fset", marker_name));
-    println!("Reading {}.fset ...", marker_name);
+    arlog_i!("Reading {}.fset ...", marker_name);
 
     let feature_set = AR2FeatureSetT::load(&fset_path).expect("failed to load .fset");
 
     let total_features: usize = feature_set.list.iter().map(|fp| fp.num()).sum();
-    println!(
+    arlog_i!(
         "  AR2 feature scales: {}, total features: {}",
         feature_set.num(),
         total_features
     );
     for (i, fp) in feature_set.list.iter().enumerate() {
-        println!(
+        arlog_i!(
             "    scale[{}]: {} features, DPI range {:.1}\u{2013}{:.1}",
             i,
             fp.num(),
@@ -168,18 +172,21 @@ fn main() {
             fp.maxdpi
         );
     }
-    println!("  Done.\n");
+    arlog_i!("  Done.");
 
     // ---------------------------------------------------------------
     // Summary
     // ---------------------------------------------------------------
-    println!("========================================");
-    println!("Loading of NFT data complete.");
-    println!(
+    arlog_i!("========================================");
+    arlog_i!("Loading of NFT data complete.");
+    arlog_i!(
         "  Marker '{}': {}x{} @ {:.0} DPI",
-        marker_name, width_nft, height_nft, dpi_nft
+        marker_name,
+        width_nft,
+        height_nft,
+        dpi_nft
     );
-    println!(
+    arlog_i!(
         "  {} KPM features, {} AR2 features across {} scales",
         ref_data.num,
         total_features,
