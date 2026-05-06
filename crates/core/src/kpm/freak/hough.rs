@@ -41,8 +41,8 @@
 //! The 4D transformation space is binned, and matches vote for their corresponding bins.
 //! The bin with the most votes determines the winning transformation.
 
-use crate::{arlog_d, arlog_e, arlog_i};
 use crate::kpm::backend::KpmError;
+use crate::{arlog_d, arlog_e, arlog_i};
 use std::collections::HashMap;
 
 /// Minimum number of votes required for a bin to be considered a valid result.
@@ -109,33 +109,25 @@ impl BinParams {
         // Validate bin counts
         if num_x_bins <= 0 {
             arlog_e!("BinParams::new: num_x_bins must be > 0, got {}", num_x_bins);
-            return Err(KpmError::InvalidInput(
-                "num_x_bins must be > 0".into(),
-            ));
+            return Err(KpmError::InvalidInput("num_x_bins must be > 0".into()));
         }
         if num_y_bins <= 0 {
             arlog_e!("BinParams::new: num_y_bins must be > 0, got {}", num_y_bins);
-            return Err(KpmError::InvalidInput(
-                "num_y_bins must be > 0".into(),
-            ));
+            return Err(KpmError::InvalidInput("num_y_bins must be > 0".into()));
         }
         if num_angle_bins <= 0 {
             arlog_e!(
                 "BinParams::new: num_angle_bins must be > 0, got {}",
                 num_angle_bins
             );
-            return Err(KpmError::InvalidInput(
-                "num_angle_bins must be > 0".into(),
-            ));
+            return Err(KpmError::InvalidInput("num_angle_bins must be > 0".into()));
         }
         if num_scale_bins <= 0 {
             arlog_e!(
                 "BinParams::new: num_scale_bins must be > 0, got {}",
                 num_scale_bins
             );
-            return Err(KpmError::InvalidInput(
-                "num_scale_bins must be > 0".into(),
-            ));
+            return Err(KpmError::InvalidInput("num_scale_bins must be > 0".into()));
         }
 
         // Validate ranges
@@ -145,9 +137,7 @@ impl BinParams {
                 min_x,
                 max_x
             );
-            return Err(KpmError::InvalidInput(
-                "min_x must be < max_x".into(),
-            ));
+            return Err(KpmError::InvalidInput("min_x must be < max_x".into()));
         }
         if min_y >= max_y {
             arlog_e!(
@@ -155,9 +145,7 @@ impl BinParams {
                 min_y,
                 max_y
             );
-            return Err(KpmError::InvalidInput(
-                "min_y must be < max_y".into(),
-            ));
+            return Err(KpmError::InvalidInput("min_y must be < max_y".into()));
         }
         if min_scale >= max_scale {
             arlog_e!(
@@ -211,8 +199,8 @@ impl BinParams {
         const PI: f32 = std::f32::consts::PI;
         let fb_angle = self.num_angle_bins as f32 * ((angle + PI) / (2.0 * PI));
 
-        let fb_scale =
-            self.num_scale_bins as f32 * (scale - self.min_scale) / (self.max_scale - self.min_scale);
+        let fb_scale = self.num_scale_bins as f32 * (scale - self.min_scale)
+            / (self.max_scale - self.min_scale);
 
         (fb_x, fb_y, fb_angle, fb_scale)
     }
@@ -332,7 +320,12 @@ impl HoughSimilarityVoting {
             || bs < 0
             || bs + 1 >= self.params.num_scale_bins
         {
-            arlog_d!("vote neighborhood out of bounds: bx={}, by={}, bs={}", bx, by, bs);
+            arlog_d!(
+                "vote neighborhood out of bounds: bx={}, by={}, bs={}",
+                bx,
+                by,
+                bs
+            );
             return Ok(false);
         }
 
@@ -461,7 +454,9 @@ pub fn find_hough_similarity(
 ) -> Result<i32, KpmError> {
     if matches.is_empty() {
         arlog_d!("find_hough_similarity: no matches provided");
-        return Err(KpmError::InvalidInput("insufficient votes for feature matching".into()));
+        return Err(KpmError::InvalidInput(
+            "insufficient votes for feature matching".into(),
+        ));
     }
 
     voting.reset();
@@ -472,7 +467,8 @@ pub fn find_hough_similarity(
         let r_pt = &ref_points[m.ref_idx as usize];
 
         // Compute similarity transformation from correspondence
-        let (x, y, angle, scale) = compute_similarity(q_pt, r_pt, voting.center_x, voting.center_y)?;
+        let (x, y, angle, scale) =
+            compute_similarity(q_pt, r_pt, voting.center_x, voting.center_y)?;
 
         if voting.vote(x, y, angle, scale)? {
             vote_count += 1;
@@ -494,7 +490,9 @@ pub fn find_hough_similarity(
         "find_hough_similarity: insufficient votes after {} attempted votes",
         vote_count
     );
-    Err(KpmError::InvalidInput("insufficient votes for feature matching".into()))
+    Err(KpmError::InvalidInput(
+        "insufficient votes for feature matching".into(),
+    ))
 }
 
 /// Filters matches to those consistent with the winning Hough bin.
@@ -671,7 +669,16 @@ mod tests {
         let ref_points = [];
         let matches = [];
 
-        let result = find_hough_similarity(&mut voting, &query_points, &ref_points, &matches, 100, 100, 100, 100);
+        let result = find_hough_similarity(
+            &mut voting,
+            &query_points,
+            &ref_points,
+            &matches,
+            100,
+            100,
+            100,
+            100,
+        );
         assert!(result.is_err());
     }
 
@@ -682,8 +689,16 @@ mod tests {
         let voting = HoughSimilarityVoting::new(params, 50.0, 50.0, 200, 200).expect("valid");
 
         let all_matches = vec![
-            Match { query_idx: 0, ref_idx: 0, distance: 0.1 },
-            Match { query_idx: 1, ref_idx: 1, distance: 0.2 },
+            Match {
+                query_idx: 0,
+                ref_idx: 0,
+                distance: 0.1,
+            },
+            Match {
+                query_idx: 1,
+                ref_idx: 1,
+                distance: 0.2,
+            },
         ];
 
         let mut out_matches = Vec::new();
