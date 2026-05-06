@@ -46,6 +46,6 @@ pub mod math;
 
 // Public re-exports for convenience
 pub use hough::{
-    BinParams, DoGScaleInvariantDetector, FeaturePoint, find_features, find_hough_matches,
-    find_hough_similarity, GaussianScaleSpacePyramid, HoughSimilarityVoting, Keyframe, Match,
+    find_features, find_hough_matches, find_hough_similarity, BinParams, DoGScaleInvariantDetector,
+    FeaturePoint, GaussianScaleSpacePyramid, HoughSimilarityVoting, Keyframe, Match,
 };
