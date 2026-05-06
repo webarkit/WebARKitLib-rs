@@ -118,6 +118,7 @@ harness = false
 [[bench]]
 name = "simd_bench"
 harness = false
+required-features = ["simd-x86-sse41"]
 
 [[bench]]
 name = "feature_map_bench"
