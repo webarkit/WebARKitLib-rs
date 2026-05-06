@@ -46,6 +46,22 @@ Use the project's `arlog_*` macros from `crates/core/src/arlog.rs`:
 | `arlog_w!`  | `ARLOGw`               | Recoverable anomalies                |
 | `arlog_e!`  | `ARLOGe`               | Misconfiguration / wiring errors     |
 
+### Importing arlog macros (IMPORTANT)
+
+The arlog macros **must be imported by name**, not by module:
+
+```rust
+// ✅ CORRECT
+use crate::{arlog_d, arlog_e, arlog_i, arlog_w};
+arlog_e!("error message");
+
+// ❌ WRONG — causes "macro not found" errors
+use crate::arlog;
+arlog_e!("error message");  // Error: cannot find macro `arlog_e`
+```
+
+Import only the log levels you actually use in your file.
+
 ### "Log + return Err" pattern
 
 Every error-returning site gets a matching `arlog_*!` immediately before
@@ -147,7 +163,28 @@ Stage 3 in `crates/core/src/ar2/feature_map.rs`.
 
 ---
 
-## 5. Quick checklist before opening a PR
+## 5. Pre-Commit Verification Workflow
+
+**Run these checks BEFORE committing and pushing. CI will enforce them.**
+
+```bash
+# 1. Fix formatting and verify it's clean
+cargo fmt --all
+cargo fmt --all -- --check
+
+# 2. Build the project
+cargo build --all-features
+
+# 3. Run clippy (strict: warnings as errors)
+cargo clippy --all-targets --all-features -- --deny warnings
+
+# 4. Run tests
+cargo test --all-features
+```
+
+**All four checks must pass before pushing.** If `cargo fmt --all` makes changes, add those changes to your commit.
+
+## 6. Quick checklist before opening a PR
 
 - [ ] `cargo fmt --all -- --check` clean (run `cargo fmt --all` to fix)
 - [ ] `cargo build --all-features` clean
