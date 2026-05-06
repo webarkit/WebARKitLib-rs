@@ -28,7 +28,7 @@
  *  are not obligated to do so. If you do not wish to do so, delete this exception
  *  statement from your version.
  *
- *  Copyright 2025 WebARKit.
+ *  Copyright 2026 WebARKit.
  *
  *  Author(s): Walter Perdan <@kalwalt> https://github.com/kalwalt
  *
@@ -93,6 +93,7 @@ impl BinParams {
     /// * `min_y`, `max_y` - Translation y range (min_y < max_y)
     /// * `min_scale`, `max_scale` - Scale range (min_scale < max_scale)
     /// * `scale_k` - Log base for scale (typically 2.0 or e)
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         num_x_bins: i32,
         num_y_bins: i32,
@@ -304,10 +305,10 @@ impl HoughSimilarityVoting {
         let (fb_x, fb_y, fb_angle, fb_scale) = self.params.map_to_bin(x, y, angle, scale);
 
         // Floor to integer bin indices with offset -0.5 (as in C++)
-        let mut bx = (fb_x - 0.5).floor() as i32;
-        let mut by = (fb_y - 0.5).floor() as i32;
+        let bx = (fb_x - 0.5).floor() as i32;
+        let by = (fb_y - 0.5).floor() as i32;
         let mut ba = (fb_angle - 0.5).floor() as i32;
-        let mut bs = (fb_scale - 0.5).floor() as i32;
+        let bs = (fb_scale - 0.5).floor() as i32;
 
         // Wrap angle bin (circular)
         ba = (ba + self.params.num_angle_bins) % self.params.num_angle_bins;
@@ -387,7 +388,6 @@ impl HoughSimilarityVoting {
 
 /// Stub types for M8 (to be implemented in Milestone 8).
 /// These are placeholders to allow M7 to compile independently.
-
 /// Placeholder for DoGScaleInvariantDetector from M8.
 #[derive(Clone, Debug)]
 pub struct DoGScaleInvariantDetector;
@@ -442,6 +442,7 @@ pub fn find_features(
 /// # Returns
 /// The bin index with the most votes (>= MIN_VOTES_THRESHOLD).
 /// Returns `Err(InvalidInput("insufficient votes for feature matching".into()))` if no bin reaches the threshold.
+#[allow(clippy::too_many_arguments)]
 pub fn find_hough_similarity(
     voting: &mut HoughSimilarityVoting,
     query_points: &[FeaturePoint],
@@ -503,20 +504,19 @@ pub fn find_hough_similarity(
 /// * `all_matches` - All matches to filter
 /// * `max_hough_index` - The winning bin index
 /// * `bin_delta` - Maximum bin distance to be considered an inlier
-#[allow(unused_variables)]
 pub fn find_hough_matches(
     out_matches: &mut Vec<Match>,
     voting: &HoughSimilarityVoting,
     all_matches: &[Match],
     max_hough_index: i32,
-    bin_delta: i32,
+    _bin_delta: i32,
 ) -> Result<(), KpmError> {
     let (_max_bx, _max_by, _max_ba, _max_bs) = voting.params.bins_from_index(max_hough_index);
     out_matches.clear();
 
     for m in all_matches {
-        // TODO: Implement actual filtering once feature point data is available.
-        // Currently accepts all matches; should filter by bin_delta proximity.
+        // For now, accept all matches (stub: needs FeaturePoint access for real filtering)
+        // This will be properly implemented once we have the actual point data flow
         out_matches.push(*m);
     }
 
