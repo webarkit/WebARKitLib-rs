@@ -27,13 +27,16 @@ The unified core library containing all AR functionality:
     -   `ar2::tracking` — runtime tracking structs and algorithms.
     -   `ar2::image_set` — `.iset` image pyramid I/O.
     -   `ar2::feature_set` — `.fset` feature point I/O.
--   **KPM module** (`kpm`): Keypoint Matching subsystem:
+-   **KPM module** (`kpm`): Keypoint Matching subsystem (FREAK descriptor-based tracking):
     -   `kpm::handle` — high-level KPM handle and matching orchestration.
-    -   `kpm::backend` — pluggable feature-extraction backend trait.
+    -   `kpm::backend` — pluggable feature-extraction backend trait and error types.
     -   `kpm::cpp_backend` — C++ FreakMatcher FFI backend (feature-gated: `ffi-backend`).
     -   `kpm::matching` — per-frame matching and ICP-based pose estimation.
-    -   `kpm::ref_data_set` — `.fset3` reference data I/O.
+    -   `kpm::ref_data_set` — `.fset3` reference data I/O and compression modes.
     -   `kpm::types` — KPM data structures and constants.
+    -   `kpm::freak` — FREAK descriptor math and homography utilities:
+        -   `freak::math` — linear algebra (matrix operations, linear solvers) and Padé matrix exponential.
+        -   `freak::homography` — homography estimation and refinement pipeline.
 -   **Types** (`types`): core data structures (`ARHandle`, `ARParam`, etc.).
 
 ### `crates/wasm` — `webarkitlib-wasm`
@@ -48,6 +51,7 @@ Depends only on `webarkitlib-rs` (the core crate).
 | `simd`         | Umbrella: enables all SIMD sub-features |
 | `simd-wasm32`  | WASM SIMD128 intrinsics |
 | `simd-x86-sse41` | x86 SSE4.1 intrinsics |
+| `log-helpers`  | Enable logging infrastructure (installs `env_logger` for desktop/tests, `console_log` for WASM) |
 | `ffi-backend`  | Compile the C++ FreakMatcher library and generate FFI bindings |
 | `dual-mode`    | Reserved for future dual Rust/C++ backend support |
 

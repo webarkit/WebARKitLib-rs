@@ -117,6 +117,70 @@ int kpm_extract_features(KpmOpaqueHandle* handle,
                          unsigned char* desc_out,
                          int max_features);
 
+/* ---- Dual-mode validation: math function bridges (Milestone 6, #63) ---- */
+
+/* Thin wrappers around vision::fastatan2, vision::fastsqrt1, vision::fastexp6
+ * from FreakMatcher/math/math_utils.h. Used by Rust dual-mode tests to verify
+ * that the pure-Rust ports in crates/core/src/kpm/freak/math.rs produce the
+ * same outputs as the C++ baseline across a sweep of inputs.
+ *
+ * These are always exposed when ffi-backend is built; they are zero-cost when
+ * unused (link-time dead-code elimination removes them). */
+float webarkit_cpp_fast_atan2(float y, float x);
+float webarkit_cpp_fast_sqrt1(float x);
+float webarkit_cpp_fast_exp6_f32(float x);
+
+/* ---- Dual-mode validation: linear-algebra bridges (Milestone 6, #64) ---- */
+
+/* Thin wrappers around vision::SolveLinearSystem2x2,
+ * vision::SolveSymmetricLinearSystem3x3, vision::SolveNullVector8x9Destructive
+ * from FreakMatcher/math/linear_algebra.h and linear_solvers.h. Used by the
+ * M6-2 dual-mode tests to validate the pure-Rust ports against the C++
+ * baseline.
+ *
+ * Return 1 on success, 0 on failure (mapping C++ bool to int for portability
+ * across the C ABI). */
+int webarkit_cpp_solve_linear_system_2x2(float x[2], const float a[4], const float b[2]);
+int webarkit_cpp_solve_symmetric_linear_system_3x3(float x[3], const float a[9], const float b[3]);
+int webarkit_cpp_solve_null_vector_8x9_destructive(float x[9], float a[72]);
+
+/* ---- Dual-mode validation: homography bridges (Milestone 6, #65) ---- */
+
+/* Thin wrappers around the homography pipeline in
+ * homography_estimation/robust_homography.h. Used by the M6-3 dual-mode
+ * tests to validate the pure-Rust ports against the C++ baseline.
+ *
+ * `webarkit_cpp_mat3_exp_pade_via_eigen` calls Eigen's MatrixExp
+ * (`eigenMat.exp()`) and writes the 9-element row-major result into `out`.
+ * This is the ground-truth oracle that `mat3_exp_pade` is validated against.
+ *
+ * `webarkit_cpp_preemptive_robust_homography` runs only the RANSAC step
+ * (no IRLS polish). `webarkit_cpp_robust_homography_find` runs the full
+ * `RobustHomography<float>::find()` (RANSAC + polish).
+ *
+ * Return 1 on success, 0 on failure. */
+void webarkit_cpp_mat3_exp_pade_via_eigen(float out[9], const float in[9]);
+
+int webarkit_cpp_preemptive_robust_homography(
+    float h[9],
+    const float* p,
+    const float* q,
+    int num_points,
+    float scale,
+    int num_hypotheses,
+    int max_trials,
+    int chunk_size);
+
+int webarkit_cpp_robust_homography_find(
+    float h[9],
+    const float* p,
+    const float* q,
+    int num_points,
+    float scale,
+    int num_hypotheses,
+    int max_trials,
+    int chunk_size);
+
 #ifdef __cplusplus
 }
 #endif

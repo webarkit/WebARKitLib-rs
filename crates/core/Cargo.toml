@@ -65,7 +65,9 @@ simd-wasm32 = []
 simd-x86-sse41 = []
 simd-x86-avx2 = []
 ffi-backend = []
-dual-mode = []
+# dual-mode validates pure-Rust implementations against the C++ baseline;
+# requires ffi-backend so the C++ comparison functions are compiled in.
+dual-mode = ["ffi-backend"]
 # Pulls env_logger (desktop) or console_log (wasm) for the `ar_log_init_*` helpers.
 log-helpers = ["dep:env_logger", "dep:console_log"]
 
@@ -116,6 +118,7 @@ harness = false
 [[bench]]
 name = "simd_bench"
 harness = false
+required-features = ["simd-x86-sse41"]
 
 [[bench]]
 name = "feature_map_bench"

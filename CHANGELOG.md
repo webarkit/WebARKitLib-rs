@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-05-06
+
+### Milestone 6 — Math & homography in pure Rust
+
+### 🐛 Bug Fixes
+
+- *(kpm)* Satisfy clippy on freak::math constants and helpers
+- *(bench)* Resolve SIMD benchmark compilation errors
+
+### 📚 Documentation
+
+- *(kpm)* Clarify SolveLinearSystem2x2 is dead in OUR build context
+
+### 🚀 Features
+
+- *(kpm)* Port FREAK math utilities from C++ (Milestone 6 Phase 1-3)
+- *(kpm)* Port linear algebra and linear solvers (M6-2)
+- *(kpm)* Port homography pipeline + Padé matrix exp (M6-3)
+
+### 🧪 Testing
+
+- *(kpm)* Add dual-mode validation for FREAK math fast-paths
+- *(kpm)* Add dual-mode validation for M6-2 linear solvers
+- *(kpm)* Add dual-mode validation for M6-3 homography pipeline
+
 ## [0.3.8] - 2026-05-04
 
 ### Last action before  `Milestone 6 — Math & homography in pure Rust`

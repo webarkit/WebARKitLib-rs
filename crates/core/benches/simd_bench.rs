@@ -35,11 +35,16 @@
  */
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use webarkitlib_rs::image_proc::{box_filter_h_scalar, box_filter_v_scalar, rgba_to_gray_scalar};
+use webarkitlib_rs::pattern::dot_product_scalar;
+
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.1"))]
 use webarkitlib_rs::image_proc::{
-    box_filter_h_scalar, box_filter_h_simd_x86, box_filter_v_scalar, box_filter_v_simd_x86,
-    rgba_to_gray_scalar, rgba_to_gray_simd_x86,
+    box_filter_h_simd_x86, box_filter_v_simd_x86, rgba_to_gray_simd_x86,
 };
-use webarkitlib_rs::pattern::{dot_product_scalar, dot_product_simd_x86};
+
+#[cfg(all(target_arch = "x86_64", target_feature = "sse4.1"))]
+use webarkitlib_rs::pattern::dot_product_simd_x86;
 
 fn bench_rgba_to_gray(c: &mut Criterion) {
     let size = 640 * 480 * 4;
