@@ -41,7 +41,7 @@
 //! Distances are computed using Hamming distance via bit manipulation.
 
 use crate::kpm::backend::KpmError;
-use crate::{arlog_d, arlog_e, arlog_i};
+use crate::{arlog_d, arlog_e};
 use std::collections::HashMap;
 
 /// Computes Hamming distance between two 32-bit chunks using bit magic.
@@ -288,7 +288,7 @@ pub struct BinaryHierarchicalClustering {
     kmedoids: KMedoids,
     num_centers: usize,
     min_features_per_leaf: usize,
-    max_nodes_to_pop: usize,
+    _max_nodes_to_pop: usize,
     next_node_id: usize,
 }
 
@@ -303,7 +303,7 @@ impl BinaryHierarchicalClustering {
             kmedoids,
             num_centers: 8,
             min_features_per_leaf: 16,
-            max_nodes_to_pop: 0,
+            _max_nodes_to_pop: 0,
             next_node_id: 0,
         })
     }
@@ -406,7 +406,7 @@ impl BinaryHierarchicalClustering {
             let global_feat_idx = indices[feat_idx_in_subset];
             clusters
                 .entry(cluster_assignment)
-                .or_insert_with(Vec::new)
+                .or_insert_with(Vec::default)
                 .push(global_feat_idx);
         }
 
