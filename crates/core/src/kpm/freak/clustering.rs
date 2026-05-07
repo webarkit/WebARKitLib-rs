@@ -236,7 +236,8 @@ pub struct BhcNode {
     _id: usize,
     /// FREAK descriptor of the cluster center (None for leaves).
     center: Option<Box<[u8; 96]>>,
-    /// Child nodes.
+    /// Child nodes (Box is necessary for recursive type).
+    #[allow(clippy::vec_box)]
     children: Vec<Box<BhcNode>>,
     /// Feature indices stored in this leaf node.
     reverse_index: Vec<usize>,
@@ -406,7 +407,7 @@ impl BinaryHierarchicalClustering {
             let global_feat_idx = indices[feat_idx_in_subset];
             clusters
                 .entry(cluster_assignment)
-                .or_insert_with(Vec::default)
+                .or_default()
                 .push(global_feat_idx);
         }
 
