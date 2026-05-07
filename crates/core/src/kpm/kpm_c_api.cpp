@@ -38,6 +38,10 @@
 #include <facade/visual_database_facade.h>
 #include <matchers/feature_point.h>
 #include <matchers/matcher_types.h>
+#include <matchers/feature_store.h>
+#include <matchers/feature_matcher.h>
+#include <matchers/feature_matcher-inline.h>
+#include <matchers/binary_hierarchical_clustering.h>
 #include <math/math_utils.h>
 #include <math/linear_algebra.h>
 #include <math/linear_solvers.h>
@@ -377,6 +381,109 @@ int webarkit_cpp_robust_homography_find(float h[9],
     }
     vision::RobustHomography<float> estimator(scale, num_hypotheses, max_trials, chunk_size);
     return estimator.find(h, p, q, num_points) ? 1 : 0;
+}
+
+/* ---- Dual-mode validation: feature matcher bridges (Milestone 7, #111) ---- */
+
+/* Helper: build a BinaryFeatureStore from flat C arrays (96-byte features). */
+static void build_store(vision::BinaryFeatureStore& store,
+                        const unsigned char* descs, const float* points,
+                        const int* maxima, int n) {
+    store.setNumBytesPerFeature(96);
+    store.resize(static_cast<size_t>(n));
+    for (int i = 0; i < n; i++) {
+        store.point(i) = vision::FeaturePoint(
+            points[i * 4 + 0],
+            points[i * 4 + 1],
+            points[i * 4 + 2],
+            points[i * 4 + 3],
+            maxima[i] != 0);
+        std::memcpy(store.feature(i), descs + i * 96, 96);
+    }
+}
+
+/* Helper: copy matches into output arrays, returning count. */
+static int copy_matches(const vision::matches_t& m, int* ins_out, int* ref_out) {
+    for (size_t i = 0; i < m.size(); i++) {
+        ins_out[i] = m[i].ins;
+        ref_out[i] = m[i].ref;
+    }
+    return static_cast<int>(m.size());
+}
+
+int webarkit_cpp_match_features_brute(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    float threshold,
+    int* ins_out, int* ref_out) {
+    if (!query_descs || !query_points || !query_maxima || num_query <= 0 ||
+        !ref_descs || !ref_points || !ref_maxima || num_ref <= 0 ||
+        !ins_out || !ref_out) {
+        return -1;
+    }
+
+    vision::BinaryFeatureStore q_store, r_store;
+    build_store(q_store, query_descs, query_points, query_maxima, num_query);
+    build_store(r_store, ref_descs, ref_points, ref_maxima, num_ref);
+
+    vision::BinaryFeatureMatcher<96> matcher;
+    matcher.setThreshold(threshold);
+    matcher.match(&q_store, &r_store);
+
+    return copy_matches(matcher.matches(), ins_out, ref_out);
+}
+
+int webarkit_cpp_match_features_indexed(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    float threshold,
+    int* ins_out, int* ref_out) {
+    if (!query_descs || !query_points || !query_maxima || num_query <= 0 ||
+        !ref_descs || !ref_points || !ref_maxima || num_ref <= 0 ||
+        !ins_out || !ref_out) {
+        return -1;
+    }
+
+    vision::BinaryFeatureStore q_store, r_store;
+    build_store(q_store, query_descs, query_points, query_maxima, num_query);
+    build_store(r_store, ref_descs, ref_points, ref_maxima, num_ref);
+
+    vision::BinaryHierarchicalClustering<96> index;
+    index.build(r_store.features().data(), num_ref);
+
+    vision::BinaryFeatureMatcher<96> matcher;
+    matcher.setThreshold(threshold);
+    matcher.match(&q_store, &r_store, index);
+
+    return copy_matches(matcher.matches(), ins_out, ref_out);
+}
+
+int webarkit_cpp_match_features_guided(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    const float* h, float tr, float threshold,
+    int* ins_out, int* ref_out) {
+    if (!query_descs || !query_points || !query_maxima || num_query <= 0 ||
+        !ref_descs || !ref_points || !ref_maxima || num_ref <= 0 ||
+        !h || !ins_out || !ref_out) {
+        return -1;
+    }
+
+    vision::BinaryFeatureStore q_store, r_store;
+    build_store(q_store, query_descs, query_points, query_maxima, num_query);
+    build_store(r_store, ref_descs, ref_points, ref_maxima, num_ref);
+
+    vision::BinaryFeatureMatcher<96> matcher;
+    matcher.setThreshold(threshold);
+    matcher.match(&q_store, &r_store, h, tr);
+
+    return copy_matches(matcher.matches(), ins_out, ref_out);
 }
 
 } // extern "C"
