@@ -402,18 +402,43 @@ pub struct Keyframe {
     pub features: Vec<FeaturePoint>,
 }
 
-/// A feature point with position, orientation, and scale.
+/// A feature point with position, orientation, scale, and extremum type.
+/// C equivalent: vision::FeaturePoint
 #[derive(Clone, Debug, Copy)]
 pub struct FeaturePoint {
     pub x: f32,
     pub y: f32,
     pub angle: f32,
     pub scale: f32,
+    /// True if this is a maxima, false if a minima (used to filter matches).
+    pub maxima: bool,
 }
 
-/// A correspondence between a query and reference feature.
-#[derive(Clone, Copy, Debug)]
+impl Default for FeaturePoint {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            angle: 0.0,
+            scale: 0.0,
+            maxima: true,
+        }
+    }
+}
+
+/// A correspondence between a query feature and a reference feature.
+/// C equivalent: vision::match_t
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Match {
+    /// Index into the query feature-point list.
+    pub ins: usize,
+    /// Index into the reference feature-point list.
+    pub ref_: usize,
+}
+
+/// A scored match used internally by Hough voting (carries distance for ranking).
+#[derive(Clone, Copy, Debug)]
+pub struct HoughMatch {
     pub query_idx: u32,
     pub ref_idx: u32,
     pub distance: f32,
@@ -447,7 +472,7 @@ pub fn find_hough_similarity(
     voting: &mut HoughSimilarityVoting,
     query_points: &[FeaturePoint],
     ref_points: &[FeaturePoint],
-    matches: &[Match],
+    matches: &[HoughMatch],
     _query_width: i32,
     _query_height: i32,
     _ref_width: i32,
@@ -505,9 +530,9 @@ pub fn find_hough_similarity(
 /// * `max_hough_index` - The winning bin index
 /// * `bin_delta` - Maximum bin distance to be considered an inlier
 pub fn find_hough_matches(
-    out_matches: &mut Vec<Match>,
+    out_matches: &mut Vec<HoughMatch>,
     voting: &HoughSimilarityVoting,
-    all_matches: &[Match],
+    all_matches: &[HoughMatch],
     max_hough_index: i32,
     _bin_delta: i32,
 ) -> Result<(), KpmError> {
@@ -689,12 +714,12 @@ mod tests {
         let voting = HoughSimilarityVoting::new(params, 50.0, 50.0, 200, 200).expect("valid");
 
         let all_matches = vec![
-            Match {
+            HoughMatch {
                 query_idx: 0,
                 ref_idx: 0,
                 distance: 0.1,
             },
-            Match {
+            HoughMatch {
                 query_idx: 1,
                 ref_idx: 1,
                 distance: 0.2,
