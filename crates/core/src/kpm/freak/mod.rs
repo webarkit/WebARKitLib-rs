@@ -43,11 +43,13 @@
 pub mod clustering;
 pub mod homography;
 pub mod hough;
+pub mod matcher;
 pub mod math;
 
 // Public re-exports for convenience
 pub use clustering::{hamming_distance_96, BhcNode, BinaryHierarchicalClustering, KMedoids};
 pub use hough::{
     find_features, find_hough_matches, find_hough_similarity, BinParams, DoGScaleInvariantDetector,
-    FeaturePoint, GaussianScaleSpacePyramid, HoughSimilarityVoting, Keyframe, Match,
+    FeaturePoint, GaussianScaleSpacePyramid, HoughMatch, HoughSimilarityVoting, Keyframe, Match,
 };
+pub use matcher::{FeatureMatcher, FeatureStore};
