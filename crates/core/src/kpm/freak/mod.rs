@@ -40,11 +40,13 @@
 //! FreakMatcher feature detector. Functions are ported from the C++ WebARKitLib
 //! implementation and optimized for performance.
 
+pub mod clustering;
 pub mod homography;
 pub mod hough;
 pub mod math;
 
 // Public re-exports for convenience
+pub use clustering::{hamming_distance_96, BhcNode, BinaryHierarchicalClustering, KMedoids};
 pub use hough::{
     find_features, find_hough_matches, find_hough_similarity, BinParams, DoGScaleInvariantDetector,
     FeaturePoint, GaussianScaleSpacePyramid, HoughSimilarityVoting, Keyframe, Match,
