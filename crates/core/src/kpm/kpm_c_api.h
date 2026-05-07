@@ -181,6 +181,48 @@ int webarkit_cpp_robust_homography_find(
     int max_trials,
     int chunk_size);
 
+/* ---- Dual-mode validation: feature matcher bridges (Milestone 7, #111) ---- */
+
+/* Thin wrappers around vision::BinaryFeatureMatcher<96>::match() variants.
+ * Used by M7-3 dual-mode tests to validate the pure-Rust matcher against
+ * the C++ baseline.
+ *
+ * Inputs (common to all 3 variants):
+ *   query_descs:  num_query * 96 bytes packed (FREAK descriptors)
+ *   query_points: num_query * 4 floats (x, y, angle, scale per point)
+ *   query_maxima: num_query ints (0 or 1)
+ *   ref_descs / ref_points / ref_maxima: same for reference store
+ *   threshold:    ratio test threshold (0.7 == C++ default)
+ *
+ * Outputs:
+ *   ins_out, ref_out: caller-provided arrays of size >= num_query.
+ *     Filled with the match pairs in order.
+ *
+ * Returns: number of matches found (>= 0), or -1 on error. */
+int webarkit_cpp_match_features_brute(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    float threshold,
+    int* ins_out, int* ref_out);
+
+int webarkit_cpp_match_features_indexed(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    float threshold,
+    int* ins_out, int* ref_out);
+
+int webarkit_cpp_match_features_guided(
+    const unsigned char* query_descs, const float* query_points,
+    const int* query_maxima, int num_query,
+    const unsigned char* ref_descs, const float* ref_points,
+    const int* ref_maxima, int num_ref,
+    const float* h, float tr, float threshold,
+    int* ins_out, int* ref_out);
+
 #ifdef __cplusplus
 }
 #endif
