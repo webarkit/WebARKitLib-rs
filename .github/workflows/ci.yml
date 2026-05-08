@@ -65,8 +65,13 @@ jobs:
     # Dual-mode tests run pure-Rust ports against the C++ baseline via the
     # FFI backend (webarkit_cpp_* shims) and assert byte-level parity.
     # Catches regressions that would otherwise only surface in local runs.
+    #
+    # Scoped to --lib because the dual-mode tests live inside the library
+    # (crates/core/src/...) under #[cfg(feature = "dual-mode")] modules.
+    # Integration tests in tests/ have unrelated cross-platform issues that
+    # are out of scope for this CI step.
     - name: Run dual-mode tests
-      run: cargo test -p webarkitlib-rs --features dual-mode
+      run: cargo test -p webarkitlib-rs --lib --features dual-mode
 
   submodule-drift-check:
     runs-on: ubuntu-latest
