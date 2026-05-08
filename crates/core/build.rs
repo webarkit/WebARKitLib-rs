@@ -123,9 +123,19 @@ fn build_freak_matcher() {
 
     build.compile("freakMatcher");
 
-    // Link C++ standard library on non-MSVC platforms
+    // Link the platform-appropriate C++ standard library on non-MSVC targets.
+    //
+    // - macOS / iOS use LLVM's libc++ (no libstdc++ available by default).
+    // - Linux / other Unix-likes traditionally use GNU's libstdc++.
+    //
+    // Linking the wrong one causes linker failures (e.g. `ld: library 'stdc++'
+    // not found` on macOS). MSVC handles its C++ runtime automatically.
     if !target.contains("msvc") {
-        println!("cargo:rustc-link-lib=stdc++");
+        if target.contains("apple") {
+            println!("cargo:rustc-link-lib=c++");
+        } else {
+            println!("cargo:rustc-link-lib=stdc++");
+        }
     }
 
     // Rerun if sources change
