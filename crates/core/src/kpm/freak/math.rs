@@ -2112,13 +2112,20 @@ mod dual_mode_tests {
                     if diff > max_diff {
                         max_diff = diff;
                     }
+                    // Combined absolute + relative tolerance: f32 has ~7
+                    // decimal digits, so values around magnitude M need
+                    // tolerance ~ M * 1e-6. The 1e-5 floor handles values
+                    // near zero. This accommodates platform-specific FMA
+                    // rounding differences (Apple Silicon vs x86_64).
+                    let tol = 1e-5_f32.max(x_rust[i].abs() * 1e-6);
                     assert!(
-                        diff < 1e-5,
-                        "solve_linear_system_2x2 diverged at x[{}]: rust={}, cpp={}, diff={}",
+                        diff < tol,
+                        "solve_linear_system_2x2 diverged at x[{}]: rust={}, cpp={}, diff={}, tol={}",
                         i,
                         x_rust[i],
                         x_cpp[i],
-                        diff
+                        diff,
+                        tol
                     );
                 }
                 compared += 1;
@@ -2183,13 +2190,16 @@ mod dual_mode_tests {
                     if diff > max_diff {
                         max_diff = diff;
                     }
+                    // See solve_linear_system_2x2_matches_cpp for tolerance rationale.
+                    let tol = 1e-5_f32.max(x_rust[i].abs() * 1e-6);
                     assert!(
-                        diff < 1e-5,
-                        "solve_symmetric_linear_system_3x3 diverged at x[{}]: rust={}, cpp={}, diff={}",
+                        diff < tol,
+                        "solve_symmetric_linear_system_3x3 diverged at x[{}]: rust={}, cpp={}, diff={}, tol={}",
                         i,
                         x_rust[i],
                         x_cpp[i],
-                        diff
+                        diff,
+                        tol
                     );
                 }
                 compared += 1;
