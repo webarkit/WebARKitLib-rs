@@ -62,6 +62,12 @@ jobs:
     - name: Build kpm backend (FFI backend)
       run: cargo build -p webarkitlib-rs --features ffi-backend
 
+    # Dual-mode tests run pure-Rust ports against the C++ baseline via the
+    # FFI backend (webarkit_cpp_* shims) and assert byte-level parity.
+    # Catches regressions that would otherwise only surface in local runs.
+    - name: Run dual-mode tests
+      run: cargo test -p webarkitlib-rs --features dual-mode
+
   submodule-drift-check:
     runs-on: ubuntu-latest
     steps:
