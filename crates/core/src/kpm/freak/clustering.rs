@@ -75,27 +75,36 @@ pub fn hamming_distance_96(a: &[u8; 96], b: &[u8; 96]) -> u32 {
         .sum()
 }
 
-/// Lightweight linear congruential RNG for deterministic clustering.
-struct SimpleRng {
-    seed: u64,
+/// Fast PRNG matching `vision::FastRandom` from `math/rand.h`.
+///
+/// Mutates `seed` in place using the LCG step `seed = 214013*seed + 2531011`,
+/// and returns the top 15 bits as a non-negative integer in `[0, 32767]`.
+///
+/// The C++ source uses `int` (32-bit signed). We mirror the bit pattern with
+/// `i32` and wrapping arithmetic so the sequence is byte-identical.
+fn fast_random(seed: &mut i32) -> i32 {
+    *seed = seed.wrapping_mul(214013).wrapping_add(2531011);
+    (*seed >> 16) & 0x7FFF
 }
 
-impl SimpleRng {
-    fn new(seed: u64) -> Self {
-        Self { seed }
+/// Shuffles the first `sample_size` elements of `v` using `fast_random`.
+///
+/// C equivalent: `vision::ArrayShuffle` from `math/rand.h`.
+///
+/// Note: This is NOT Fisher–Yates. The C++ implementation draws `k` from
+/// `[0, pop_size)` (not `[i, pop_size)`), which means earlier swaps may be
+/// undone by later iterations. We mirror this exactly for parity.
+///
+/// `seed` is mutated by every call to `fast_random`; pass a persistent seed
+/// across multiple shuffles to reproduce C++ k-medoids state evolution.
+fn array_shuffle<T>(v: &mut [T], sample_size: usize, seed: &mut i32) {
+    let pop_size = v.len();
+    if pop_size == 0 {
+        return;
     }
-
-    fn next(&mut self) -> u64 {
-        self.seed = self.seed.wrapping_mul(1103515245).wrapping_add(12345);
-        self.seed
-    }
-
-    fn next_usize(&mut self, min: usize, max: usize) -> usize {
-        let range = (max - min) as u64;
-        if range == 0 {
-            return min;
-        }
-        min + ((self.next() % range) as usize)
+    for i in 0..sample_size {
+        let k = (fast_random(seed) as usize) % pop_size;
+        v.swap(i, k);
     }
 }
 
@@ -106,7 +115,9 @@ pub struct KMedoids {
     centers: Vec<usize>,
     assignment: Vec<usize>,
     num_hypotheses: usize,
-    rand_seed: u64,
+    /// PRNG state. Type matches C++ `int` so `fast_random` produces a
+    /// byte-identical sequence. Mutated by every call to `assign()`.
+    rand_seed: i32,
 }
 
 impl KMedoids {
@@ -138,8 +149,17 @@ impl KMedoids {
     }
 
     /// Sets the random seed for reproducible clustering.
-    pub fn set_rand_seed(&mut self, seed: u64) {
+    ///
+    /// The seed type is `i32` to match C++'s `int` exactly so the PRNG
+    /// sequence is byte-identical across implementations.
+    pub fn set_rand_seed(&mut self, seed: i32) {
         self.rand_seed = seed;
+    }
+
+    /// Returns the current PRNG seed state. Useful for tests verifying that
+    /// the seed evolves across calls.
+    pub fn rand_seed(&self) -> i32 {
+        self.rand_seed
     }
 
     /// Returns the cluster assignment for each feature.
@@ -170,23 +190,26 @@ impl KMedoids {
             });
         }
 
-        self.assignment.resize(features.len(), 0);
+        let n = features.len();
+        self.assignment.resize(n, 0);
 
         let mut best_distortion = u64::MAX;
-        let mut best_assignment = vec![0; features.len()];
+        let mut best_assignment = vec![0; n];
         let mut best_centers = vec![0; self.k];
 
+        // Sequential vector [0, 1, ..., n-1], shuffled in place across
+        // hypotheses. C++ initializes this ONCE before the hypothesis loop
+        // (kmedoids.h line 163: SequentialVector(...)) — we mirror exactly.
+        let mut rand_indices: Vec<usize> = (0..n).collect();
+
         for hyp in 0..self.num_hypotheses {
-            let mut rng = SimpleRng::new(self.rand_seed.wrapping_add(hyp as u64));
-            let mut candidate_indices: Vec<usize> = (0..features.len()).collect();
+            // C++ shuffle (matchers/kmedoids.h line 169) — mutates rand_seed
+            // and rand_indices in place. The seed evolves across hypotheses
+            // and across recursive BHC build calls.
+            array_shuffle(&mut rand_indices, self.k, &mut self.rand_seed);
+            let hypothesis_centers: Vec<usize> = rand_indices[..self.k].to_vec();
 
-            for i in 0..self.k {
-                let j = rng.next_usize(i, features.len());
-                candidate_indices.swap(i, j);
-            }
-            let hypothesis_centers: Vec<usize> = candidate_indices[..self.k].to_vec();
-
-            let mut hyp_assignment = vec![0; features.len()];
+            let mut hyp_assignment = vec![0; n];
             let mut hyp_distortion = 0u64;
 
             for (feat_idx, feature) in features.iter().enumerate() {
@@ -444,22 +467,33 @@ impl BinaryHierarchicalClustering {
             return Ok(());
         }
 
-        // Find nearest child based on Hamming distance to center
-        let mut nearest_idx = 0;
-        let mut nearest_dist = u32::MAX;
+        // Compute Hamming distance to each child's center.
+        let dists: Vec<u32> = node
+            .children
+            .iter()
+            .map(|child| {
+                child
+                    .center
+                    .as_ref()
+                    .map(|c| hamming_distance_96(c, query_feature))
+                    .unwrap_or(u32::MAX)
+            })
+            .collect();
 
-        for (i, child) in node.children.iter().enumerate() {
-            if let Some(center) = &child.center {
-                let dist = hamming_distance_96(center, query_feature);
-                if dist < nearest_dist {
-                    nearest_dist = dist;
-                    nearest_idx = i;
-                }
+        let min_dist = match dists.iter().min().copied() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+
+        // C++ behavior (Node::nearest in binary_hierarchical_clustering.h):
+        // visit the nearest child AND any children that share the same
+        // minimum distance. Other children are pushed to a priority queue
+        // (only popped if mMaxNodesToPop > 0; default is 0, so unused here).
+        for (i, &d) in dists.iter().enumerate() {
+            if d == min_dist {
+                self.query_recursive(&node.children[i], query_feature, result)?;
             }
         }
-
-        // Recurse on nearest child only
-        self.query_recursive(&node.children[nearest_idx], query_feature, result)?;
 
         Ok(())
     }
@@ -467,6 +501,107 @@ impl BinaryHierarchicalClustering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ===== RNG Tests (parity with C++ FastRandom / ArrayShuffle) =====
+
+    /// First call to fast_random with seed=1234.
+    /// Expected: seed becomes 214013*1234 + 2531011 = 266_623_053.
+    /// Returns (266_623_053 >> 16) & 0x7FFF = 4068.
+    /// These constants are frozen to detect any algorithmic change; the
+    /// dual-mode FFI test (cfg "dual-mode") additionally verifies
+    /// byte-identical output against the C++ baseline.
+    #[test]
+    fn test_fast_random_first_call() {
+        let mut seed: i32 = 1234;
+        let r = fast_random(&mut seed);
+        assert_eq!(seed, 266_623_053);
+        assert_eq!(r, 4068);
+    }
+
+    /// Calling fast_random with the same seed twice yields the same sequence.
+    #[test]
+    fn test_fast_random_deterministic() {
+        let mut s1: i32 = 1234;
+        let mut s2: i32 = 1234;
+        let r1: Vec<i32> = (0..10).map(|_| fast_random(&mut s1)).collect();
+        let r2: Vec<i32> = (0..10).map(|_| fast_random(&mut s2)).collect();
+        assert_eq!(r1, r2);
+        assert_eq!(s1, s2);
+    }
+
+    /// fast_random returns values in [0, 32767].
+    #[test]
+    fn test_fast_random_range() {
+        let mut seed: i32 = 7;
+        for _ in 0..1000 {
+            let r = fast_random(&mut seed);
+            assert!((0..=32767).contains(&r), "value {} out of range", r);
+        }
+    }
+
+    /// Negative starting seeds work correctly (i32 wrapping arithmetic).
+    #[test]
+    fn test_fast_random_negative_seed() {
+        let mut seed: i32 = -1;
+        let r = fast_random(&mut seed);
+        // No crash; output is non-negative because of the &0x7FFF mask.
+        assert!((0..=32767).contains(&r));
+    }
+
+    /// array_shuffle preserves the multiset of elements (it's a permutation).
+    #[test]
+    fn test_array_shuffle_preserves_elements() {
+        let mut v: Vec<usize> = (0..10).collect();
+        let mut seed: i32 = 1234;
+        array_shuffle(&mut v, 5, &mut seed);
+
+        let mut sorted = v.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..10).collect::<Vec<_>>());
+    }
+
+    /// Same seed produces the same shuffle.
+    #[test]
+    fn test_array_shuffle_deterministic() {
+        let mut v1: Vec<usize> = (0..20).collect();
+        let mut v2: Vec<usize> = (0..20).collect();
+        let mut s1: i32 = 1234;
+        let mut s2: i32 = 1234;
+        array_shuffle(&mut v1, 8, &mut s1);
+        array_shuffle(&mut v2, 8, &mut s2);
+        assert_eq!(v1, v2);
+        assert_eq!(s1, s2);
+    }
+
+    /// Empty slice doesn't panic.
+    #[test]
+    fn test_array_shuffle_empty_pop() {
+        let mut v: Vec<usize> = Vec::new();
+        let mut seed: i32 = 1234;
+        array_shuffle(&mut v, 0, &mut seed);
+        assert!(v.is_empty());
+    }
+
+    /// Sample_size = 0 leaves array unchanged.
+    #[test]
+    fn test_array_shuffle_zero_sample() {
+        let mut v: Vec<usize> = (0..10).collect();
+        let original = v.clone();
+        let mut seed: i32 = 1234;
+        array_shuffle(&mut v, 0, &mut seed);
+        assert_eq!(v, original);
+    }
+
+    /// The seed evolves across array_shuffle calls — verifies persistent state.
+    #[test]
+    fn test_array_shuffle_seed_evolves() {
+        let mut v: Vec<usize> = (0..10).collect();
+        let mut seed: i32 = 1234;
+        array_shuffle(&mut v, 5, &mut seed);
+        let seed_after_first = seed;
+        array_shuffle(&mut v, 5, &mut seed);
+        assert_ne!(seed_after_first, seed, "seed must advance across calls");
+    }
 
     // ===== Hamming Distance Tests =====
 
@@ -640,5 +775,115 @@ mod tests {
         let result2 = bhc2.query(&[0u8; 96]).unwrap();
 
         assert_eq!(result1, result2);
+    }
+}
+
+// ============================================================================
+// Dual-mode validation: bridges to C++ FastRandom / ArrayShuffle (#116)
+// ============================================================================
+//
+// When `dual-mode` is enabled, these tests verify that the Rust ports of
+// `fast_random` and `array_shuffle` produce a byte-identical sequence and
+// permutation to the C++ baseline (vision::FastRandom / vision::ArrayShuffle
+// from math/rand.h). This is what enables the BHC-indexed match dual-mode
+// test in matcher.rs to assert pair equality with C++ rather than count-only.
+
+#[cfg(feature = "dual-mode")]
+extern "C" {
+    fn webarkit_cpp_fast_random(seed: *mut i32) -> i32;
+    fn webarkit_cpp_array_shuffle(v: *mut i32, pop_size: i32, sample_size: i32, seed: *mut i32);
+}
+
+#[cfg(all(test, feature = "dual-mode"))]
+mod dual_mode_tests {
+    use super::*;
+
+    /// Sweep many seeds and many calls; verify Rust and C++ produce the same
+    /// sequence and the same final seed state.
+    #[test]
+    fn dual_mode_fast_random_byte_identical() {
+        for &start in &[0i32, 1, 1234, -1, -1234, i32::MAX, i32::MIN, 7919, -7919] {
+            let mut rust_seed = start;
+            let mut cpp_seed = start;
+            for step in 0..1000 {
+                let rust_r = fast_random(&mut rust_seed);
+                let cpp_r = unsafe { webarkit_cpp_fast_random(&mut cpp_seed) };
+                assert_eq!(
+                    rust_r, cpp_r,
+                    "value mismatch at start={}, step={}: rust={}, cpp={}",
+                    start, step, rust_r, cpp_r
+                );
+                assert_eq!(
+                    rust_seed, cpp_seed,
+                    "seed mismatch at start={}, step={}",
+                    start, step
+                );
+            }
+        }
+    }
+
+    /// Run array_shuffle with various pop_size / sample_size / seed combinations
+    /// and assert the resulting permutation and seed are byte-identical to C++.
+    #[test]
+    fn dual_mode_array_shuffle_byte_identical() {
+        let cases: &[(usize, usize, i32)] = &[
+            (10, 5, 1234),
+            (10, 10, 1234),
+            (50, 8, 1234),
+            (100, 16, 42),
+            (1, 1, 999),
+            (256, 32, -1),
+            (200, 0, 7), // sample_size=0: no shuffling, should be no-op
+            (50, 50, 12345),
+        ];
+
+        for &(pop, sample, start_seed) in cases {
+            let mut rust_v: Vec<i32> = (0..pop as i32).collect();
+            let mut cpp_v: Vec<i32> = (0..pop as i32).collect();
+            let mut rust_seed = start_seed;
+            let mut cpp_seed = start_seed;
+
+            array_shuffle(&mut rust_v, sample, &mut rust_seed);
+            unsafe {
+                webarkit_cpp_array_shuffle(
+                    cpp_v.as_mut_ptr(),
+                    pop as i32,
+                    sample as i32,
+                    &mut cpp_seed,
+                );
+            }
+
+            assert_eq!(
+                rust_v, cpp_v,
+                "permutation mismatch at pop={}, sample={}, seed={}",
+                pop, sample, start_seed
+            );
+            assert_eq!(
+                rust_seed, cpp_seed,
+                "seed mismatch at pop={}, sample={}, seed={}",
+                pop, sample, start_seed
+            );
+        }
+    }
+
+    /// Run multiple shuffles in sequence with a shared seed and verify both
+    /// implementations evolve their state identically across calls. This
+    /// matches how BHC uses ArrayShuffle (one persistent seed across many
+    /// k-medoids invocations during recursive tree build).
+    #[test]
+    fn dual_mode_array_shuffle_persistent_seed() {
+        let mut rust_v: Vec<i32> = (0..100).collect();
+        let mut cpp_v: Vec<i32> = (0..100).collect();
+        let mut rust_seed = 1234i32;
+        let mut cpp_seed = 1234i32;
+
+        for round in 0..10 {
+            array_shuffle(&mut rust_v, 8, &mut rust_seed);
+            unsafe {
+                webarkit_cpp_array_shuffle(cpp_v.as_mut_ptr(), 100, 8, &mut cpp_seed);
+            }
+            assert_eq!(rust_v, cpp_v, "permutation diverged at round {}", round);
+            assert_eq!(rust_seed, cpp_seed, "seed diverged at round {}", round);
+        }
     }
 }

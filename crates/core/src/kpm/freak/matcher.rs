@@ -1076,25 +1076,34 @@ mod dual_mode_tests {
         assert!(count_cpp >= 0, "C++ FFI returned error: {}", count_cpp);
 
         // Invariant B: pair-by-pair correctness independent of C++.
-        // We CAN'T verify global optimality here because BHC may not have
-        // explored all references — only that the matched pair has agreeing
-        // maxima and indices are in bounds.
+        // We can't verify global optimality here because BHC's tree pruning
+        // means not every reference is considered for every query — but we
+        // can verify bounds and the maxima filter.
         assert_match_invariants(&rust_matches, &q, &r);
 
-        // BHC RNG differs between C++ and Rust (documented in PR #114), so
-        // pair-level equality is NOT expected. Both implementations are valid
-        // approximate-NN matchers — they can produce different pairs. We
-        // therefore only assert that both produce non-negative counts and
-        // each match satisfies the maxima invariant.
+        // Invariant A: count and pair equality vs C++.
         //
-        // To tighten this to pair-equality, port `ArrayShuffle` from
-        // math/rand.h (also flagged as future work in PR #114).
+        // Now that #116 ports `ArrayShuffle` exactly (verified byte-identical
+        // by the dual-mode tests in clustering.rs), the BHC tree topology and
+        // traversal order match C++ exactly. The indexed matcher should now
+        // produce the same match pairs as C++.
+        let diff = (count_rust - count_cpp).abs();
         assert!(
-            count_rust >= 0 && count_cpp >= 0,
-            "indexed counts must be non-negative: rust={}, cpp={}",
+            diff <= MATCH_COUNT_TOLERANCE,
+            "match_indexed dual-mode count mismatch: rust={}, cpp={}, diff={}",
             count_rust,
-            count_cpp
+            count_cpp,
+            diff
         );
+
+        if count_rust == count_cpp {
+            let rust_pairs = sorted_pairs(&rust_matches);
+            let cpp_pairs = sorted_pairs_ffi(&ins_out, &ref_out, count_cpp as usize);
+            assert_eq!(
+                rust_pairs, cpp_pairs,
+                "match_indexed: same count but different pairs — BHC tree or matcher diverged from C++"
+            );
+        }
     }
 
     #[test]

@@ -223,6 +223,22 @@ int webarkit_cpp_match_features_guided(
     const float* h, float tr, float threshold,
     int* ins_out, int* ref_out);
 
+/* ---- Dual-mode validation: PRNG bridges (Milestone 7, #116) ---- */
+
+/* Thin wrappers around vision::FastRandom and vision::ArrayShuffle from
+ * math/rand.h. Used by the M7 ArrayShuffle parity tests to verify that the
+ * pure-Rust PRNG produces a byte-identical sequence to the C++ baseline.
+ *
+ * webarkit_cpp_fast_random:
+ *   Mutates *seed in place using the LCG step; returns a 15-bit value in
+ *   [0, 32767].
+ *
+ * webarkit_cpp_array_shuffle:
+ *   Shuffles the first sample_size elements of v[] using FastRandom.
+ *   Both v and seed are mutated. */
+int  webarkit_cpp_fast_random(int* seed);
+void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed);
+
 #ifdef __cplusplus
 }
 #endif
