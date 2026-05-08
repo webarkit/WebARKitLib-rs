@@ -54,6 +54,7 @@
 #include <math/math_utils.h>
 #include <math/linear_algebra.h>
 #include <math/linear_solvers.h>
+#include <math/rand.h>
 #include <homography_estimation/robust_homography.h>
 #include <Eigen/Core>
 #include <unsupported/Eigen/MatrixFunctions>
@@ -489,6 +490,19 @@ int webarkit_cpp_match_features_guided(
     matcher.match(&q_store, &r_store, h, tr);
 
     return copy_matches(matcher.matches(), ins_out, ref_out);
+}
+
+/* ---- Dual-mode validation: PRNG bridges (Milestone 7, #116) ---- */
+
+/* Thin wrappers around vision::FastRandom and vision::ArrayShuffle from
+ * math/rand.h. Used by the M7 ArrayShuffle parity tests to verify that the
+ * pure-Rust PRNG produces a byte-identical sequence to the C++ baseline. */
+int webarkit_cpp_fast_random(int* seed) {
+    return vision::FastRandom(*seed);
+}
+
+void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed) {
+    vision::ArrayShuffle<int>(v, pop_size, sample_size, *seed);
 }
 
 } // extern "C"
