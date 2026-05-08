@@ -50,6 +50,7 @@
 #include <unsupported/Eigen/MatrixFunctions>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <vector>
 
