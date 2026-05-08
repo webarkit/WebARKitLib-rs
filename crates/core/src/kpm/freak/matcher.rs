@@ -798,6 +798,121 @@ mod dual_mode_tests {
     /// PR #114) and floating-point order in the ratio test.
     const MATCH_COUNT_TOLERANCE: i32 = 2;
 
+    /// Asserts per-match invariants that hold INDEPENDENTLY of the C++ baseline.
+    ///
+    /// These catch bugs that count-only comparisons would miss:
+    /// 1. Indices are in bounds.
+    /// 2. The maxima flags of the matched query/reference points agree
+    ///    (matches the explicit `p1.maxima != p2.maxima` filter in C++).
+    fn assert_match_invariants(matches: &[Match], query: &FeatureStore, reference: &FeatureStore) {
+        for (k, m) in matches.iter().enumerate() {
+            assert!(
+                m.ins < query.num_features(),
+                "match[{}].ins={} out of bounds (num_query={})",
+                k,
+                m.ins,
+                query.num_features()
+            );
+            assert!(
+                m.ref_ < reference.num_features(),
+                "match[{}].ref_={} out of bounds (num_ref={})",
+                k,
+                m.ref_,
+                reference.num_features()
+            );
+            assert_eq!(
+                query.point(m.ins).maxima,
+                reference.point(m.ref_).maxima,
+                "match[{}] ({},{}) violates maxima filter",
+                k,
+                m.ins,
+                m.ref_
+            );
+        }
+    }
+
+    /// Asserts that for every match, the matched reference is the GLOBAL best
+    /// (minimum Hamming distance) among references with the same maxima flag,
+    /// AND that the ratio (best / second_best) < threshold.
+    ///
+    /// This is an absolute correctness check independent of the C++ baseline:
+    /// it verifies that brute-force matching produces the optimal pair under
+    /// the ratio test rules — independent of any other implementation.
+    fn assert_brute_force_optimality(
+        matches: &[Match],
+        query: &FeatureStore,
+        reference: &FeatureStore,
+        threshold: f32,
+    ) {
+        for m in matches {
+            let f1 = descriptor_96(query, m.ins);
+            let p1 = query.point(m.ins);
+
+            // Recompute first_best / second_best across all valid references.
+            let mut first_best = u32::MAX;
+            let mut second_best = u32::MAX;
+            let mut best_idx: i32 = -1;
+            for j in 0..reference.num_features() {
+                if p1.maxima != reference.point(j).maxima {
+                    continue;
+                }
+                let f2 = descriptor_96(reference, j);
+                let d = hamming_distance_96(f1, f2);
+                if d < first_best {
+                    second_best = first_best;
+                    first_best = d;
+                    best_idx = j as i32;
+                } else if d < second_best {
+                    second_best = d;
+                }
+            }
+
+            assert!(
+                best_idx >= 0,
+                "no valid reference for match query={}",
+                m.ins
+            );
+            // The matched reference must be one of the global-best ties.
+            // (Floating-point ratio order in C++ vs Rust can pick a different
+            // index when distances tie; we accept any reference at the min.)
+            let f_matched = descriptor_96(reference, m.ref_);
+            let d_matched = hamming_distance_96(f1, f_matched);
+            assert_eq!(
+                d_matched, first_best,
+                "match query={}: matched ref={} has dist={}, but global min is {}",
+                m.ins, m.ref_, d_matched, first_best
+            );
+
+            // Verify ratio test was actually applied.
+            if second_best != u32::MAX {
+                let ratio = first_best as f32 / second_best as f32;
+                assert!(
+                    ratio < threshold,
+                    "match query={}: ratio {} >= threshold {} (should have been rejected)",
+                    m.ins,
+                    ratio,
+                    threshold
+                );
+            }
+        }
+    }
+
+    /// Returns sorted match pairs as `(ins, ref)` tuples for stable comparison.
+    fn sorted_pairs(matches: &[Match]) -> Vec<(usize, usize)> {
+        let mut v: Vec<(usize, usize)> = matches.iter().map(|m| (m.ins, m.ref_)).collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// Same, but for raw FFI output: takes parallel ins/ref arrays + count.
+    fn sorted_pairs_ffi(ins: &[i32], refs: &[i32], count: usize) -> Vec<(usize, usize)> {
+        let mut v: Vec<(usize, usize)> = (0..count)
+            .map(|i| (ins[i] as usize, refs[i] as usize))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
     /// Pseudo-random 96-byte descriptors derived from a u64 seed (xorshift).
     fn gen_descriptor(seed: u64) -> [u8; 96] {
         let mut state = seed.wrapping_mul(0x9E3779B97F4A7C15);
@@ -881,6 +996,7 @@ mod dual_mode_tests {
         let (q, r, q_flat, r_flat) = make_dual_inputs(50, 100);
         let mut matcher = FeatureMatcher::new();
         let count_rust = matcher.match_all(&q, &r).unwrap() as i32;
+        let rust_matches = matcher.matches().to_vec();
 
         let mut ins_out = vec![0i32; 50];
         let mut ref_out = vec![0i32; 50];
@@ -901,14 +1017,34 @@ mod dual_mode_tests {
         };
 
         assert!(count_cpp >= 0, "C++ FFI returned error: {}", count_cpp);
+
+        // Invariant B: independent correctness checks (no C++ comparison needed).
+        assert_match_invariants(&rust_matches, &q, &r);
+        assert_brute_force_optimality(&rust_matches, &q, &r, 0.7);
+
+        // Invariant A: count and pair equality vs C++ baseline. Brute force is
+        // deterministic — match pairs should be identical (modulo floating-point
+        // ratio-order ties allowed within MATCH_COUNT_TOLERANCE).
         let diff = (count_rust - count_cpp).abs();
         assert!(
             diff <= MATCH_COUNT_TOLERANCE,
-            "match_all dual-mode mismatch: rust={}, cpp={}, diff={}",
+            "match_all dual-mode count mismatch: rust={}, cpp={}, diff={}",
             count_rust,
             count_cpp,
             diff
         );
+
+        // Strongest check: sorted pair equality. If counts agree exactly,
+        // pairs must agree exactly (no C++ vs Rust divergence in brute-force
+        // because the algorithm is deterministic).
+        if count_rust == count_cpp {
+            let rust_pairs = sorted_pairs(&rust_matches);
+            let cpp_pairs = sorted_pairs_ffi(&ins_out, &ref_out, count_cpp as usize);
+            assert_eq!(
+                rust_pairs, cpp_pairs,
+                "match_all: same count but different pairs — Rust ports diverged from C++ semantics"
+            );
+        }
     }
 
     #[test]
@@ -917,6 +1053,7 @@ mod dual_mode_tests {
         let mut matcher = FeatureMatcher::new();
         matcher.build(&r).unwrap();
         let count_rust = matcher.match_indexed(&q, &r).unwrap() as i32;
+        let rust_matches = matcher.matches().to_vec();
 
         let mut ins_out = vec![0i32; 50];
         let mut ref_out = vec![0i32; 50];
@@ -937,11 +1074,21 @@ mod dual_mode_tests {
         };
 
         assert!(count_cpp >= 0, "C++ FFI returned error: {}", count_cpp);
-        // BHC RNG differs between C++ and Rust → relax tolerance for indexed.
-        // Match counts can differ by more than 2 on small inputs because tree
-        // traversal selects different leaves; the regression target is "non-zero
-        // and within an order of magnitude of brute-force expectations".
-        let _ = (count_rust, count_cpp); // capture for failure messages
+
+        // Invariant B: pair-by-pair correctness independent of C++.
+        // We CAN'T verify global optimality here because BHC may not have
+        // explored all references — only that the matched pair has agreeing
+        // maxima and indices are in bounds.
+        assert_match_invariants(&rust_matches, &q, &r);
+
+        // BHC RNG differs between C++ and Rust (documented in PR #114), so
+        // pair-level equality is NOT expected. Both implementations are valid
+        // approximate-NN matchers — they can produce different pairs. We
+        // therefore only assert that both produce non-negative counts and
+        // each match satisfies the maxima invariant.
+        //
+        // To tighten this to pair-equality, port `ArrayShuffle` from
+        // math/rand.h (also flagged as future work in PR #114).
         assert!(
             count_rust >= 0 && count_cpp >= 0,
             "indexed counts must be non-negative: rust={}, cpp={}",
@@ -960,6 +1107,7 @@ mod dual_mode_tests {
         let tr = 1000.0;
 
         let count_rust = matcher.match_guided(&q, &r, &h_identity, tr).unwrap() as i32;
+        let rust_matches = matcher.matches().to_vec();
 
         let mut ins_out = vec![0i32; 50];
         let mut ref_out = vec![0i32; 50];
@@ -982,13 +1130,29 @@ mod dual_mode_tests {
         };
 
         assert!(count_cpp >= 0, "C++ FFI returned error: {}", count_cpp);
+
+        // Invariant B: independent correctness checks (maxima + bounds).
+        assert_match_invariants(&rust_matches, &q, &r);
+
+        // Invariant A: count agreement vs C++.
         let diff = (count_rust - count_cpp).abs();
         assert!(
             diff <= MATCH_COUNT_TOLERANCE,
-            "match_guided dual-mode mismatch: rust={}, cpp={}, diff={}",
+            "match_guided dual-mode count mismatch: rust={}, cpp={}, diff={}",
             count_rust,
             count_cpp,
             diff
         );
+
+        // Strongest check: sorted pair equality when counts match. The guided
+        // matcher is deterministic (no RNG), so pairs should agree exactly.
+        if count_rust == count_cpp {
+            let rust_pairs = sorted_pairs(&rust_matches);
+            let cpp_pairs = sorted_pairs_ffi(&ins_out, &ref_out, count_cpp as usize);
+            assert_eq!(
+                rust_pairs, cpp_pairs,
+                "match_guided: same count but different pairs"
+            );
+        }
     }
 }
