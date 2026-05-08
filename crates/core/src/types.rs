@@ -184,6 +184,10 @@ pub struct MatchOk {
     pub cf: f64,
     /// Number of errors corrected by ECC (0 for codes without ECC, always 0 for template).
     pub error_corrected: i32,
+    /// 64-bit global ID for `ARMatrixCodeType::GlobalID` matchers.
+    /// Always `0` for template matching and non-GlobalID matrix codes.
+    /// C equivalent: `*codeGlobalID_p` from `arPattGetIDGlobal`.
+    pub global_id: u64,
 }
 
 impl From<MatchError> for ARMarkerInfoCutoffPhase {
@@ -448,6 +452,9 @@ pub enum ARMatrixCodeType {
     Code5x5BCH2277 = 0x05 | 0x600,
     /// 6x6 Matrix Code
     Code6x6 = 0x06,
+    /// 14x14 Matrix Code with BCH (127,64,22) encoding for 64-bit global IDs.
+    /// C equivalent: `AR_MATRIX_CODE_GLOBAL_ID`. Lower byte = 14 (outer grid size).
+    GlobalID = 0x0E | 0x700,
 }
 
 /// Structure holding state of an instance of the square marker tracker.
@@ -692,5 +699,24 @@ mod tests {
             ARMarkerInfoCutoffPhase::from(MatchError::PatternExtraction),
             ARMarkerInfoCutoffPhase::PatternExtraction
         );
+    }
+
+    #[test]
+    fn test_armatrixcodetype_global_id_value() {
+        // Lower byte = 14 (outer grid size); upper byte = 0x700 (free flag slot).
+        assert_eq!(ARMatrixCodeType::GlobalID as i32, 0x0E | 0x700);
+        assert_eq!((ARMatrixCodeType::GlobalID as i32) & 0xFF, 14);
+    }
+
+    #[test]
+    fn test_match_ok_global_id_field() {
+        let ok = MatchOk {
+            id: 1,
+            dir: 0,
+            cf: 1.0,
+            error_corrected: 0,
+            global_id: 0x1234_5678_DEAD_BEEF,
+        };
+        assert_eq!(ok.global_id, 0x1234_5678_DEAD_BEEF);
     }
 }

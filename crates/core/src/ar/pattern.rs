@@ -421,6 +421,7 @@ pub fn pattern_match(
             dir: res1,
             cf: max,
             error_corrected: 0,
+            global_id: 0,
         })
     } else if mode == AR_TEMPLATE_MATCHING_MONO {
         let size_sqd = size_u * size_u;
@@ -494,6 +495,7 @@ pub fn pattern_match(
             dir: res1,
             cf: max,
             error_corrected: 0,
+            global_id: 0,
         })
     } else {
         arlog_e!("pattern_match: unsupported matching mode {}", mode);
