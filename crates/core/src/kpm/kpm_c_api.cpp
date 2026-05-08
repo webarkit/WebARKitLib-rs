@@ -34,6 +34,15 @@
  *
  */
 
+// Standard library headers MUST come first: hamming.h (transitively included
+// from the matchers/ headers below) uses std::numeric_limits without including
+// <limits> itself. MSVC pulls it in transitively, but GCC on Linux is strict.
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <utility>
+#include <vector>
+
 #include "kpm_c_api.h"
 #include <facade/visual_database_facade.h>
 #include <matchers/feature_point.h>
@@ -48,11 +57,6 @@
 #include <homography_estimation/robust_homography.h>
 #include <Eigen/Core>
 #include <unsupported/Eigen/MatrixFunctions>
-#include <cstdlib>
-#include <cstring>
-#include <limits>
-#include <utility>
-#include <vector>
 
 struct KpmOpaqueHandle {
     vision::VisualDatabaseFacade* db;
