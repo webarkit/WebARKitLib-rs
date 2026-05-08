@@ -60,7 +60,7 @@ pub struct MatrixCodeResult {
 /// - `code_type` — selects the square dimension (`3..=6`) and ECC scheme.
 ///
 /// # Returns
-/// `Ok(MatchOk { id, dir, cf, error_corrected })` on successful decode.
+/// `Ok(MatchOk { id, dir, cf, error_corrected, global_id })` on successful decode.
 /// `Err(MatchError::*)` on low contrast, missing locator pattern, ECC failure,
 /// or unsupported `code_type`.
 ///
@@ -284,6 +284,7 @@ pub fn ar_matrix_code_get_id(
             dir: matched_dir,
             cf: 1.0,
             error_corrected: err,
+            global_id: 0,
         })
     } else {
         arlog_d!(

@@ -1761,6 +1761,7 @@ mod tests {
             dir: 0,
             cf: 0.8,
             error_corrected: 0,
+            global_id: 0,
         };
         marker.id_patt = ok.id;
         marker.dir_patt = ok.dir;
@@ -1976,11 +1977,13 @@ mod tests {
             dir: 3,
             cf: 0.91,
             error_corrected: 0,
+            global_id: 0,
         };
         assert_eq!(ok.id, 5);
         assert_eq!(ok.dir, 3);
         assert!((ok.cf - 0.91).abs() < 1e-9);
         assert_eq!(ok.error_corrected, 0);
+        assert_eq!(ok.global_id, 0);
     }
 
     /// Verifies cutoff_phase is set to MatchBarcodeEdcFail when matrix decoding
