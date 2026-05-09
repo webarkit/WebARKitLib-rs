@@ -439,8 +439,12 @@ pub fn decode_bch_global_id(recd127: &mut [u8; 127]) -> Result<(u64, i32), &'sta
 // =====================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+/// Test-only helpers exposed at `pub(crate)` visibility so other modules
+/// (e.g. `matrix::tests`) can use the BCH-127 encoder for end-to-end
+/// roundtrip fixtures.
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::{BCH_127_ALPHA_TO, BCH_127_INDEX_OF};
 
     /// Builds the BCH(127, 64, 22) generator polynomial g(x) as a bit vector.
     ///
@@ -448,9 +452,9 @@ mod tests {
     /// of α^i over GF(2). Over GF(2), `M_(2j)(x) = M_j(x)`, so we only iterate
     /// over odd powers and skip duplicates via cyclotomic-coset tracking.
     ///
-    /// Returns 64 generator coefficients: `g[0]` = constant term, `g[63]`
-    /// = leading coefficient (degree 63).
-    fn build_bch127_generator() -> Vec<u8> {
+    /// Returns 57 generator coefficients (degree 56): `g[0]` = constant term,
+    /// `g[56]` = leading coefficient.
+    pub(crate) fn build_bch127_generator() -> Vec<u8> {
         const N: usize = 127;
         const T: usize = 9;
 
@@ -522,7 +526,7 @@ mod tests {
     }
 
     /// GF(2^7) multiplication via the alpha_to/index_of tables.
-    fn gf128_mul(a: i32, b: i32) -> i32 {
+    pub(crate) fn gf128_mul(a: i32, b: i32) -> i32 {
         if a == 0 || b == 0 {
             return 0;
         }
@@ -538,8 +542,8 @@ mod tests {
     /// - Parity bits go into positions `[0..56]`.
     /// - Positions `[120..127]` are zero (shortened code).
     ///
-    /// The output layout matches what [`decode_bch_global_id`] expects.
-    fn encode_bch_global_id(global_id: u64) -> [u8; 127] {
+    /// The output layout matches what [`super::decode_bch_global_id`] expects.
+    pub(crate) fn encode_bch_global_id(global_id: u64) -> [u8; 127] {
         const N_K: usize = 56; // 56 parity bits — degree of generator polynomial
         const K: usize = 64;
         const LENGTH: usize = 120;
@@ -580,6 +584,12 @@ mod tests {
 
         codeword
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_helpers::{build_bch127_generator, encode_bch_global_id};
+    use super::*;
 
     // ---- decode_parity65 / decode_hamming63 sanity checks ----------------
 
