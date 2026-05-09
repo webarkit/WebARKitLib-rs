@@ -15,7 +15,8 @@ use webarkitlib_rs::version;
 struct Args {
     /// Matrix code type to use for detection.
     /// Accepted values: 3x3, 3x3parity65, 3x3hamming63, 4x4, 4x4bch1393,
-    ///                  4x4bch1355, 5x5, 5x5bch22125, 5x5bch2277, 6x6
+    ///                  4x4bch1355, 5x5, 5x5bch22125, 5x5bch2277, 6x6,
+    ///                  globalid (14x14 BCH(127,64,22), 64-bit IDs)
     #[arg(short = 'm', long, default_value = "3x3")]
     matrix_code_type: String,
 
@@ -41,6 +42,7 @@ fn parse_matrix_code_type(s: &str) -> Result<ARMatrixCodeType, String> {
         "5x5bch22125" => Ok(ARMatrixCodeType::Code5x5BCH22125),
         "5x5bch2277" => Ok(ARMatrixCodeType::Code5x5BCH2277),
         "6x6" => Ok(ARMatrixCodeType::Code6x6),
+        "globalid" | "global_id" | "global-id" => Ok(ARMatrixCodeType::GlobalID),
         other => Err(format!("Unknown matrix code type: '{other}'")),
     }
 }
