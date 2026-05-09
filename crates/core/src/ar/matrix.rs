@@ -103,6 +103,12 @@ pub fn ar_matrix_code_get_id(
 ) -> Result<crate::types::MatchOk, crate::types::MatchError> {
     use crate::types::{MatchError, MatchOk};
 
+    // GlobalID uses a different grid size (14×14), bit layout, and ECC scheme;
+    // route it to the dedicated decoder mirroring `arPattGetID.c:200-218`.
+    if code_type == ARMatrixCodeType::GlobalID {
+        return ar_matrix_code_get_id_global(image, xsize, ysize, vertex, pixel_format);
+    }
+
     let dim = (code_type as i32) & 0xFF;
     if !(3..=6).contains(&dim) {
         arlog_e!(
@@ -533,6 +539,81 @@ fn decode_matrix_raw(
             Ok((code_raw as i32, 0))
         }
     }
+}
+
+/// Decodes an `AR_MATRIX_CODE_GLOBAL_ID` marker — 14×14 grid with BCH(127, 64,
+/// 22) error correction and a 64-bit identifier.
+///
+/// Mirrors the GlobalID branch of `arPattGetIDGlobal` in
+/// `arPattGetID.c:200-218`:
+///   1. Sample a 14×14 grid using `patt_ratio = 14 / (14 + 2) = 0.875`.
+///   2. Extract 120 bits via [`extract_global_id_bits`].
+///   3. BCH-decode via [`crate::bch::decode_bch_global_id`].
+///   4. Reject `u64::MAX` as a frequently-misrecognised pattern (heuristic).
+///   5. For backward compatibility with `id_matrix`, set the lower 31 bits of
+///      `global_id` as the regular matrix `id` when the upper 33 bits are zero
+///      (mirrors `arPattGetID.c:214`).
+fn ar_matrix_code_get_id_global(
+    image: &[u8],
+    xsize: i32,
+    ysize: i32,
+    vertex: &[[ARdouble; 2]; 4],
+    pixel_format: crate::types::ARPixelFormat,
+) -> Result<crate::types::MatchOk, MatchError> {
+    use crate::types::MatchOk;
+
+    // Sample a 14×14 grid. The C code passes pattRatio = 14 / (14 + 2) = 0.875
+    // to `arPattGetImage2`, which corresponds to a 1-cell border around the
+    // 14-cell pattern (16-cell total marker space).
+    let mut grid = vec![0u8; AR_GLOBAL_ID_OUTER_SIZE * AR_GLOBAL_ID_OUTER_SIZE];
+    let patt_ratio = AR_GLOBAL_ID_OUTER_SIZE as f64 / (AR_GLOBAL_ID_OUTER_SIZE as f64 + 2.0);
+    sample_grid(
+        image,
+        xsize,
+        ysize,
+        vertex,
+        AR_GLOBAL_ID_OUTER_SIZE as i32,
+        pixel_format,
+        patt_ratio,
+        &mut grid,
+    )
+    .map_err(|_| {
+        arlog_d!("ar_matrix_code_get_id_global: sample_grid failed");
+        MatchError::PatternExtraction
+    })?;
+
+    // Extract the 120 data bits (orientation-aware).
+    let (mut recd127, dir, cf) = extract_global_id_bits(&grid)?;
+
+    // BCH(127, 64, 22) decode. Up to 9 bit errors are correctable.
+    let (global_id, error_corrected) =
+        crate::bch::decode_bch_global_id(&mut recd127).map_err(|_| {
+            arlog_d!("ar_matrix_code_get_id_global: BCH decode failed");
+            MatchError::BarcodeEdcFail
+        })?;
+
+    // Heuristic: `u64::MAX` is a known false-positive pattern. The C code maps
+    // this to error code -5, which is `MatchError::HeuristicTroublesomeMatrixCodes`.
+    if global_id == u64::MAX {
+        arlog_d!("ar_matrix_code_get_id_global: heuristic rejected (UINT64_MAX)");
+        return Err(MatchError::HeuristicTroublesomeMatrixCodes);
+    }
+
+    // Backward-compat: when the upper 33 bits are zero, populate `id` with the
+    // lower 31 bits as if this were a regular matrix code.
+    let id = if (global_id & 0xFFFF_8000_u64) == 0 {
+        (global_id & 0x0000_7FFF_u64) as i32
+    } else {
+        0
+    };
+
+    Ok(MatchOk {
+        id,
+        dir,
+        cf,
+        error_corrected,
+        global_id,
+    })
 }
 
 /// Extracts the 120 GlobalID bits from a 14×14 sampled grid.
@@ -966,6 +1047,108 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Embeds a 14×14 GlobalID grid into a 16×16 monochrome image at pixels
+    /// `(1..=14, 1..=14)`, leaving the 1-pixel border at the marker default.
+    /// Designed so that vertex `[[0,0],[16,0],[16,16],[0,16]]` with
+    /// `patt_ratio = 0.875` samples exactly one image pixel per cell.
+    fn embed_grid_in_16x16_image(grid: &[u8; 14 * 14]) -> Vec<u8> {
+        let mut image = vec![128u8; 16 * 16];
+        for j in 0..14 {
+            for i in 0..14 {
+                image[(1 + j) * 16 + (1 + i)] = grid[j * 14 + i];
+            }
+        }
+        image
+    }
+
+    #[test]
+    fn test_ar_matrix_code_get_id_global_id_routing_low_contrast() {
+        // Uniform image with code_type = GlobalID must hit the GlobalID branch
+        // and return MatchError::Contrast (not Generic from the dim check).
+        use crate::types::{ARMatrixCodeType, ARPixelFormat, MatchError};
+        let image = vec![128u8; 16 * 16];
+        let vertex = [[0.0f64, 0.0], [16.0, 0.0], [16.0, 16.0], [0.0, 16.0]];
+        let result = ar_matrix_code_get_id(
+            &image,
+            16,
+            16,
+            &vertex,
+            ARMatrixCodeType::GlobalID,
+            ARPixelFormat::MONO,
+            // patt_ratio is ignored for GlobalID (the function uses 14/16).
+            0.5,
+        );
+        assert_eq!(result.unwrap_err(), MatchError::Contrast);
+    }
+
+    #[test]
+    fn test_ar_matrix_code_get_id_global_id_full_roundtrip() {
+        // End-to-end: encode a known global_id with BCH(127, 64, 22), embed
+        // its 120-bit payload into a 16×16 image, then run the full decode
+        // pipeline and recover the same global_id.
+        use crate::bch::test_helpers::encode_bch_global_id;
+        use crate::types::{ARMatrixCodeType, ARPixelFormat};
+
+        let original_id: u64 = 0x1234_5678_DEAD_BEEF;
+        let codeword = encode_bch_global_id(original_id);
+
+        // Take the first 120 bits of the 127-bit codeword (the shortened
+        // tail at positions 120..127 is implicitly zero in the grid).
+        let mut bits120 = [0u8; 120];
+        bits120.copy_from_slice(&codeword[..120]);
+
+        let grid = make_global_id_grid_dir0(&bits120);
+        let image = embed_grid_in_16x16_image(&grid);
+        let vertex = [[0.0f64, 0.0], [16.0, 0.0], [16.0, 16.0], [0.0, 16.0]];
+
+        let ok = ar_matrix_code_get_id(
+            &image,
+            16,
+            16,
+            &vertex,
+            ARMatrixCodeType::GlobalID,
+            ARPixelFormat::MONO,
+            0.5,
+        )
+        .expect("decode should succeed");
+
+        assert_eq!(ok.global_id, original_id);
+        assert_eq!(ok.dir, 0);
+        assert_eq!(ok.error_corrected, 0);
+        // Backward-compat: upper 33 bits are non-zero, so id must be 0.
+        assert_eq!(ok.id, 0);
+    }
+
+    #[test]
+    fn test_ar_matrix_code_get_id_global_id_lower_31_bit_id() {
+        // When global_id fits in 31 bits, the backward-compat `id` field
+        // should carry the lower 31 bits (mirrors arPattGetID.c:214).
+        use crate::bch::test_helpers::encode_bch_global_id;
+        use crate::types::{ARMatrixCodeType, ARPixelFormat};
+
+        let original_id: u64 = 0x0000_0000_0000_002A; // 42 — fits in 31 bits.
+        let codeword = encode_bch_global_id(original_id);
+        let mut bits120 = [0u8; 120];
+        bits120.copy_from_slice(&codeword[..120]);
+
+        let image = embed_grid_in_16x16_image(&make_global_id_grid_dir0(&bits120));
+        let vertex = [[0.0f64, 0.0], [16.0, 0.0], [16.0, 16.0], [0.0, 16.0]];
+
+        let ok = ar_matrix_code_get_id(
+            &image,
+            16,
+            16,
+            &vertex,
+            ARMatrixCodeType::GlobalID,
+            ARPixelFormat::MONO,
+            0.5,
+        )
+        .expect("decode should succeed");
+
+        assert_eq!(ok.global_id, 42);
+        assert_eq!(ok.id, 42);
     }
 
     #[test]

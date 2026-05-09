@@ -1239,12 +1239,16 @@ pub fn ar_get_marker_info(
                     marker_info[j].dir_matrix = ok.dir;
                     marker_info[j].cf_matrix = ok.cf;
                     marker_info[j].error_corrected = ok.error_corrected;
+                    // Populated only for AR_MATRIX_CODE_GLOBAL_ID; 0 otherwise.
+                    // Mirrors C `arPattGetIDGlobal` writing `*codeGlobalID_p`.
+                    marker_info[j].global_id = ok.global_id;
                     marker_info[j].cutoff_phase = crate::types::ARMarkerInfoCutoffPhase::None;
                     arlog_d!(
-                        "ar_get_marker_info: barcode id={}, dir={}, cf={:.4}",
+                        "ar_get_marker_info: barcode id={}, dir={}, cf={:.4}, global_id={:#x}",
                         ok.id,
                         ok.dir,
-                        ok.cf
+                        ok.cf,
+                        ok.global_id
                     );
                 }
                 Err(e) => {
@@ -1252,6 +1256,7 @@ pub fn ar_get_marker_info(
                     marker_info[j].id_matrix = -1;
                     marker_info[j].dir_matrix = -1;
                     marker_info[j].cf_matrix = 0.0;
+                    marker_info[j].global_id = 0;
                     marker_info[j].cutoff_phase = e.into();
                 }
             }
