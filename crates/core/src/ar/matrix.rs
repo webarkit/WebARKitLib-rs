@@ -27,9 +27,20 @@
 //! Ported from arGetMatrixCode.c and associated ECC logic.
 
 use super::marker::ar_get_line;
-use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble};
+use crate::types::{ARHandle, ARMarkerInfo, ARMarkerInfo2, ARMatrixCodeType, ARdouble, MatchError};
 use crate::{arlog_d, arlog_e};
 use log::trace;
+
+/// Outer dimension (in cells) of the AR_MATRIX_CODE_GLOBAL_ID grid sampled
+/// from the marker. Mirrors `AR_GLOBAL_ID_OUTER_SIZE` in the C code
+/// (`arPattGetID.c:98`).
+pub(crate) const AR_GLOBAL_ID_OUTER_SIZE: usize = 14;
+
+/// Border thickness (in cells) of the GlobalID grid. Cells with both indices
+/// inside the inner `OUTER - 2*INNER = 8`-cell core are *not* used for data;
+/// only the border ring contributes bits. Mirrors `AR_GLOBAL_ID_INNER_SIZE`
+/// in the C code (`arPattGetID.c:99`).
+pub(crate) const AR_GLOBAL_ID_INNER_SIZE: usize = 3;
 
 /// Results of a matrix code decoding attempt.
 #[derive(Debug, Clone, PartialEq)]
@@ -524,6 +535,188 @@ fn decode_matrix_raw(
     }
 }
 
+/// Extracts the 120 GlobalID bits from a 14×14 sampled grid.
+///
+/// Mirrors C `get_global_id_code()` in `arPattGetID.c:2282-2404`. Detects the
+/// orientation L-pattern from the four corner cells, then walks the border
+/// ring (skipping the inner 8×8 zone and three of the four corner 2×2
+/// blocks) to read 120 bits in a canonical order regardless of marker
+/// rotation.
+///
+/// # Parameters
+/// - `data` — 14×14 sampled grayscale buffer (row-major:
+///   `data[j * OUTER + i]` is the cell at column `i`, row `j`).
+///
+/// # Returns
+/// - `Ok((recd127, dir, cf))` — `recd127[0..120]` holds the read bits
+///   (bit 119 = first read, bit 0 = last read); `dir` is 0..=3; `cf` is the
+///   confidence (`min_contrast / 30.0`, capped at 1.0).
+/// - `Err(MatchError::Contrast)` if the corner contrast is < 30.
+/// - `Err(MatchError::BarcodeNotFound)` if no `(1, 1, 0)` L-pattern is found
+///   in the four corner cells.
+pub(crate) fn extract_global_id_bits(data: &[u8]) -> Result<([u8; 127], i32, f64), MatchError> {
+    const SIZE: usize = AR_GLOBAL_ID_OUTER_SIZE;
+    debug_assert_eq!(data.len(), SIZE * SIZE);
+
+    // 1. Compute threshold from the four corner cells.
+    //    Linear positions match C: 0, (S-1)*S, S*S-1, S-1.
+    let corner = [0usize, (SIZE - 1) * SIZE, SIZE * SIZE - 1, SIZE - 1];
+    let mut max = 0u8;
+    let mut min = 255u8;
+    for &c in &corner {
+        let p = data[c];
+        if p > max {
+            max = p;
+        }
+        if p < min {
+            min = p;
+        }
+    }
+    if (max as i32 - min as i32) < 30 {
+        arlog_d!(
+            "extract_global_id_bits: insufficient contrast (max-min={})",
+            max as i32 - min as i32
+        );
+        return Err(MatchError::Contrast);
+    }
+    let thresh = ((max as u16 + min as u16) / 2) as u8;
+
+    // 2. Detect orientation. An unrotated marker has corners (1, 1, 0, ?)
+    //    where 1 means "darker than threshold". Rotations cycle the
+    //    L-pattern through positions [i, i+1, i+2] (mod 4).
+    let dir_code: [u8; 4] = [
+        if data[corner[0]] < thresh { 1 } else { 0 },
+        if data[corner[1]] < thresh { 1 } else { 0 },
+        if data[corner[2]] < thresh { 1 } else { 0 },
+        if data[corner[3]] < thresh { 1 } else { 0 },
+    ];
+    let dir = (0..4)
+        .find(|&i| dir_code[i] == 1 && dir_code[(i + 1) % 4] == 1 && dir_code[(i + 2) % 4] == 0)
+        .ok_or_else(|| {
+            arlog_d!(
+                "extract_global_id_bits: locator pattern not found (dirCode={:?})",
+                dir_code
+            );
+            MatchError::BarcodeNotFound
+        })?;
+
+    // 3. Walk the border ring in the order dictated by `dir`, reading 120
+    //    bits into `recd127[0..120]` (MSB-first: bit 119 is the first cell
+    //    visited, bit 0 the last).
+    let mut recd127 = [0u8; 127];
+    let mut bit: i32 = 119;
+    let mut contrast_min: i32 = 255;
+
+    let mut read_pixel = |i: usize, j: usize, bit: &mut i32, cmin: &mut i32| {
+        let contrast = data[j * SIZE + i] as i32 - thresh as i32;
+        recd127[*bit as usize] = if contrast < 0 { 1 } else { 0 };
+        *bit -= 1;
+        let abs_c = contrast.abs();
+        if abs_c < *cmin {
+            *cmin = abs_c;
+        }
+    };
+
+    match dir {
+        0 => {
+            for j in 0..SIZE {
+                for i in 0..SIZE {
+                    if should_skip_global_id_cell(i, j, 0) {
+                        continue;
+                    }
+                    read_pixel(i, j, &mut bit, &mut contrast_min);
+                }
+            }
+        }
+        1 => {
+            for i in 0..SIZE {
+                for j in (0..SIZE).rev() {
+                    if should_skip_global_id_cell(i, j, 1) {
+                        continue;
+                    }
+                    read_pixel(i, j, &mut bit, &mut contrast_min);
+                }
+            }
+        }
+        2 => {
+            for j in (0..SIZE).rev() {
+                for i in (0..SIZE).rev() {
+                    if should_skip_global_id_cell(i, j, 2) {
+                        continue;
+                    }
+                    read_pixel(i, j, &mut bit, &mut contrast_min);
+                }
+            }
+        }
+        3 => {
+            for i in (0..SIZE).rev() {
+                for j in 0..SIZE {
+                    if should_skip_global_id_cell(i, j, 3) {
+                        continue;
+                    }
+                    read_pixel(i, j, &mut bit, &mut contrast_min);
+                }
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    debug_assert_eq!(bit, -1, "expected exactly 120 bits to be read");
+
+    // 4. Confidence based on minimum observed contrast: full confidence at
+    //    >= 30, scaled below.
+    let cf = if contrast_min > 30 {
+        1.0
+    } else {
+        contrast_min as f64 / 30.0
+    };
+
+    Ok((recd127, dir as i32, cf))
+}
+
+/// Returns `true` if the `(i, j)` cell of a 14×14 GlobalID grid should be
+/// skipped during bit extraction for the given `dir`.
+///
+/// Two skip categories:
+/// 1. The interior 8×8 zone (cells where both `i` and `j` lie strictly between
+///    `INNER - 1` and `OUTER - INNER`) carries no data.
+/// 2. Three of the four 2×2 corner blocks per `dir`: the three blocks that
+///    form the L-shape locator. The fourth corner is the "data corner" and
+///    contributes 4 of the 120 bits. The corner cycle is:
+///    - dir 0 → skip TL, BL, BR (data at TR)
+///    - dir 1 → skip BL, BR, TR (data at TL)
+///    - dir 2 → skip BR, TR, TL (data at BL)
+///    - dir 3 → skip TR, TL, BL (data at BR)
+fn should_skip_global_id_cell(i: usize, j: usize, dir: usize) -> bool {
+    const SIZE: usize = AR_GLOBAL_ID_OUTER_SIZE;
+    const INNER: usize = AR_GLOBAL_ID_INNER_SIZE;
+
+    // Inner 8×8 skip zone.
+    if i > INNER - 1 && i < SIZE - INNER && j > INNER - 1 && j < SIZE - INNER {
+        return true;
+    }
+
+    // Round indices down to the nearest even number to identify the 2×2
+    // corner blocks: top-left = (0,0), bottom-left = (0,12),
+    // bottom-right = (12,12), top-right = (12,0). MAX_Q = SIZE - 2 = 12.
+    let i_q = i & !1;
+    let j_q = j & !1;
+    const MAX_Q: usize = SIZE - 2;
+
+    let tl = i_q == 0 && j_q == 0;
+    let bl = i_q == 0 && j_q == MAX_Q;
+    let br = i_q == MAX_Q && j_q == MAX_Q;
+    let tr = i_q == MAX_Q && j_q == 0;
+
+    match dir {
+        0 => tl || bl || br,
+        1 => bl || br || tr,
+        2 => br || tr || tl,
+        3 => tr || tl || bl,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,5 +748,241 @@ mod tests {
         );
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), MatchError::Contrast);
+    }
+
+    // -----------------------------------------------------------------
+    // GlobalID bit extraction tests
+    // -----------------------------------------------------------------
+
+    /// Builds a 14×14 grid encoding 120 known bits at the data positions for a
+    /// given direction, plus the L-shape locator pattern. This is the inverse
+    /// of `extract_global_id_bits` for `dir = 0`.
+    ///
+    /// The data corner (the 2×2 NOT skipped by the dir's skip rules) receives
+    /// 4 of the 120 bits; remaining bits fill border cells in the same
+    /// iteration order as the extractor.
+    fn make_global_id_grid_dir0(bits120: &[u8; 120]) -> [u8; 14 * 14] {
+        const SIZE: usize = AR_GLOBAL_ID_OUTER_SIZE;
+        let mut grid = [128u8; SIZE * SIZE]; // mid-gray default for interior
+
+        // Establish the dir 0 L-pattern (TL=dark, BL=dark, BR=light, TR=data).
+        // We'll set TR's corner pixel below as part of the bit fill.
+        grid[0] = 0; // TL (dark = bit 1)
+        grid[(SIZE - 1) * SIZE] = 0; // BL (dark)
+        grid[SIZE * SIZE - 1] = 255; // BR (light = bit 0)
+
+        // Walk the dir 0 iteration writing bits 119..0 to non-skip cells.
+        let mut bit: i32 = 119;
+        for j in 0..SIZE {
+            for i in 0..SIZE {
+                if should_skip_global_id_cell(i, j, 0) {
+                    continue;
+                }
+                grid[j * SIZE + i] = if bits120[bit as usize] != 0 { 0 } else { 255 };
+                bit -= 1;
+            }
+        }
+        debug_assert_eq!(bit, -1);
+        grid
+    }
+
+    /// Rotates a 14×14 grid 90° clockwise (used to produce dir=1, 2, 3 inputs
+    /// from a dir=0-formatted base grid).
+    fn rotate_grid_cw(grid: &[u8; 14 * 14]) -> [u8; 14 * 14] {
+        const SIZE: usize = AR_GLOBAL_ID_OUTER_SIZE;
+        let mut out = [0u8; SIZE * SIZE];
+        for j in 0..SIZE {
+            for i in 0..SIZE {
+                // Rotated cell at (i', j') = (SIZE-1-j, i).
+                let new_i = SIZE - 1 - j;
+                let new_j = i;
+                out[new_j * SIZE + new_i] = grid[j * SIZE + i];
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn test_extract_global_id_bits_low_contrast() {
+        // Uniform image -> max-min < 30 -> Contrast error.
+        let data = [128u8; 14 * 14];
+        let result = extract_global_id_bits(&data);
+        assert_eq!(result.unwrap_err(), MatchError::Contrast);
+    }
+
+    #[test]
+    fn test_extract_global_id_bits_no_locator_pattern() {
+        // 4 corners high contrast but not in (1,1,0,?) cyclic L-shape.
+        // Set all four corners to the same value -> can't form (1,1,0).
+        let mut data = [128u8; 14 * 14];
+        data[0] = 0; // TL dark
+        data[(14 - 1) * 14] = 0; // BL dark
+        data[14 * 14 - 1] = 0; // BR dark (breaks the L: needs to be light)
+        data[14 - 1] = 0; // TR dark
+                          // We also need contrast > 30, so introduce a light pixel somewhere.
+        data[7 * 14 + 7] = 255;
+        // But the corner check uses corner pixels for max/min. Make max=0 (all dark).
+        // Actually max-min must be >= 30, and it's computed over corners only.
+        // Force one corner light so contrast passes but no L is formed.
+        data[14 * 14 - 1] = 255; // BR light
+                                 // Now corners = (0, 0, 255, 0) -> dirCode = (1, 1, 0, 1).
+                                 // Check L: i=0 -> (1,1,0) ✓ -> dir=0. So this DOES form L. We need a
+                                 // different invalid pattern. (1,0,1,0) has no L: at any i, dirCode[i+2]
+                                 // is the same as dirCode[i].
+        data[(14 - 1) * 14] = 255; // BL light -> corners = (0, 255, 255, 0) -> (1,0,0,1)
+                                   // Check: i=0 (1,0,0) no; i=1 (0,0,1) no; i=2 (0,1,1) no; i=3 (1,1,0) yes -> dir=3.
+                                   // Still passes. Try (1,0,1,0): TL=dark, BL=light, BR=dark, TR=light.
+        data[0] = 0; // TL dark
+        data[(14 - 1) * 14] = 255; // BL light
+        data[14 * 14 - 1] = 0; // BR dark
+        data[14 - 1] = 255; // TR light
+                            // dirCode = (1, 0, 1, 0): no three consecutive (1,1,0) exist.
+        let result = extract_global_id_bits(&data);
+        assert_eq!(result.unwrap_err(), MatchError::BarcodeNotFound);
+    }
+
+    #[test]
+    fn test_extract_global_id_bits_dir0_detected() {
+        // Build a grid with the dir 0 L-pattern (TL=1, BL=1, BR=0).
+        let bits = [0u8; 120];
+        let grid = make_global_id_grid_dir0(&bits);
+        let (recd, dir, _cf) = extract_global_id_bits(&grid).unwrap();
+        assert_eq!(dir, 0);
+        // All non-corner cells were filled with 255 (light = bit 0).
+        for &b in &recd[..120] {
+            assert_eq!(b, 0);
+        }
+    }
+
+    #[test]
+    fn test_extract_global_id_bits_all_directions_recover_same_bits() {
+        // Build a known 120-bit pattern and confirm each rotation of the
+        // input grid yields the same `recd[0..120]` (different dir values).
+        let mut bits = [0u8; 120];
+        for i in 0..120 {
+            // Pseudo-random pattern: prime-indexed positions are 1.
+            bits[i] = if matches!(
+                i,
+                2 | 3
+                    | 5
+                    | 7
+                    | 11
+                    | 13
+                    | 17
+                    | 19
+                    | 23
+                    | 29
+                    | 31
+                    | 37
+                    | 41
+                    | 43
+                    | 47
+                    | 53
+                    | 59
+                    | 61
+                    | 67
+                    | 71
+                    | 73
+                    | 79
+                    | 83
+                    | 89
+                    | 97
+                    | 101
+                    | 103
+                    | 107
+                    | 109
+                    | 113
+            ) {
+                1
+            } else {
+                0
+            };
+        }
+
+        // The four iteration patterns are designed to "undo" the rotation, so
+        // each successive 90° CW image rotation yields `dir = N + 3 mod 4`
+        // (i.e. counts down through 0 → 3 → 2 → 1) while the canonical bit
+        // order in `recd[..120]` stays invariant.
+        let grid0 = make_global_id_grid_dir0(&bits);
+
+        let (recd0, dir0, _) = extract_global_id_bits(&grid0).unwrap();
+        assert_eq!(dir0, 0);
+        assert_eq!(recd0[..120], bits[..]);
+
+        let grid_cw1 = rotate_grid_cw(&grid0);
+        let (recd1, dir1, _) = extract_global_id_bits(&grid_cw1).unwrap();
+        assert_eq!(dir1, 3);
+        assert_eq!(recd1[..120], bits[..]);
+
+        let grid_cw2 = rotate_grid_cw(&grid_cw1);
+        let (recd2, dir2, _) = extract_global_id_bits(&grid_cw2).unwrap();
+        assert_eq!(dir2, 2);
+        assert_eq!(recd2[..120], bits[..]);
+
+        let grid_cw3 = rotate_grid_cw(&grid_cw2);
+        let (recd3, dir3, _) = extract_global_id_bits(&grid_cw3).unwrap();
+        assert_eq!(dir3, 1);
+        assert_eq!(recd3[..120], bits[..]);
+    }
+
+    #[test]
+    fn test_should_skip_global_id_cell_inner_zone() {
+        // Cells with both indices in [3, 10] are interior (skip) for any dir.
+        for dir in 0..4 {
+            for j in 3..=10 {
+                for i in 3..=10 {
+                    assert!(
+                        should_skip_global_id_cell(i, j, dir),
+                        "dir={} (i={}, j={}) should be skipped (interior)",
+                        dir,
+                        i,
+                        j
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_should_skip_global_id_cell_data_corner_per_dir() {
+        // Data corner per dir (the 2×2 NOT in the skip set):
+        //   dir 0 -> TR (i_q=12, j_q=0)
+        //   dir 1 -> TL (i_q=0,  j_q=0)
+        //   dir 2 -> BL (i_q=0,  j_q=12)
+        //   dir 3 -> BR (i_q=12, j_q=12)
+        let data_corner = [(12, 0), (0, 0), (0, 12), (12, 12)];
+        for (dir, &(i_q, j_q)) in data_corner.iter().enumerate() {
+            for di in 0..2 {
+                for dj in 0..2 {
+                    let i = i_q + di;
+                    let j = j_q + dj;
+                    assert!(
+                        !should_skip_global_id_cell(i, j, dir),
+                        "dir={} data corner cell ({}, {}) must NOT be skipped",
+                        dir,
+                        i,
+                        j
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_should_skip_global_id_cell_count_120() {
+        // For every direction, the iteration over the full grid must produce
+        // exactly 120 readable cells.
+        const SIZE: usize = AR_GLOBAL_ID_OUTER_SIZE;
+        for dir in 0..4 {
+            let mut count = 0;
+            for j in 0..SIZE {
+                for i in 0..SIZE {
+                    if !should_skip_global_id_cell(i, j, dir) {
+                        count += 1;
+                    }
+                }
+            }
+            assert_eq!(count, 120, "dir={} should yield 120 readable cells", dir);
+        }
     }
 }
