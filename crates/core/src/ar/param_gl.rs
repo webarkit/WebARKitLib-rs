@@ -226,6 +226,260 @@ pub fn argl_camera_frustum_rh(
     Ok(m)
 }
 
+/// Build an OpenGL right-handed model-view matrix from an ARToolKit pose matrix.
+///
+/// C equivalent: `arglCameraViewRH` in `paramGL.c`
+///
+/// Converts a 3×4 ARToolKit pose matrix (camera-from-world) returned by
+/// `ar_get_trans_mat_square` into a 4×4 column-major OpenGL model-view matrix
+/// for right-handed coordinate systems.
+///
+/// ARToolKit's camera convention places the origin top-left with Y↓ and
+/// Z pointing into the scene.  OpenGL places the origin bottom-left with Y↑
+/// and Z pointing out.  Rows 1 and 2 of `para` are therefore negated.
+///
+/// The optional `scale` parameter scales the translation column
+/// (`m[12]`, `m[13]`, `m[14]`).  Pass `1.0` for no change; `0.0` disables
+/// scaling (matches the C guard `if (scale != 0.0)`).
+///
+/// # Arguments
+///
+/// * `para`  — 3×4 pose matrix from `ar_get_trans_mat_square`.
+/// * `scale` — World-unit scale applied to the translation column;
+///             `0.0` leaves the translation unchanged.
+///
+/// # Returns
+///
+/// A 16-element column-major OpenGL model-view matrix.
+///
+/// # Example
+///
+/// ```rust
+/// use webarkitlib_rs::ar::param_gl::argl_camera_view_rh;
+///
+/// let para = [
+///     [1.0_f64, 0.0, 0.0, 50.0],
+///     [0.0,     1.0, 0.0,  0.0],
+///     [0.0,     0.0, 1.0, 100.0],
+/// ];
+/// let mv = argl_camera_view_rh(&para, 1.0);
+/// assert_eq!(mv[15], 1.0); // bottom-right of homogeneous row
+/// ```
+pub fn argl_camera_view_rh(para: &[[ARdouble; 4]; 3], scale: ARdouble) -> [ARdouble; 16] {
+    let mut m = [0.0_f64; 16];
+
+    // Column-major layout: m[col * 4 + row]
+    // Row 0 — kept as-is
+    m[0] = para[0][0]; // col 0, row 0  (R1C1)
+    m[4] = para[0][1]; // col 1, row 0  (R1C2)
+    m[8] = para[0][2]; // col 2, row 0  (R1C3)
+    m[12] = para[0][3]; // col 3, row 0  (tx)
+
+    // Rows 1 and 2 — negated (Y/Z axis flip for OpenGL convention)
+    m[1] = -para[1][0]; // col 0, row 1
+    m[5] = -para[1][1]; // col 1, row 1
+    m[9] = -para[1][2]; // col 2, row 1
+    m[13] = -para[1][3]; // col 3, row 1
+
+    m[2] = -para[2][0]; // col 0, row 2
+    m[6] = -para[2][1]; // col 1, row 2
+    m[10] = -para[2][2]; // col 2, row 2
+    m[14] = -para[2][3]; // col 3, row 2
+
+    // Row 3 — homogeneous row
+    m[3] = 0.0; // col 0, row 3
+    m[7] = 0.0; // col 1, row 3
+    m[11] = 0.0; // col 2, row 3
+    m[15] = 1.0; // col 3, row 3
+
+    // Apply scale to the translation column (same guard as the C source).
+    if scale != 0.0 {
+        m[12] *= scale; // tx
+        m[13] *= scale; // ty
+        m[14] *= scale; // tz
+    }
+
+    m
+}
+
+/// Single-precision variant of [`argl_camera_frustum_rh`].
+///
+/// C equivalent: `arglCameraFrustumRHf` in `paramGL.c`
+///
+/// Identical logic to [`argl_camera_frustum_rh`] but uses `f32` throughout,
+/// required for APIs (WebGL, Metal, most mobile GL drivers) that only accept
+/// 32-bit matrices.  The `ARParam::mat` entries are always `f64`; they are
+/// cast to `f32` internally, matching the C source which reads from the same
+/// `ARParam` struct regardless of compile-time float precision.
+///
+/// # Arguments
+///
+/// * `cparam`    — Calibrated camera parameters.
+/// * `focal_min` — Near clipping plane distance (must be > 0).
+/// * `focal_max` — Far clipping plane distance (must be > `focal_min`).
+///
+/// # Returns
+///
+/// A 16-element `f32` array (column-major), or an `Err` string on bad input.
+///
+/// # Errors
+///
+/// Same conditions as [`argl_camera_frustum_rh`].
+///
+/// # Example
+///
+/// ```rust
+/// use webarkitlib_rs::ar::param_gl::argl_camera_frustum_rh_f;
+/// use webarkitlib_rs::types::ARParam;
+///
+/// let mut cparam = ARParam::default();
+/// cparam.xsize = 640;
+/// cparam.ysize = 480;
+/// cparam.mat[0][0] = 700.0;
+/// cparam.mat[1][1] = 700.0;
+/// cparam.mat[0][2] = 320.0;
+/// cparam.mat[1][2] = 240.0;
+/// cparam.mat[2][2] = 1.0;
+///
+/// let m = argl_camera_frustum_rh_f(&cparam, 10.0_f32, 10_000.0_f32).unwrap();
+/// assert_eq!(m[11], -1.0_f32);
+/// ```
+pub fn argl_camera_frustum_rh_f(
+    cparam: &ARParam,
+    focal_min: f32,
+    focal_max: f32,
+) -> Result<[f32; 16], &'static str> {
+    if cparam.xsize <= 1 || cparam.ysize <= 1 {
+        arlog_e!(
+            "argl_camera_frustum_rh_f: invalid image dimensions {}x{} (must be > 1)",
+            cparam.xsize,
+            cparam.ysize
+        );
+        return Err("argl_camera_frustum_rh_f: image dimensions must be > 1");
+    }
+    if focal_min <= 0.0 {
+        arlog_e!(
+            "argl_camera_frustum_rh_f: focal_min must be > 0, got {}",
+            focal_min
+        );
+        return Err("argl_camera_frustum_rh_f: focal_min must be > 0");
+    }
+    if focal_max <= focal_min {
+        arlog_e!(
+            "argl_camera_frustum_rh_f: focal_max ({}) must be > focal_min ({})",
+            focal_max,
+            focal_min
+        );
+        return Err("argl_camera_frustum_rh_f: focal_max must be > focal_min");
+    }
+
+    let m22 = cparam.mat[2][2] as f32;
+    if m22 == 0.0 {
+        arlog_e!("argl_camera_frustum_rh_f: mat[2][2] is zero — degenerate camera matrix");
+        return Err("argl_camera_frustum_rh_f: mat[2][2] is zero");
+    }
+
+    let w = (cparam.xsize - 1) as f32;
+    let h = (cparam.ysize - 1) as f32;
+
+    let fx = cparam.mat[0][0] as f32 / m22;
+    let fy = cparam.mat[1][1] as f32 / m22;
+    let cx = cparam.mat[0][2] as f32 / m22;
+    let cy = cparam.mat[1][2] as f32 / m22;
+
+    let neg_fy = -fy;
+    let cy_rh = h - cy; // Y-axis flip: image (y↓) → OpenGL NDC (y↑)
+
+    let near = focal_min;
+    let far = focal_max;
+    let depth_a = (far + near) / (near - far);
+    let depth_b = 2.0_f32 * far * near / (near - far);
+
+    let mut m = [0.0_f32; 16];
+
+    // Column 0
+    m[0] = 2.0_f32 * fx / w;
+
+    // Column 1
+    m[5] = 2.0_f32 * neg_fy / h;
+
+    // Column 2
+    m[8] = 2.0_f32 * cx / w - 1.0_f32;
+    m[9] = 2.0_f32 * cy_rh / h - 1.0_f32;
+    m[10] = depth_a;
+    m[11] = -1.0_f32;
+
+    // Column 3
+    m[14] = depth_b;
+
+    Ok(m)
+}
+
+/// Single-precision variant of [`argl_camera_view_rh`].
+///
+/// C equivalent: `arglCameraViewRHf` in `paramGL.c`
+///
+/// Identical to [`argl_camera_view_rh`] but accepts and returns `f32` values,
+/// matching the `#ifndef ARDOUBLE_IS_FLOAT` branch in the original C source.
+///
+/// # Arguments
+///
+/// * `para`  — 3×4 pose matrix (f32 entries).
+/// * `scale` — Translation-column scale; `0.0` means no scale.
+///
+/// # Returns
+///
+/// A 16-element `f32` column-major OpenGL model-view matrix.
+///
+/// # Example
+///
+/// ```rust
+/// use webarkitlib_rs::ar::param_gl::argl_camera_view_rh_f;
+///
+/// let para = [
+///     [1.0_f32, 0.0, 0.0, 50.0],
+///     [0.0,     1.0, 0.0,  0.0],
+///     [0.0,     0.0, 1.0, 100.0],
+/// ];
+/// let mv = argl_camera_view_rh_f(&para, 1.0);
+/// assert_eq!(mv[15], 1.0_f32);
+/// ```
+pub fn argl_camera_view_rh_f(para: &[[f32; 4]; 3], scale: f32) -> [f32; 16] {
+    let mut m = [0.0_f32; 16];
+
+    // Column-major layout: m[col * 4 + row]
+    // Row 0 — kept as-is
+    m[0] = para[0][0]; // col 0, row 0  (R1C1)
+    m[4] = para[0][1]; // col 1, row 0  (R1C2)
+    m[8] = para[0][2]; // col 2, row 0  (R1C3)
+    m[12] = para[0][3]; // col 3, row 0  (tx)
+
+    // Rows 1 and 2 — negated
+    m[1] = -para[1][0]; // col 0, row 1
+    m[5] = -para[1][1]; // col 1, row 1
+    m[9] = -para[1][2]; // col 2, row 1
+    m[13] = -para[1][3]; // col 3, row 1
+
+    m[2] = -para[2][0]; // col 0, row 2
+    m[6] = -para[2][1]; // col 1, row 2
+    m[10] = -para[2][2]; // col 2, row 2
+    m[14] = -para[2][3]; // col 3, row 2
+
+    // Row 3 — homogeneous row
+    m[3] = 0.0; // col 0, row 3
+    m[7] = 0.0; // col 1, row 3
+    m[11] = 0.0; // col 2, row 3
+    m[15] = 1.0; // col 3, row 3
+
+    if scale != 0.0 {
+        m[12] *= scale;
+        m[13] *= scale;
+        m[14] *= scale;
+    }
+
+    m
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +604,207 @@ mod tests {
         let mut p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
         p.mat[2][2] = 0.0;
         assert!(argl_camera_frustum_rh(&p, 10.0, 10_000.0).is_err());
+    }
+
+    // ------------------------------------------------------------------ //
+    // argl_camera_view_rh                                                  //
+    // ------------------------------------------------------------------ //
+
+    fn identity_para() -> [[f64; 4]; 3] {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]
+    }
+
+    #[test]
+    fn test_camera_view_rh_homogeneous_row() {
+        let m = argl_camera_view_rh(&identity_para(), 1.0);
+        // Row 3 must be [0, 0, 0, 1] (column-major: m[3], m[7], m[11], m[15])
+        assert_eq!(m[3], 0.0);
+        assert_eq!(m[7], 0.0);
+        assert_eq!(m[11], 0.0);
+        assert_eq!(m[15], 1.0);
+    }
+
+    #[test]
+    fn test_camera_view_rh_row0_unchanged() {
+        let para = [
+            [2.0, 3.0, 4.0, 5.0],
+            [1.0, 1.0, 1.0, 1.0],
+            [1.0, 1.0, 1.0, 1.0],
+        ];
+        let m = argl_camera_view_rh(&para, 1.0);
+        // Row 0, columns 0-3 (column-major: m[0], m[4], m[8], m[12])
+        assert_eq!(m[0], 2.0);
+        assert_eq!(m[4], 3.0);
+        assert_eq!(m[8], 4.0);
+        assert_eq!(m[12], 5.0);
+    }
+
+    #[test]
+    fn test_camera_view_rh_rows_1_2_negated() {
+        let para = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 6.0],
+            [0.0, 0.0, 3.0, 7.0],
+        ];
+        let m = argl_camera_view_rh(&para, 1.0);
+        // Row 1, col 1 (m[1 + 1*4] = m[5]) must be −2.0
+        assert_eq!(m[5], -2.0);
+        // Row 1, col 3 (m[1 + 3*4] = m[13]) must be −6.0
+        assert_eq!(m[13], -6.0);
+        // Row 2, col 2 (m[2 + 2*4] = m[10]) must be −3.0
+        assert_eq!(m[10], -3.0);
+        // Row 2, col 3 (m[2 + 3*4] = m[14]) must be −7.0
+        assert_eq!(m[14], -7.0);
+    }
+
+    #[test]
+    fn test_camera_view_rh_scale_applied_to_translation() {
+        let para = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        let m = argl_camera_view_rh(&para, 2.0);
+        // Translation column after scale×2: m[12]=10*2, m[13]=−20*2, m[14]=−30*2
+        assert!((m[12] - 20.0).abs() < 1e-12);
+        assert!((m[13] - (-40.0)).abs() < 1e-12);
+        assert!((m[14] - (-60.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_camera_view_rh_scale_zero_no_change() {
+        let para = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        // scale==0 disables the scale step — translation stays raw (negated for rows 1&2)
+        let m = argl_camera_view_rh(&para, 0.0);
+        assert!((m[12] - 10.0).abs() < 1e-12);
+        assert!((m[13] - (-20.0)).abs() < 1e-12);
+        assert!((m[14] - (-30.0)).abs() < 1e-12);
+    }
+
+    // ------------------------------------------------------------------ //
+    // argl_camera_frustum_rh_f                                             //
+    // ------------------------------------------------------------------ //
+
+    #[test]
+    fn test_frustum_rh_f_returns_ok_for_valid_params() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        assert!(argl_camera_frustum_rh_f(&p, 10.0_f32, 10_000.0_f32).is_ok());
+    }
+
+    #[test]
+    fn test_frustum_rh_f_homogeneous_column_is_minus_one() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        let m = argl_camera_frustum_rh_f(&p, 10.0, 10_000.0).unwrap();
+        assert_eq!(m[11], -1.0_f32, "m[11] must be −1 for RH perspective");
+    }
+
+    #[test]
+    fn test_frustum_rh_f_zeros_in_expected_positions() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        let m = argl_camera_frustum_rh_f(&p, 10.0, 10_000.0).unwrap();
+        for idx in [1, 2, 3, 4, 6, 7, 12, 13, 15] {
+            assert_eq!(m[idx], 0.0_f32, "m[{idx}] should be 0, got {}", m[idx]);
+        }
+    }
+
+    #[test]
+    fn test_frustum_rh_f_fy_is_negated() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        let m = argl_camera_frustum_rh_f(&p, 10.0, 10_000.0).unwrap();
+        assert!(m[5] < 0.0_f32, "m[5] must be negative (y-axis flip)");
+    }
+
+    #[test]
+    fn test_frustum_rh_f_error_small_image() {
+        let p = make_param(1, 480, 700.0, 700.0, 320.0, 240.0);
+        assert!(argl_camera_frustum_rh_f(&p, 10.0, 10_000.0).is_err());
+    }
+
+    #[test]
+    fn test_frustum_rh_f_error_non_positive_focal_min() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        assert!(argl_camera_frustum_rh_f(&p, 0.0, 10_000.0).is_err());
+    }
+
+    #[test]
+    fn test_frustum_rh_f_error_focal_max_le_focal_min() {
+        let p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        assert!(argl_camera_frustum_rh_f(&p, 100.0, 100.0).is_err());
+    }
+
+    #[test]
+    fn test_frustum_rh_f_error_zero_mat22() {
+        let mut p = make_param(640, 480, 700.0, 700.0, 320.0, 240.0);
+        p.mat[2][2] = 0.0;
+        assert!(argl_camera_frustum_rh_f(&p, 10.0, 10_000.0).is_err());
+    }
+
+    // ------------------------------------------------------------------ //
+    // argl_camera_view_rh_f                                                //
+    // ------------------------------------------------------------------ //
+
+    fn identity_para_f() -> [[f32; 4]; 3] {
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]
+    }
+
+    #[test]
+    fn test_camera_view_rh_f_homogeneous_row() {
+        let m = argl_camera_view_rh_f(&identity_para_f(), 1.0);
+        assert_eq!(m[3], 0.0_f32);
+        assert_eq!(m[7], 0.0_f32);
+        assert_eq!(m[11], 0.0_f32);
+        assert_eq!(m[15], 1.0_f32);
+    }
+
+    #[test]
+    fn test_camera_view_rh_f_rows_1_2_negated() {
+        let para: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0, 6.0],
+            [0.0, 0.0, 3.0, 7.0],
+        ];
+        let m = argl_camera_view_rh_f(&para, 1.0);
+        assert_eq!(m[5], -2.0_f32);
+        assert_eq!(m[13], -6.0_f32);
+        assert_eq!(m[10], -3.0_f32);
+        assert_eq!(m[14], -7.0_f32);
+    }
+
+    #[test]
+    fn test_camera_view_rh_f_scale_applied_to_translation() {
+        let para: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        let m = argl_camera_view_rh_f(&para, 2.0);
+        assert!((m[12] - 20.0_f32).abs() < 1e-6);
+        assert!((m[13] - (-40.0_f32)).abs() < 1e-6);
+        assert!((m[14] - (-60.0_f32)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_camera_view_rh_f_scale_zero_no_change() {
+        let para: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        let m = argl_camera_view_rh_f(&para, 0.0);
+        assert!((m[12] - 10.0_f32).abs() < 1e-6);
+        assert!((m[13] - (-20.0_f32)).abs() < 1e-6);
+        assert!((m[14] - (-30.0_f32)).abs() < 1e-6);
     }
 }
