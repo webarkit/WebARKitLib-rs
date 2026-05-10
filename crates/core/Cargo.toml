@@ -111,6 +111,10 @@ required-features = ["log-helpers"]
 name = "diff_patt"
 required-features = ["log-helpers"]
 
+[[example]]
+name = "generate_patt"
+required-features = ["log-helpers"]
+
 [[bench]]
 name = "marker_bench"
 harness = false
