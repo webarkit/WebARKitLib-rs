@@ -55,6 +55,7 @@
 //! | [`math`] | `m*.c` (16 files), `v*.c` (6 files) | `ARMat` / `ARVec` linear algebra: inversion, QR, PCA, quaternion conversion |
 //! | [`matrix`] | `arGetMatrixCode.c` | Matrix-code (barcode) marker decoding and ECC |
 //! | [`param`] | `param*.c` (10 files) | Camera intrinsic parameters: `ARParam`, `ARParamLTf`, lens-distortion helpers |
+//! | [`param_gl`] | `argl.c` | OpenGL projection helpers: converts `ARParam` to a right-handed frustum matrix |
 //! | [`pattern`] | `arPatt*.c` | Pattern template loading, normalisation, and ID matching |
 //! | [`pose`] | `ar3DCreateHandle.c`, `arGetTransMat.c`, `arGetTransMatStereo.c` | 3-D pose estimation from marker corners; wraps into `AR3DHandle` |
 //!
@@ -73,5 +74,6 @@ pub mod marker;
 pub mod math;
 pub mod matrix;
 pub mod param;
+pub mod param_gl;
 pub mod pattern;
 pub mod pose;

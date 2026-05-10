@@ -121,5 +121,6 @@ pub use ar::marker;
 pub use ar::math;
 pub use ar::matrix;
 pub use ar::param;
+pub use ar::param_gl;
 pub use ar::pattern;
 pub use ar::pose;
