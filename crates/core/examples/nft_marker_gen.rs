@@ -64,6 +64,9 @@ use clap::Parser;
 use std::path::Path;
 use std::time::Instant;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
+use webarkitlib_rs::{arlog_e, arlog_i};
+#[cfg(feature = "ffi-backend")]
+use webarkitlib_rs::arlog_w;
 
 /// KPM feature density for `.fset3` generation (default extraction level 1).
 ///
@@ -161,18 +164,17 @@ fn main() {
     // -----------------------------------------------------------------------
     // Header
     // -----------------------------------------------------------------------
-    println!("--");
-    println!(
+    arlog_i!("--");
+    arlog_i!(
         "Generator started at {}",
         start_time.format("%Y-%m-%d %H:%M:%S %z")
     );
-    println!();
 
     // -----------------------------------------------------------------------
     // Load input image as RGB.
     // -----------------------------------------------------------------------
     let img = image::open(&cli.input).unwrap_or_else(|e| {
-        eprintln!("Error: failed to open {:?}: {}", cli.input, e);
+        arlog_e!("Error: failed to open {:?}: {}", cli.input, e);
         std::process::exit(1);
     });
     let rgb = img.to_rgb8();
@@ -181,23 +183,25 @@ fn main() {
     let nc = 3;
     let pixels = rgb.into_raw(); // nc=3, length = w * h * 3
 
-    println!("Tracking Extraction Level = {}", cli.level);
-    println!();
-    println!(
+    arlog_i!("Tracking Extraction Level = {}", cli.level);
+    arlog_i!(
         "Input:  {:?}  (xsize={}, ysize={}, channels={}, dpi={:.1})",
-        cli.input, w, h, nc, cli.dpi
+        cli.input,
+        w,
+        h,
+        nc,
+        cli.dpi
     );
-    println!("Output: {:?}.*", cli.output);
-    println!();
+    arlog_i!("Output: {:?}.*", cli.output);
 
     // -----------------------------------------------------------------------
     // Step 1: build image pyramid → .iset
     // -----------------------------------------------------------------------
-    println!("Generating ImageSet...");
+    arlog_i!("Generating ImageSet...");
     let step_start = Instant::now();
 
     let image_set = ar2_gen_image_set(&pixels, w, h, nc, cli.dpi).unwrap_or_else(|e| {
-        eprintln!("Error: ar2_gen_image_set failed: {}", e);
+        arlog_e!("Error: ar2_gen_image_set failed: {}", e);
         std::process::exit(1);
     });
 
@@ -205,45 +209,43 @@ fn main() {
 
     // Print DPI levels.
     for (i, scale) in image_set.scale.iter().enumerate() {
-        println!("  Image DPI ({}): {:.6}", image_set.num() - i, scale.dpi);
+        arlog_i!("  Image DPI ({}): {:.6}", image_set.num() - i, scale.dpi);
     }
-    println!();
 
     let iset_path = cli.output.with_extension("iset");
-    println!("Saving to {:?}...", iset_path);
+    arlog_i!("Saving to {:?}...", iset_path);
     let save_start = Instant::now();
     image_set.save(&iset_path).unwrap_or_else(|e| {
-        eprintln!("Error: failed to save {:?}: {}", iset_path, e);
+        arlog_e!("Error: failed to save {:?}: {}", iset_path, e);
         std::process::exit(1);
     });
     let save_elapsed = save_start.elapsed().as_secs_f64();
 
     let first_dpi = image_set.scale.first().map_or(0.0, |s| s.dpi);
     let last_dpi = image_set.scale.last().map_or(0.0, |s| s.dpi);
-    println!(
+    arlog_i!(
         "  Done. {} levels: {:.1} -> {:.1} dpi  ({})",
         image_set.num(),
         first_dpi,
         last_dpi,
         file_kb(&iset_path),
     );
-    println!(
+    arlog_i!(
         "  Pyramid generation: {:.1}s | Save: {:.1}s | Total: {:.1}s",
         gen_elapsed,
         save_elapsed,
         step_start.elapsed().as_secs_f64()
     );
-    println!();
 
     // -----------------------------------------------------------------------
     // Step 2: generate AR2 features → .fset
     // -----------------------------------------------------------------------
-    println!("Generating FeatureList...");
+    arlog_i!("Generating FeatureList...");
     let step_start = Instant::now();
 
     // search_size = AR2_DEFAULT_GEN_FEATURE_MAP_SEARCH_SIZE1 = 10 (from C config.h)
     let feature_set = ar2_gen_feature_map(&image_set, 10, 250, cli.level).unwrap_or_else(|e| {
-        eprintln!("Error: ar2_gen_feature_map failed: {}", e);
+        arlog_e!("Error: ar2_gen_feature_map failed: {}", e);
         std::process::exit(1);
     });
 
@@ -252,7 +254,7 @@ fn main() {
     // Print per-level feature counts.
     for pts in &feature_set.list {
         let scale_img = &image_set.scale[pts.scale as usize];
-        println!(
+        arlog_i!(
             "  {:.6} dpi ({}x{}): {} features selected",
             scale_img.dpi,
             scale_img.xsize,
@@ -260,31 +262,29 @@ fn main() {
             pts.coord.len()
         );
     }
-    println!();
 
     let fset_path = cli.output.with_extension("fset");
-    println!("Saving FeatureSet to {:?}...", fset_path);
+    arlog_i!("Saving FeatureSet to {:?}...", fset_path);
     let save_start = Instant::now();
     feature_set.save(&fset_path).unwrap_or_else(|e| {
-        eprintln!("Error: failed to save {:?}: {}", fset_path, e);
+        arlog_e!("Error: failed to save {:?}: {}", fset_path, e);
         std::process::exit(1);
     });
     let save_elapsed = save_start.elapsed().as_secs_f64();
 
     let total_features: usize = feature_set.list.iter().map(|p| p.coord.len()).sum();
-    println!(
+    arlog_i!(
         "  Done. {} levels, {} features total  ({})",
         feature_set.num(),
         total_features,
         file_kb(&fset_path),
     );
-    println!(
+    arlog_i!(
         "  Feature extraction: {:.1}s | Save: {:.1}s | Total: {:.1}s",
         gen_elapsed,
         save_elapsed,
         step_start.elapsed().as_secs_f64()
     );
-    println!();
 
     // -----------------------------------------------------------------------
     // Step 3: generate KPM/FREAK keypoints → .fset3  (ffi-backend only)
@@ -294,7 +294,7 @@ fn main() {
         use webarkitlib_rs::kpm::types::KpmRefDataSet;
         use webarkitlib_rs::kpm::{CppFreakMatcher, KpmCompMode, KpmError, KpmProcMode};
 
-        println!("Generating FeatureSet3...");
+        arlog_i!("Generating FeatureSet3...");
         let step_start = Instant::now();
 
         let fset3_path = cli.output.with_extension("fset3");
@@ -306,7 +306,7 @@ fn main() {
 
             // Fresh matcher for each scale (scales may have different dimensions).
             let mut matcher = CppFreakMatcher::new(scale.xsize, scale.ysize).unwrap_or_else(|e| {
-                eprintln!("Error: CppFreakMatcher::new failed: {:?}", e);
+                arlog_e!("Error: CppFreakMatcher::new failed: {:?}", e);
                 std::process::exit(1);
             });
 
@@ -325,9 +325,12 @@ fn main() {
 
             match result {
                 Ok(ref_data) => {
-                    println!(
+                    arlog_i!(
                         "  ({}, {}) {:.6} dpi: Freak features - {}",
-                        scale.xsize, scale.ysize, scale.dpi, ref_data.num
+                        scale.xsize,
+                        scale.ysize,
+                        scale.dpi,
+                        ref_data.num
                     );
                     combined = Some(match combined.take() {
                         Some(mut existing) => {
@@ -338,62 +341,62 @@ fn main() {
                     });
                 }
                 Err(KpmError::InvalidInput(_)) => {
-                    println!(
+                    arlog_i!(
                         "  ({}, {}) {:.6} dpi: Freak features - 0 (scale too small)",
-                        scale.xsize, scale.ysize, scale.dpi
+                        scale.xsize,
+                        scale.ysize,
+                        scale.dpi
                     );
                 }
                 Err(e) => {
-                    eprintln!(
+                    arlog_w!(
                         "Warning: KpmRefDataSet::generate failed for scale {}: {:?}",
-                        image_no, e
+                        image_no,
+                        e
                     );
                 }
             }
         }
-        println!();
 
         let gen_elapsed = step_start.elapsed().as_secs_f64();
 
-        println!("Saving FeatureSet3 to {:?}...", fset3_path);
+        arlog_i!("Saving FeatureSet3 to {:?}...", fset3_path);
         if let Some(ref_data) = combined {
             let total_kpm = ref_data.num as usize;
             let save_start = Instant::now();
             ref_data.save(&fset3_path).unwrap_or_else(|e| {
-                eprintln!("Error: failed to save {:?}: {}", fset3_path, e);
+                arlog_e!("Error: failed to save {:?}: {}", fset3_path, e);
                 std::process::exit(1);
             });
             let save_elapsed = save_start.elapsed().as_secs_f64();
-            println!(
+            arlog_i!(
                 "  Done. {} FREAK features total  ({})",
                 total_kpm,
                 file_kb(&fset3_path),
             );
-            println!(
+            arlog_i!(
                 "  FREAK extraction: {:.1}s | Save: {:.1}s | Total: {:.1}s",
                 gen_elapsed,
                 save_elapsed,
                 step_start.elapsed().as_secs_f64()
             );
         } else {
-            eprintln!("Warning: no KPM features extracted — .fset3 not written.");
+            arlog_w!("Warning: no KPM features extracted — .fset3 not written.");
         }
     }
 
     #[cfg(not(feature = "ffi-backend"))]
-    println!("[fset3] skipped (build with --features ffi-backend to generate)");
+    arlog_i!("[fset3] skipped (build with --features ffi-backend to generate)");
 
     // -----------------------------------------------------------------------
     // Done
     // -----------------------------------------------------------------------
     let finish_time = Local::now();
     let elapsed = start.elapsed().as_secs_f64();
-    println!();
-    println!(
+    arlog_i!(
         "Generator finished at {}",
         finish_time.format("%Y-%m-%d %H:%M:%S %z")
     );
-    println!("--");
-    println!();
-    println!("NFTMarkerGenerator took {:.6} seconds to execute", elapsed);
+    arlog_i!("--");
+    arlog_i!("NFTMarkerGenerator took {:.6} seconds to execute", elapsed);
 }

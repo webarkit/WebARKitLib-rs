@@ -10,6 +10,7 @@ use std::path::Path;
 use std::str::FromStr;
 use webarkitlib_rs::pattern::{ar_patt_get_image2, ar_patt_save};
 use webarkitlib_rs::types::{ARMarkerInfo, ARParam, ARParamLT, ARParamLTf, ARPixelFormat};
+use webarkitlib_rs::{arlog_e, arlog_i, arlog_w};
 
 /*
  English documentation / notes for this example
@@ -177,9 +178,10 @@ fn run_once(
 
     if applied_border > 0 {
         // log the computed/applied border
-        eprintln!(
+        arlog_i!(
             "Applied border = {} px (source={})",
-            applied_border, border_source
+            applied_border,
+            border_source
         );
 
         // If border was auto-computed and --verbose was passed, print verbose info: full_side, patt_ratio and min_dim
@@ -187,11 +189,12 @@ fn run_once(
             if let Some(fs) = computed_full_side {
                 if let Some(md) = computed_min_dim.as_ref() {
                     let used = used_dimension.as_deref().unwrap_or("min");
-                    eprintln!("Verbose: computed full_marker_side = {}  patt_ratio = {}  used={} min_dim={}", fs, cfg.patt_ratio, used, md);
+                    arlog_i!("Verbose: computed full_marker_side = {}  patt_ratio = {}  used={} min_dim={}", fs, cfg.patt_ratio, used, md);
                 } else {
-                    eprintln!(
+                    arlog_i!(
                         "Verbose: computed full_marker_side = {}  patt_ratio = {}",
-                        fs, cfg.patt_ratio
+                        fs,
+                        cfg.patt_ratio
                     );
                 }
             }
@@ -212,7 +215,7 @@ fn run_once(
         width = new_w;
         height = new_h;
     } else {
-        eprintln!("No border applied (source={})", border_source);
+        arlog_i!("No border applied (source={})", border_source);
     }
 
     // flip
@@ -271,7 +274,7 @@ fn run_once(
     // detect via Otsu
     let thresh = otsu_level(&gray);
     if cfg.debug {
-        eprintln!("Debug: Otsu threshold = {}", thresh);
+        arlog_i!("Debug: Otsu threshold = {}", thresh);
     }
     let mut minx = width as i32;
     let mut miny = height as i32;
@@ -317,16 +320,22 @@ fn run_once(
             maxy = height as i32 - 1
         }
         if cfg.debug {
-            eprintln!(
+            arlog_i!(
                 "Debug: fallback bbox used -> minx={}, miny={}, maxx={}, maxy={}",
-                minx, miny, maxx, maxy
+                minx,
+                miny,
+                maxx,
+                maxy
             );
         }
     }
     if cfg.debug {
-        eprintln!(
+        arlog_i!(
             "Debug: bbox -> minx={}, miny={}, maxx={}, maxy={}",
-            minx, miny, maxx, maxy
+            minx,
+            miny,
+            maxx,
+            maxy
         );
     }
 
@@ -338,7 +347,7 @@ fn run_once(
         [minx as f64, maxy as f64],
     ];
     if cfg.debug {
-        eprintln!("Debug: marker vertices: {:?}", marker.vertex);
+        arlog_i!("Debug: marker vertices: {:?}", marker.vertex);
     }
 
     // prepare output names
@@ -366,7 +375,7 @@ fn run_once(
     // extract pattern image
     let mut ext_patt = vec![0u8; (cfg.patt_size * cfg.patt_size * 3) as usize];
     if cfg.debug {
-        eprintln!("Debug: calling ar_patt_get_image2 with patt_size={} sample_size={} xsize={} ysize={} pixel_format={:?}", cfg.patt_size, cfg.patt_size * cfg.sample_factor, xsize, ysize, pixel_format);
+        arlog_i!("Debug: calling ar_patt_get_image2 with patt_size={} sample_size={} xsize={} ysize={} pixel_format={:?}", cfg.patt_size, cfg.patt_size * cfg.sample_factor, xsize, ysize, pixel_format);
     }
     if let Err(e) = ar_patt_get_image2(
         0,
@@ -385,7 +394,7 @@ fn run_once(
         return Err(format!("ar_patt_get_image2 failed: {}", e));
     }
     if cfg.debug {
-        eprintln!(
+        arlog_i!(
             "Debug: ar_patt_get_image2 returned, ext_patt.len()={}",
             ext_patt.len()
         );
@@ -408,7 +417,7 @@ fn run_once(
 
     // save .patt
     if cfg.debug {
-        eprintln!(
+        arlog_i!(
             "Debug: calling ar_patt_save with patt_ratio={} patt_size={} patt_path={}",
             patt_ratio,
             cfg.patt_size,
@@ -429,7 +438,7 @@ fn run_once(
     )
     .map_err(|e| format!("ar_patt_save failed: {}", e))?;
     if cfg.debug {
-        eprintln!("Debug: ar_patt_save completed");
+        arlog_i!("Debug: ar_patt_save completed");
     }
 
     // compute stats
@@ -492,9 +501,9 @@ fn run_once(
 
     if !cfg.quiet {
         if let Some(rm) = ref_mean {
-            println!("Wrote: {}  {}  count={} min={} max={} mean={:.2} ref_mean={:.2} ref_idx={} ref_flip={}", patt_path.display(), extracted_path.display(), count, min, max, mean, rm, ref_best_idx.unwrap_or(0), ref_best_flip.unwrap_or(false));
+            arlog_i!("Wrote: {}  {}  count={} min={} max={} mean={:.2} ref_mean={:.2} ref_idx={} ref_flip={}", patt_path.display(), extracted_path.display(), count, min, max, mean, rm, ref_best_idx.unwrap_or(0), ref_best_flip.unwrap_or(false));
         } else {
-            println!(
+            arlog_i!(
                 "Wrote: {}  {}  count={} min={} max={} mean={:.2}",
                 patt_path.display(),
                 extracted_path.display(),
@@ -555,6 +564,7 @@ fn flip_vert_u8(buf: &Vec<u8>, patt_size: usize) -> Vec<u8> {
 }
 
 fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
     // parse args
     let (default_input, default_out) = default_paths();
     let mut cfg = Config {
@@ -632,7 +642,7 @@ fn main() {
             }
             "--batch" => batch = true,
             "--quiet" => cfg.quiet = true,
-            other => eprintln!("Unknown arg: {}", other),
+            other => arlog_w!("Unknown arg: {}", other),
         }
     }
 
@@ -700,7 +710,7 @@ fn main() {
                 }
             }
         }
-        println!("Batch experiments finished. Report: ./crates/core/examples/Data/experiments/report.csv");
+        arlog_i!("Batch experiments finished. Report: ./crates/core/examples/Data/experiments/report.csv");
         return;
     }
 
@@ -708,9 +718,9 @@ fn main() {
     match run_once(&cfg, "") {
         Ok((_count, _min, _max, _mean, _ref_mean, _ref_idx, _ref_flip)) => {
             if !cfg.quiet {
-                println!("Done.");
+                arlog_i!("Done.");
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => arlog_e!("Error: {}", e),
     }
 }
