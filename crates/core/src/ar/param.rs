@@ -42,6 +42,70 @@ use crate::types::ARParam;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read};
 
+/// Resize camera parameters to a new image size.
+///
+/// C equivalent: `arParamChangeSize`
+///
+/// Scales the projection matrix rows to match the new width/height,
+/// then updates `xsize` and `ysize`.  Rows 0 and 1 of `mat` are scaled
+/// by `xsize / src.xsize` and `ysize / src.ysize` respectively, which
+/// preserves the principal-point and focal-length ratios when the camera
+/// is used with an image of a different resolution.
+///
+/// # Arguments
+///
+/// * `src`   — Source camera parameters to scale from.
+/// * `xsize` — New image width in pixels.
+/// * `ysize` — New image height in pixels.
+///
+/// # Errors
+///
+/// Returns `Err` if `src.xsize` or `src.ysize` is zero.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use webarkitlib_rs::ar::param::ar_param_change_size;
+/// use webarkitlib_rs::types::ARParam;
+///
+/// let mut cparam = ARParam::default();
+/// cparam.xsize = 640;
+/// cparam.ysize = 480;
+/// cparam.mat[0][0] = 700.0; // fx
+/// cparam.mat[1][1] = 700.0; // fy
+///
+/// let scaled = ar_param_change_size(&cparam, 1280, 960).unwrap();
+/// assert_eq!(scaled.xsize, 1280);
+/// assert_eq!(scaled.ysize, 960);
+/// ```
+pub fn ar_param_change_size(
+    src: &ARParam,
+    xsize: i32,
+    ysize: i32,
+) -> Result<ARParam, &'static str> {
+    if src.xsize == 0 || src.ysize == 0 {
+        arlog_e!(
+            "ar_param_change_size: source ARParam has zero image dimensions ({}x{})",
+            src.xsize,
+            src.ysize
+        );
+        return Err("ar_param_change_size: source ARParam has zero image dimensions");
+    }
+
+    let sx = xsize as f64 / src.xsize as f64;
+    let sy = ysize as f64 / src.ysize as f64;
+
+    let mut dst = src.clone();
+    for col in 0..4 {
+        dst.mat[0][col] *= sx;
+        dst.mat[1][col] *= sy;
+    }
+    dst.xsize = xsize;
+    dst.ysize = ysize;
+
+    Ok(dst)
+}
+
 impl ARParam {
     /// Load ARParam from a byte stream (Endian-safe cross-platform BigEndian deserialization)
     #[allow(clippy::field_reassign_with_default)]
@@ -173,5 +237,72 @@ mod tests {
 
         assert_eq!(param.dist_factor[2], 20.0);
         assert_eq!(param.dist_factor[3], 10.0);
+    }
+
+    #[test]
+    fn test_ar_param_change_size_doubles_resolution() {
+        let mut src = ARParam::default();
+        src.xsize = 640;
+        src.ysize = 480;
+        // fx, skew=0, cx, tx
+        src.mat[0] = [700.0, 0.0, 320.0, 0.0];
+        // 0, fy, cy, ty
+        src.mat[1] = [0.0, 700.0, 240.0, 0.0];
+        // 0, 0, 1, 0
+        src.mat[2] = [0.0, 0.0, 1.0, 0.0];
+
+        let dst = ar_param_change_size(&src, 1280, 960).unwrap();
+
+        assert_eq!(dst.xsize, 1280);
+        assert_eq!(dst.ysize, 960);
+        // Row 0 scaled by 2x
+        assert!((dst.mat[0][0] - 1400.0).abs() < 1e-9, "fx should double");
+        assert!((dst.mat[0][2] - 640.0).abs() < 1e-9, "cx should double");
+        // Row 1 scaled by 2x
+        assert!((dst.mat[1][1] - 1400.0).abs() < 1e-9, "fy should double");
+        assert!((dst.mat[1][2] - 480.0).abs() < 1e-9, "cy should double");
+        // Row 2 unchanged
+        assert_eq!(dst.mat[2], src.mat[2]);
+        // Distortion factors unchanged
+        assert_eq!(dst.dist_factor, src.dist_factor);
+    }
+
+    #[test]
+    fn test_ar_param_change_size_halves_resolution() {
+        let mut src = ARParam::default();
+        src.xsize = 1280;
+        src.ysize = 960;
+        src.mat[0] = [1400.0, 0.0, 640.0, 0.0];
+        src.mat[1] = [0.0, 1400.0, 480.0, 0.0];
+        src.mat[2] = [0.0, 0.0, 1.0, 0.0];
+
+        let dst = ar_param_change_size(&src, 640, 480).unwrap();
+
+        assert_eq!(dst.xsize, 640);
+        assert_eq!(dst.ysize, 480);
+        assert!((dst.mat[0][0] - 700.0).abs() < 1e-9);
+        assert!((dst.mat[1][1] - 700.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_ar_param_change_size_identity() {
+        let mut src = ARParam::default();
+        src.xsize = 640;
+        src.ysize = 480;
+        src.mat[0] = [700.0, 0.0, 320.0, 0.0];
+        src.mat[1] = [0.0, 700.0, 240.0, 0.0];
+        src.mat[2] = [0.0, 0.0, 1.0, 0.0];
+
+        let dst = ar_param_change_size(&src, 640, 480).unwrap();
+
+        assert_eq!(dst.mat, src.mat);
+        assert_eq!(dst.xsize, src.xsize);
+        assert_eq!(dst.ysize, src.ysize);
+    }
+
+    #[test]
+    fn test_ar_param_change_size_zero_src_dims_returns_err() {
+        let src = ARParam::default(); // xsize = ysize = 0
+        assert!(ar_param_change_size(&src, 640, 480).is_err());
     }
 }
