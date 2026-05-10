@@ -42,25 +42,31 @@ use crate::types::ARParam;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::io::{self, Read};
 
-/// Resize camera parameters to a new image size.
+/// Resize camera parameters to a new image size **in place**.
 ///
 /// C equivalent: `arParamChangeSize`
 ///
-/// Scales the projection matrix rows to match the new width/height,
-/// then updates `xsize` and `ysize`.  Rows 0 and 1 of `mat` are scaled
-/// by `xsize / src.xsize` and `ysize / src.ysize` respectively, which
-/// preserves the principal-point and focal-length ratios when the camera
-/// is used with an image of a different resolution.
+/// Scales rows 0 and 1 of `param.mat` by `xsize / param.xsize` and
+/// `ysize / param.ysize` respectively, then updates `param.xsize` and
+/// `param.ysize`.  This preserves the principal-point and focal-length
+/// ratios when the camera is used with an image of a different resolution.
+///
+/// This matches the C calling convention where source and destination are
+/// the same pointer:
+/// ```c
+/// arParamChangeSize(&cparam, width, height, &cparam);
+/// ```
 ///
 /// # Arguments
 ///
-/// * `src`   — Source camera parameters to scale from.
+/// * `param` — Camera parameters to resize (mutated in place).
 /// * `xsize` — New image width in pixels.
 /// * `ysize` — New image height in pixels.
 ///
 /// # Errors
 ///
-/// Returns `Err` if `src.xsize` or `src.ysize` is zero.
+/// Returns `Err` if `param.xsize` or `param.ysize` is zero before the
+/// resize (i.e. the parameter was never initialised).
 ///
 /// # Example
 ///
@@ -74,36 +80,35 @@ use std::io::{self, Read};
 /// cparam.mat[0][0] = 700.0; // fx
 /// cparam.mat[1][1] = 700.0; // fy
 ///
-/// let scaled = ar_param_change_size(&cparam, 1280, 960).unwrap();
-/// assert_eq!(scaled.xsize, 1280);
-/// assert_eq!(scaled.ysize, 960);
+/// ar_param_change_size(&mut cparam, 1280, 960).unwrap();
+/// assert_eq!(cparam.xsize, 1280);
+/// assert_eq!(cparam.ysize, 960);
 /// ```
 pub fn ar_param_change_size(
-    src: &ARParam,
+    param: &mut ARParam,
     xsize: i32,
     ysize: i32,
-) -> Result<ARParam, &'static str> {
-    if src.xsize == 0 || src.ysize == 0 {
+) -> Result<(), &'static str> {
+    if param.xsize == 0 || param.ysize == 0 {
         arlog_e!(
             "ar_param_change_size: source ARParam has zero image dimensions ({}x{})",
-            src.xsize,
-            src.ysize
+            param.xsize,
+            param.ysize
         );
         return Err("ar_param_change_size: source ARParam has zero image dimensions");
     }
 
-    let sx = xsize as f64 / src.xsize as f64;
-    let sy = ysize as f64 / src.ysize as f64;
+    let sx = xsize as f64 / param.xsize as f64;
+    let sy = ysize as f64 / param.ysize as f64;
 
-    let mut dst = src.clone();
     for col in 0..4 {
-        dst.mat[0][col] *= sx;
-        dst.mat[1][col] *= sy;
+        param.mat[0][col] *= sx;
+        param.mat[1][col] *= sy;
     }
-    dst.xsize = xsize;
-    dst.ysize = ysize;
+    param.xsize = xsize;
+    param.ysize = ysize;
 
-    Ok(dst)
+    Ok(())
 }
 
 impl ARParam {
@@ -251,20 +256,23 @@ mod tests {
         // 0, 0, 1, 0
         src.mat[2] = [0.0, 0.0, 1.0, 0.0];
 
-        let dst = ar_param_change_size(&src, 1280, 960).unwrap();
+        let original_mat2 = src.mat[2];
+        let original_dist = src.dist_factor;
 
-        assert_eq!(dst.xsize, 1280);
-        assert_eq!(dst.ysize, 960);
+        ar_param_change_size(&mut src, 1280, 960).unwrap();
+
+        assert_eq!(src.xsize, 1280);
+        assert_eq!(src.ysize, 960);
         // Row 0 scaled by 2x
-        assert!((dst.mat[0][0] - 1400.0).abs() < 1e-9, "fx should double");
-        assert!((dst.mat[0][2] - 640.0).abs() < 1e-9, "cx should double");
+        assert!((src.mat[0][0] - 1400.0).abs() < 1e-9, "fx should double");
+        assert!((src.mat[0][2] - 640.0).abs() < 1e-9, "cx should double");
         // Row 1 scaled by 2x
-        assert!((dst.mat[1][1] - 1400.0).abs() < 1e-9, "fy should double");
-        assert!((dst.mat[1][2] - 480.0).abs() < 1e-9, "cy should double");
+        assert!((src.mat[1][1] - 1400.0).abs() < 1e-9, "fy should double");
+        assert!((src.mat[1][2] - 480.0).abs() < 1e-9, "cy should double");
         // Row 2 unchanged
-        assert_eq!(dst.mat[2], src.mat[2]);
+        assert_eq!(src.mat[2], original_mat2);
         // Distortion factors unchanged
-        assert_eq!(dst.dist_factor, src.dist_factor);
+        assert_eq!(src.dist_factor, original_dist);
     }
 
     #[test]
@@ -276,12 +284,12 @@ mod tests {
         src.mat[1] = [0.0, 1400.0, 480.0, 0.0];
         src.mat[2] = [0.0, 0.0, 1.0, 0.0];
 
-        let dst = ar_param_change_size(&src, 640, 480).unwrap();
+        ar_param_change_size(&mut src, 640, 480).unwrap();
 
-        assert_eq!(dst.xsize, 640);
-        assert_eq!(dst.ysize, 480);
-        assert!((dst.mat[0][0] - 700.0).abs() < 1e-9);
-        assert!((dst.mat[1][1] - 700.0).abs() < 1e-9);
+        assert_eq!(src.xsize, 640);
+        assert_eq!(src.ysize, 480);
+        assert!((src.mat[0][0] - 700.0).abs() < 1e-9);
+        assert!((src.mat[1][1] - 700.0).abs() < 1e-9);
     }
 
     #[test]
@@ -293,16 +301,18 @@ mod tests {
         src.mat[1] = [0.0, 700.0, 240.0, 0.0];
         src.mat[2] = [0.0, 0.0, 1.0, 0.0];
 
-        let dst = ar_param_change_size(&src, 640, 480).unwrap();
+        let original_mat = src.mat;
 
-        assert_eq!(dst.mat, src.mat);
-        assert_eq!(dst.xsize, src.xsize);
-        assert_eq!(dst.ysize, src.ysize);
+        ar_param_change_size(&mut src, 640, 480).unwrap();
+
+        assert_eq!(src.mat, original_mat);
+        assert_eq!(src.xsize, 640);
+        assert_eq!(src.ysize, 480);
     }
 
     #[test]
     fn test_ar_param_change_size_zero_src_dims_returns_err() {
-        let src = ARParam::default(); // xsize = ysize = 0
-        assert!(ar_param_change_size(&src, 640, 480).is_err());
+        let mut src = ARParam::default(); // xsize = ysize = 0
+        assert!(ar_param_change_size(&mut src, 640, 480).is_err());
     }
 }
