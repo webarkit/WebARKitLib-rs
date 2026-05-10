@@ -64,9 +64,9 @@ use clap::Parser;
 use std::path::Path;
 use std::time::Instant;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
-use webarkitlib_rs::{arlog_e, arlog_i};
 #[cfg(feature = "ffi-backend")]
 use webarkitlib_rs::arlog_w;
+use webarkitlib_rs::{arlog_e, arlog_i};
 
 /// KPM feature density for `.fset3` generation (default extraction level 1).
 ///
