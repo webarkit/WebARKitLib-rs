@@ -36,7 +36,7 @@
 
 //! OpenGL / projection helpers for ARToolKit camera parameters.
 //!
-//! C equivalent: `argl.h` / `argl.c` in ARToolKit / ARToolKitX.
+//! C equivalent: `param.h` / `paramGL.c` in ARToolKit / ARToolKitX.
 //!
 //! This module converts `ARParam` calibration data into OpenGL-compatible
 //! projection matrices so that virtual objects can be rendered with the
@@ -48,7 +48,7 @@ use crate::types::{ARParam, ARdouble};
 /// Compute an OpenGL right-handed frustum projection matrix from calibrated
 /// camera parameters.
 ///
-/// C equivalent: `arglCameraFrustumRH` in `argl.c`
+/// C equivalent: `arglCameraFrustumRH` in `paramGL.c`
 ///
 /// Converts a calibrated `ARParam` camera model into a 4×4 column-major
 /// OpenGL projection matrix suitable for right-handed coordinate systems.
@@ -114,7 +114,7 @@ use crate::types::{ARParam, ARdouble};
 ///
 /// # References
 ///
-/// * ARToolKit `argl.c` → `arglCameraFrustumRH()`
+/// * ARToolKit `paramGL.c` → `arglCameraFrustumRH()`
 /// * [WebARKitLib param.h](https://github.com/webarkit/WebARKitLib/blob/master/include/ARX/AR/param.h)
 ///
 /// # Example
