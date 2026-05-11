@@ -246,7 +246,7 @@ pub fn argl_camera_frustum_rh(
 ///
 /// * `para`  — 3×4 pose matrix from `ar_get_trans_mat_square`.
 /// * `scale` — World-unit scale applied to the translation column;
-///             `0.0` leaves the translation unchanged.
+///   `0.0` leaves the translation unchanged.
 ///
 /// # Returns
 ///
