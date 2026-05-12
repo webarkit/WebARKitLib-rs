@@ -2,6 +2,37 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-05-09
+
+### Patch release — Matrix code GlobalID, paramGL ports, and quality fixes
+
+### 🚀 Features
+
+- *(matrix)* Add ARMatrixCodeType::GlobalID variant and MatchOk.global_id field
+- *(bch)* Implement BCH(127,64,22) decoder for AR_MATRIX_CODE_GLOBAL_ID
+- *(matrix)* Add 14x14 GlobalID bit extraction with 4-direction traversal
+- *(matrix)* Wire AR_MATRIX_CODE_GLOBAL_ID into ar_matrix_code_get_id and ar_get_marker_info
+- *(matrix)* Add GlobalID support to matrix code type and update parsing logic
+- *(core)* Implement ar_param_change_size and argl_camera_frustum_rh
+- *(param_gl)* Port remaining three paramGL.c functions to param_gl.rs
+
+### 🐛 Bug Fixes
+
+- *(param_gl)* Fix clippy::doc_overindented_list_items on line 249
+- *(arlog)* Scope test log capture to the thread running the arlog test
+
+### 🚜 Refactor
+
+- *(param)* Change ar_param_change_size to mutate ARParam in-place
+
+### 📚 Documentation
+
+- *(param_gl)* Fix C source reference from argl.c to paramGL.c
+
+### ⚙️ Miscellaneous Tasks
+
+- Finish converting load_nft.rs to arlog_*! macros
+
 ## [0.4.0] - 2026-05-06
 
 ### Milestone 6 — Math & homography in pure Rust

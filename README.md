@@ -38,14 +38,14 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.3"
+webarkitlib-rs = "0.4"
 ```
 
 To enable the C++ FFI backend for KPM (Natural Feature Tracking):
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.3", features = ["ffi-backend"] }
+webarkitlib-rs = { version = "0.4", features = ["ffi-backend"] }
 ```
 
 > When installing from crates.io, no extra setup is required — the C++
@@ -204,7 +204,7 @@ Enable the `log-helpers` feature and call the bundled initializer once in your b
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.3", features = ["log-helpers"] }
+webarkitlib-rs = { version = "0.4", features = ["log-helpers"] }
 ```
 
 ```rust
@@ -328,6 +328,7 @@ The workspace contains two crates:
   - FREAK descriptor extraction via `kpm_extract_features` C API (7000+ features per marker)
   - Detailed step-by-step logging with timestamps and per-level statistics
 - **M5 -- NFT Pipeline Performance**: Rayon parallelism for pyramid generation and Stage-3 feature scoring, plus optional SSE4.1/AVX2+FMA SIMD vectorization of the `get_similarity` correlation kernel. ~1.7× total speedup on x86_64.
+- **M6 -- Math & homography in pure Rust**: Ported all free mathematical functions from FreakMatcher into `crates/core/src/kpm/freak/math.rs` and `freak/homography.rs` (~1476 lines across 5 C++ headers). Eliminates the only remaining Eigen dependency: the 3×3 matrix exponential in `IncrementalHomographyFromLieWeights`.
 
 ### 🎯 Short-term Goals (toward v1.0.0)
 - **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.
