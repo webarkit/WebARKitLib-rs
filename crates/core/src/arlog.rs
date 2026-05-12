@@ -352,12 +352,20 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, OnceLock};
+    use std::thread::ThreadId;
 
     type Captured = (log::Level, String, String);
 
     static CAPTURES: OnceLock<Mutex<Vec<Captured>>> = OnceLock::new();
     static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     static INIT: OnceLock<()> = OnceLock::new();
+
+    // Identifies the thread currently running an arlog test. `cargo test`
+    // runs tests in parallel on multiple threads and shares the global log
+    // dispatcher across all of them, so without this filter logs emitted by
+    // OTHER tests on other threads would leak into our capture buffer and
+    // break our exact-count assertions.
+    static CAPTURING_THREAD: Mutex<Option<ThreadId>> = Mutex::new(None);
 
     fn captures() -> &'static Mutex<Vec<Captured>> {
         CAPTURES.get_or_init(|| Mutex::new(Vec::new()))
@@ -376,6 +384,13 @@ mod tests {
             true
         }
         fn log(&self, record: &log::Record) {
+            // Only capture logs from the thread currently running an arlog
+            // test. Parallel tests on other threads still emit through the
+            // global dispatcher, but their records are dropped here.
+            let active = *CAPTURING_THREAD.lock().unwrap();
+            if active != Some(std::thread::current().id()) {
+                return;
+            }
             captures().lock().unwrap().push((
                 record.level(),
                 record.target().to_string(),
@@ -392,6 +407,9 @@ mod tests {
             let _ = log::set_logger(&LOGGER);
             log::set_max_level(log::LevelFilter::Trace);
         });
+        // Mark THIS thread as the active capture target. test_lock() ensures
+        // only one arlog test runs at a time, so this is safe to overwrite.
+        *CAPTURING_THREAD.lock().unwrap() = Some(std::thread::current().id());
     }
 
     fn drain() -> Vec<Captured> {
