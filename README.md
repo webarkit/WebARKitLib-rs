@@ -38,14 +38,14 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.4"
+webarkitlib-rs = "0.5"
 ```
 
 To enable the C++ FFI backend for KPM (Natural Feature Tracking):
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.4", features = ["ffi-backend"] }
+webarkitlib-rs = { version = "0.5", features = ["ffi-backend"] }
 ```
 
 > When installing from crates.io, no extra setup is required — the C++
@@ -204,7 +204,7 @@ Enable the `log-helpers` feature and call the bundled initializer once in your b
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.4", features = ["log-helpers"] }
+webarkitlib-rs = { version = "0.5", features = ["log-helpers"] }
 ```
 
 ```rust
@@ -310,6 +310,10 @@ The workspace contains two crates:
 - **`crates/core`** (`webarkitlib-rs`): The unified core AR engine (pure Rust), including:
   - `ar2` module: NFT marker generation pipeline — image pyramid (`ar2_gen_image_set`), feature map (`ar2_gen_feature_map`), JPEG-compressed `.iset` save, `.fset` / `.fset3` I/O.
   - `kpm` module: Keypoint Matching with pluggable backends (Rust + C++ FFI), FREAK descriptor extraction.
+    - `kpm::freak::math` / `kpm::freak::homography`: pure-Rust math & homography pipeline (M6).
+    - `kpm::freak::hough`: Hough similarity voting — 4D-binned voting scheme for finding the consistent similarity transformation across matched feature pairs (M7).
+    - `kpm::freak::clustering`: K-Medoids + Binary Hierarchical Clustering (BHC) vocabulary tree for fast approximate-NN search on 96-byte FREAK descriptors. Byte-identical PRNG (`FastRandom` / `ArrayShuffle`) for C++ parity (M7).
+    - `kpm::freak::matcher`: `FeatureStore` + `FeatureMatcher` with three match variants (brute, BHC-indexed, homography-guided), each gated by C++-faithful ratio test and `maxima` filtering (M7).
   - Core modules: image processing, pattern matching, labeling, ICP, pose estimation.
 - **`crates/wasm`** (`webarkitlib-wasm`): WASM bindings, dual-build scripts, and diagnostic web demo.
 - `benchmarks`: C vs Rust performance comparison suite.
@@ -329,6 +333,11 @@ The workspace contains two crates:
   - Detailed step-by-step logging with timestamps and per-level statistics
 - **M5 -- NFT Pipeline Performance**: Rayon parallelism for pyramid generation and Stage-3 feature scoring, plus optional SSE4.1/AVX2+FMA SIMD vectorization of the `get_similarity` correlation kernel. ~1.7× total speedup on x86_64.
 - **M6 -- Math & homography in pure Rust**: Ported all free mathematical functions from FreakMatcher into `crates/core/src/kpm/freak/math.rs` and `freak/homography.rs` (~1476 lines across 5 C++ headers). Eliminates the only remaining Eigen dependency: the 3×3 matrix exponential in `IncrementalHomographyFromLieWeights`.
+- **M7 -- Hough voting & feature matching in pure Rust**: Ported the full FreakMatcher matching pipeline into `crates/core/src/kpm/freak/{hough,clustering,matcher}.rs` (~2790 LOC total):
+  - Hough similarity voting (4D bin discretization) — 734 LOC
+  - K-Medoids clustering + Binary Hierarchical Clustering vocabulary tree, including a byte-identical `FastRandom` / `ArrayShuffle` PRNG port — 889 LOC
+  - `FeatureStore` + `FeatureMatcher` with three match variants (brute, BHC-indexed, homography-guided), C++-faithful ratio test (default 0.7), and `maxima` filtering — 1167 LOC
+  - **Dual-mode FFI tests run in CI on Linux / macOS / Windows** with sorted-pair equality vs the C++ baseline for brute/indexed/guided matchers (the M7 milestone validation gate). Surfaced and fixed three latent cross-platform issues: macOS `libc++` linking, GCC `<limits>` include order, and ARM64 FMA tolerance in M6-2 solvers.
 
 ### 🎯 Short-term Goals (toward v1.0.0)
 - **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.

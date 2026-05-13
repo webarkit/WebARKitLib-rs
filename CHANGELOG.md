@@ -2,6 +2,47 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - 2026-05-13
+
+### Milestone 7 — Hough voting & feature matching in pure Rust
+
+### 🚀 Features
+
+- *(kpm)* Implement Hough similarity voting algorithm (M7)
+- *(kpm)* Implement binary hierarchical clustering and k-medoids for FREAK descriptors
+- *(kpm)* Port FeatureStore and FeatureMatcher with three match variants
+- *(kpm)* Port ArrayShuffle for BHC parity with C++ baseline
+
+### 🐛 Bug Fixes
+
+- *(kpm)* Fix arlog macro imports and unused variable warnings (#109)
+- *(kpm)* Apply clippy and fmt fixes to hough.rs for M7
+- *(kpm)* Resolve clippy warnings in clustering module
+- *(kpm)* Resolve remaining clippy warnings in clustering
+- *(kpm)* Include <limits> in kpm_c_api.cpp for GCC build
+- *(kpm)* Move <limits> include before matcher headers for GCC build
+- *(build)* Use platform-appropriate C++ stdlib (libc++ on macOS, libstdc++ on Linux)
+- *(kpm)* Use combined absolute+relative tolerance in M6-2 dual-mode tests
+- *(kpm)* Widen relative tolerance to 1e-5 for M6-2 dual-mode tests
+
+### 🧪 Testing
+
+- *(kpm)* Add dual-mode FFI tests for FeatureMatcher (M7-3)
+- *(kpm)* Strengthen dual-mode FeatureMatcher tests with pair equality and global-best invariants
+
+### 📚 Documentation
+
+- Add pre-commit verification workflow and arlog import pattern to CLAUDE.md
+
+### 🎨 Styling
+
+- Fix formatting from cargo fmt
+
+### ⚙️ Miscellaneous Tasks
+
+- Run dual-mode tests in CI to enforce C++ parity
+- Scope dual-mode tests to --lib to avoid pre-existing integration test failures
+
 ## [0.4.1] - 2026-05-09
 
 ### Patch release — Matrix code GlobalID, paramGL ports, and quality fixes

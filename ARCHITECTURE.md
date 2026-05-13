@@ -34,9 +34,12 @@ The unified core library containing all AR functionality:
     -   `kpm::matching` — per-frame matching and ICP-based pose estimation.
     -   `kpm::ref_data_set` — `.fset3` reference data I/O and compression modes.
     -   `kpm::types` — KPM data structures and constants.
-    -   `kpm::freak` — FREAK descriptor math and homography utilities:
+    -   `kpm::freak` — FREAK descriptor math, homography, and matching utilities (pure Rust port of `WebARKitLib/lib/SRC/KPM/FreakMatcher`):
         -   `freak::math` — linear algebra (matrix operations, linear solvers) and Padé matrix exponential.
         -   `freak::homography` — homography estimation and refinement pipeline.
+        -   `freak::hough` — Hough similarity voting (4D bin discretization over translation × angle × scale) for filtering matches by transformation consistency.
+        -   `freak::clustering` — K-Medoids partitioning + Binary Hierarchical Clustering (BHC) vocabulary tree for fast approximate-NN search on 96-byte FREAK descriptors. Hamming distance via 24×32-bit bit-magic. Includes a byte-identical port of C++ `vision::FastRandom` / `vision::ArrayShuffle` so the BHC tree topology matches the C++ baseline given the same seed.
+        -   `freak::matcher` — `FeatureStore` (points + flat descriptor buffer) and `FeatureMatcher` with three match variants: brute force, BHC-indexed (fast path), and homography-guided (spatial filter via 3×3 inverse + `tr` radius). All three apply the C++ ratio test (default 0.7) and filter by `FeaturePoint::maxima`.
 -   **Types** (`types`): core data structures (`ARHandle`, `ARParam`, etc.).
 
 ### `crates/wasm` — `webarkitlib-wasm`
@@ -53,7 +56,7 @@ Depends only on `webarkitlib-rs` (the core crate).
 | `simd-x86-sse41` | x86 SSE4.1 intrinsics |
 | `log-helpers`  | Enable logging infrastructure (installs `env_logger` for desktop/tests, `console_log` for WASM) |
 | `ffi-backend`  | Compile the C++ FreakMatcher library and generate FFI bindings |
-| `dual-mode`    | Reserved for future dual Rust/C++ backend support |
+| `dual-mode`    | Enables FFI-based parity tests that validate pure-Rust ports against the live C++ baseline (M6 math/solvers/homography, M7 BHC/matcher, PRNG). Transitively enables `ffi-backend`. Run in CI on Linux/macOS/Windows. |
 
 ## SIMD Strategy
 
@@ -84,6 +87,17 @@ cd benchmarks/c_benchmark && python ../bootstrap.py --bootstrap-file libraries.j
 cargo build --features ffi-backend
 cargo test --workspace --features ffi-backend
 ```
+
+### Dual-mode parity tests (Rust ↔ C++)
+
+Validates the pure-Rust ports against the live C++ baseline via FFI shims.
+Requires the C++ submodule to be initialized:
+
+```bash
+cargo test -p webarkitlib-rs --lib --features dual-mode
+```
+
+CI runs this step on Linux, macOS, and Windows on every push.
 
 ### WASM
 ```bash
