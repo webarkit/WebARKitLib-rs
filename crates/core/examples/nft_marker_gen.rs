@@ -64,6 +64,8 @@ use clap::Parser;
 use std::path::Path;
 use std::time::Instant;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
+#[cfg(not(feature = "ffi-backend"))]
+use webarkitlib_rs::arlog_rel;
 #[cfg(feature = "ffi-backend")]
 use webarkitlib_rs::arlog_w;
 use webarkitlib_rs::{arlog_e, arlog_i};
@@ -142,11 +144,11 @@ fn main() {
     {
         use std::io::Write as _;
         if !cli.yes {
-            eprintln!();
-            eprintln!(
+            arlog_rel!("");
+            arlog_rel!(
                 "Warning: built without `ffi-backend` feature — .fset3 will NOT be generated."
             );
-            eprintln!("An NFT marker without .fset3 cannot be used for initialization/detection.");
+            arlog_rel!("An NFT marker without .fset3 cannot be used for initialization/detection.");
             eprint!("Continue anyway? [y/N] ");
             let _ = std::io::stdout().flush();
             let mut answer = String::new();
@@ -154,10 +156,10 @@ fn main() {
                 .read_line(&mut answer)
                 .expect("failed to read input");
             if !answer.trim().eq_ignore_ascii_case("y") {
-                eprintln!("Aborted.");
+                arlog_rel!("Aborted.");
                 std::process::exit(1);
             }
-            eprintln!();
+            arlog_rel!("");
         }
     }
 

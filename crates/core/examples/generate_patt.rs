@@ -10,7 +10,7 @@ use std::path::Path;
 use std::str::FromStr;
 use webarkitlib_rs::pattern::{ar_patt_get_image2, ar_patt_save};
 use webarkitlib_rs::types::{ARMarkerInfo, ARParam, ARParamLT, ARParamLTf, ARPixelFormat};
-use webarkitlib_rs::{arlog_e, arlog_i, arlog_w};
+use webarkitlib_rs::{arlog_e, arlog_i, arlog_rel, arlog_w};
 
 /*
  English documentation / notes for this example
@@ -75,24 +75,24 @@ use webarkitlib_rs::{arlog_e, arlog_i, arlog_w};
 */
 
 fn print_help_and_exit() {
-    eprintln!("generate_patt example — usage:");
-    eprintln!("  --input PATH           input image (default: examples/Data/HIRO-test.jpg)");
-    eprintln!("  --out PATH             output .patt path (default: ./crates/core/examples/Data/generated.patt)");
-    eprintln!("  --camera PATH          camera_para.dat path to build ARParamLT (optional)");
-    eprintln!("  --border N             add black border of N pixels around input (default: 0)");
-    eprintln!("  --patt-size N          pattern size in pixels (default: 16)");
-    eprintln!(
+    arlog_rel!("generate_patt example — usage:");
+    arlog_rel!("  --input PATH           input image (default: examples/Data/HIRO-test.jpg)");
+    arlog_rel!("  --out PATH             output .patt path (default: ./crates/core/examples/Data/generated.patt)");
+    arlog_rel!("  --camera PATH          camera_para.dat path to build ARParamLT (optional)");
+    arlog_rel!("  --border N             add black border of N pixels around input (default: 0)");
+    arlog_rel!("  --patt-size N          pattern size in pixels (default: 16)");
+    arlog_rel!(
         "  --sample-factor N      sample factor multiplier passed to extraction (default: 4)"
     );
-    eprintln!("  --flip-v               flip input image vertically before processing");
-    eprintln!("  --channel-order rgb|bgr interpret input buffer as rgb or bgr (default: rgb)");
-    eprintln!("  --with-border          indicate the INPUT IMAGE ALREADY CONTAINS THE MARKER BORDER (no auto-add)");
-    eprintln!("  --patt-ratio F         pattern ratio (pattern/(pattern+2*border)), default 0.5");
-    eprintln!("  --batch                run automatic experiments and write CSV report");
-    eprintln!("  --quiet                reduce printed output");
-    eprintln!("  --verbose              print verbose diagnostic info (full_side, min_dim) when border is auto-computed");
-    eprintln!("  --debug                print very verbose intermediate extraction values (threshold, bbox, vertices, params)");
-    eprintln!("  --help                 show this help");
+    arlog_rel!("  --flip-v               flip input image vertically before processing");
+    arlog_rel!("  --channel-order rgb|bgr interpret input buffer as rgb or bgr (default: rgb)");
+    arlog_rel!("  --with-border          indicate the INPUT IMAGE ALREADY CONTAINS THE MARKER BORDER (no auto-add)");
+    arlog_rel!("  --patt-ratio F         pattern ratio (pattern/(pattern+2*border)), default 0.5");
+    arlog_rel!("  --batch                run automatic experiments and write CSV report");
+    arlog_rel!("  --quiet                reduce printed output");
+    arlog_rel!("  --verbose              print verbose diagnostic info (full_side, min_dim) when border is auto-computed");
+    arlog_rel!("  --debug                print very verbose intermediate extraction values (threshold, bbox, vertices, params)");
+    arlog_rel!("  --help                 show this help");
     std::process::exit(0);
 }
 
