@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-05-14
+
+### ⚙️ Miscellaneous Tasks
+
+- Convert generators to arlog_*! macros (PR 3/4 for #90)
+
+### 🎨 Styling
+
+- Fix rustfmt import order in nft_marker_gen.rs
+
+### 🐛 Bug Fixes
+
+- *(examples)* Use arlog_rel! for help banner and prompt UI per review
+
 ## [0.5.0] - 2026-05-13
 
 ### Milestone 7 — Hough voting & feature matching in pure Rust

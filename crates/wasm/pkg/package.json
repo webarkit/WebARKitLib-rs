@@ -5,7 +5,7 @@
                           "kalwalt \u003cgithub@kalwaltart.it\u003e"
                       ],
     "description":  "A high-performance, memory-safe Rust port of WebARKitLib (ARToolKit) for native and WASM.",
-    "version":  "0.5.0",
+    "version":  "0.5.1",
     "license":  "LGPL-3.0-or-later",
     "repository":  {
                        "type":  "git",
