@@ -45,6 +45,7 @@ pub mod homography;
 pub mod hough;
 pub mod matcher;
 pub mod math;
+pub mod pyramid;
 
 // Public re-exports for convenience
 pub use clustering::{hamming_distance_96, BhcNode, BinaryHierarchicalClustering, KMedoids};
@@ -53,3 +54,4 @@ pub use hough::{
     FeaturePoint, GaussianScaleSpacePyramid, HoughMatch, HoughSimilarityVoting, Keyframe, Match,
 };
 pub use matcher::{FeatureMatcher, FeatureStore};
+pub use pyramid::{Pyramid, PyramidError};
