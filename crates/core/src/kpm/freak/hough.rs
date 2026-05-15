@@ -392,10 +392,6 @@ impl HoughSimilarityVoting {
 #[derive(Clone, Debug)]
 pub struct DoGScaleInvariantDetector;
 
-/// Placeholder for GaussianScaleSpacePyramid from M8.
-#[derive(Clone, Debug)]
-pub struct GaussianScaleSpacePyramid;
-
 /// Placeholder for Keyframe from M8.
 #[derive(Clone, Debug)]
 pub struct Keyframe {
@@ -448,7 +444,7 @@ pub struct HoughMatch {
 pub fn find_features(
     _keyframe: &mut Keyframe,
     _detector: &DoGScaleInvariantDetector,
-    _pyramid: &GaussianScaleSpacePyramid,
+    _pyramid: &super::gaussian_pyramid::GaussianScaleSpacePyramid,
 ) -> Result<(), KpmError> {
     arlog_i!("find_features: stub implementation (M8 pending)");
     Ok(())

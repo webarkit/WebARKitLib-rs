@@ -41,17 +41,24 @@
 //! implementation and optimized for performance.
 
 pub mod clustering;
+pub mod gaussian_pyramid;
 pub mod homography;
 pub mod hough;
+pub mod interpolate;
 pub mod matcher;
 pub mod math;
 pub mod pyramid;
 
 // Public re-exports for convenience
 pub use clustering::{hamming_distance_96, BhcNode, BinaryHierarchicalClustering, KMedoids};
+pub use gaussian_pyramid::{num_octaves_for, GaussianPyramidError, GaussianScaleSpacePyramid};
 pub use hough::{
     find_features, find_hough_matches, find_hough_similarity, BinParams, DoGScaleInvariantDetector,
-    FeaturePoint, GaussianScaleSpacePyramid, HoughMatch, HoughSimilarityVoting, Keyframe, Match,
+    FeaturePoint, HoughMatch, HoughSimilarityVoting, Keyframe, Match,
+};
+pub use interpolate::{
+    bilinear_downsample_point, bilinear_interpolate, bilinear_interpolate_f32,
+    bilinear_interpolate_u8, bilinear_upsample_point,
 };
 pub use matcher::{FeatureMatcher, FeatureStore};
 pub use pyramid::{Pyramid, PyramidError};
