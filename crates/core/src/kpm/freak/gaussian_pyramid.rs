@@ -640,9 +640,35 @@ mod tests {
         dst
     }
 
+    /// Distance in ULPs between two non-negative f32 values. Returns
+    /// `i64::MAX` for sign mismatches or NaN.
+    #[cfg(feature = "dual-mode")]
+    fn ulp_distance(a: f32, b: f32) -> i64 {
+        if a.is_nan() || b.is_nan() {
+            return i64::MAX;
+        }
+        if a.is_sign_negative() != b.is_sign_negative() {
+            return i64::MAX;
+        }
+        // For same-sign floats, to_bits() is monotonic, so the integer
+        // difference of the bit patterns equals the ULP distance.
+        (a.to_bits() as i64 - b.to_bits() as i64).abs()
+    }
+
     #[test]
     #[cfg(feature = "dual-mode")]
     fn test_gaussian_pyramid_pixels_match_cpp() {
+        // We assert <= 1 ULP rather than strict bit equality because Apple
+        // clang on ARM64 emits FMA (fused multiply-add) instructions for
+        // the binomial filter expression by default, while MSVC and GCC
+        // (Linux) do not. FMA is *more* precise (no intermediate rounding),
+        // so the C++ output differs by 1 ULP across platforms — and the
+        // Rust output (no FMA) lands at one of those rounded values. The
+        // 1-ULP tolerance keeps the test meaningful (it would still fail
+        // on any real algorithm error) while accommodating cross-platform
+        // C++ FP contraction. See docs/design/m8-2-gaussian-pyramid.md §7.
+        const MAX_ULP_DIFF: i64 = 1;
+
         let src_w = 32;
         let src_h = 32;
         let src = gradient_u8(src_h, src_w);
@@ -657,10 +683,10 @@ mod tests {
                 let rust = rust_pyr.level(oct, scale).as_slice();
                 assert_eq!(rust.len(), cpp.len(), "size mismatch at ({oct}, {scale})");
                 for (i, (&r, &c)) in rust.iter().zip(cpp.iter()).enumerate() {
-                    assert_eq!(
-                        r.to_bits(),
-                        c.to_bits(),
-                        "f32 bit mismatch at ({oct}, {scale}) idx {i}: rust={r}, cpp={c}"
+                    let ulp = ulp_distance(r, c);
+                    assert!(
+                        ulp <= MAX_ULP_DIFF,
+                        "f32 mismatch at ({oct}, {scale}) idx {i}: rust={r}, cpp={c}, ulp_diff={ulp}"
                     );
                 }
             }
