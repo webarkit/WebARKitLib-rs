@@ -164,4 +164,6 @@ Returns 0 on success; non-zero codes for validation failure, octave too small, b
 
 1. **purecv `Matrix<f32>` API parity with `Matrix<u8>`** — will verify before coding; minor adaptations possible.
 2. **f32 bit-for-bit parity** — relies on deterministic integer arithmetic + `* (1.0 / 256.0)`. If LLVM reassociates the binomial sum differently than the C++ compiler, parity could break. Mitigation: use the *exact* additive order from the C++ source (no commutative rewriting).
+
+   **Update (post-merge of M8-1, pre-merge of M8-2)**: This risk materialized on macOS. Apple clang on ARM64 emits FMA (fused multiply-add) instructions for the binomial filter expression by default, while MSVC (Windows) and GCC (Linux) do not. The result is a 1-ULP difference in C++ output between macOS and the other platforms. The dual-mode test was relaxed to ≤1 ULP tolerance — strict bit equality is impractical given cross-platform C++ FP contraction. The 1-ULP tolerance still catches any algorithm error while accommodating the platform variance. Local 1-ULP bugs (like the H-pass parenthesization caught during implementation) are still detected because they produce >1 ULP errors at higher scales.
 3. **FFI shim must compile cleanly on all CI targets** — including macOS (post-#117 libc++ fix) and the flaky macOS rust-cache (#134). If #134 isn't fixed, expect occasional CI re-runs.
