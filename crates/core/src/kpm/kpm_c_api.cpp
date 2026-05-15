@@ -56,6 +56,8 @@
 #include <math/linear_solvers.h>
 #include <math/rand.h>
 #include <homography_estimation/robust_homography.h>
+#include <detectors/gaussian_scale_space_pyramid.h>
+#include <framework/image.h>
 #include <Eigen/Core>
 #include <unsupported/Eigen/MatrixFunctions>
 
@@ -503,6 +505,57 @@ int webarkit_cpp_fast_random(int* seed) {
 
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed) {
     vision::ArrayShuffle<int>(v, pop_size, sample_size, *seed);
+}
+
+/* ---- Dual-mode validation: BinomialPyramid32f bridge (Milestone 8, #127) ---- */
+
+int webarkit_cpp_binomial_pyramid_build_level(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    int target_octave,
+    int target_scale,
+    float* dst_out,
+    int dst_capacity_floats) {
+
+    if (!src || !dst_out || src_w < 5 || src_h < 5 || num_octaves < 1
+        || target_octave < 0 || target_octave >= num_octaves
+        || target_scale < 0 || target_scale >= 3) {
+        return 1;
+    }
+
+    const int lvl_w = src_w >> target_octave;
+    const int lvl_h = src_h >> target_octave;
+    if (lvl_w < 5 || lvl_h < 5) {
+        return 2;
+    }
+    if (dst_capacity_floats < lvl_w * lvl_h) {
+        return 3;
+    }
+
+    try {
+        vision::Image image(
+            const_cast<unsigned char*>(src), vision::IMAGE_UINT8,
+            src_w, src_h, src_w /* step */, 1);
+
+        vision::BinomialPyramid32f pyr;
+        pyr.alloc(src_w, src_h, num_octaves);
+        pyr.build(image);
+
+        const vision::Image& lvl = pyr.get(target_octave, target_scale);
+        const float* lvl_ptr = reinterpret_cast<const float*>(lvl.get());
+        const int lvl_step_floats = static_cast<int>(lvl.step() / sizeof(float));
+        for (int row = 0; row < lvl_h; ++row) {
+            std::memcpy(
+                dst_out + row * lvl_w,
+                lvl_ptr + row * lvl_step_floats,
+                static_cast<size_t>(lvl_w) * sizeof(float));
+        }
+        return 0;
+    } catch (...) {
+        return 4;
+    }
 }
 
 } // extern "C"
