@@ -115,6 +115,21 @@ fn build_freak_matcher() {
     if !target.contains("msvc") {
         build.flag("-Wno-unused-parameter");
         build.flag("-Wno-sign-compare");
+        // Disable floating-point contraction (fused multiply-add).
+        //
+        // Apple clang on ARM64 emits FMA instructions for `a + b*c`
+        // patterns by default. Linux GCC and MSVC do not. The FMA path is
+        // *more* precise (no intermediate rounding) and produces
+        // platform-dependent f32 output that drifts from the non-FMA path
+        // by up to several ULPs. This breaks dual-mode tests that assert
+        // byte-for-byte parity between the C++ baseline and the Rust port
+        // (which does not use FMA).
+        //
+        // -ffp-contract=off forces all FP additions/multiplications to be
+        // emitted as separate non-fused instructions, restoring
+        // deterministic cross-platform output. Both clang and GCC support
+        // this flag. See M8-2 design doc §7 and the discussion on PR #135.
+        build.flag("-ffp-contract=off");
     }
 
     for src in &cpp_sources {
