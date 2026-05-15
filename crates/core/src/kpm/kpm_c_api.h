@@ -239,6 +239,34 @@ int webarkit_cpp_match_features_guided(
 int  webarkit_cpp_fast_random(int* seed);
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed);
 
+/* ---- Dual-mode validation: BinomialPyramid32f bridge (Milestone 8, #127) ---- */
+
+/* Build a vision::BinomialPyramid32f from `src` (grayscale, src_w x src_h,
+ * row-major, tight stride) and copy the f32 level at (target_octave,
+ * target_scale) into `dst_out`.
+ *
+ * `num_octaves` is the pyramid depth.
+ * `target_octave` must be in [0, num_octaves); `target_scale` in [0, 3).
+ *
+ * The level (o, s) has size (src_w >> o) x (src_h >> o). The caller must
+ * provide `dst_capacity_floats` >= that product (in floats, not bytes).
+ *
+ * Returns:
+ *   0  success
+ *   1  validation error (null ptr, bad dims, out-of-range indices)
+ *   2  octave too small for binomial filter (< 5x5)
+ *   3  dst_capacity_floats too small for the requested level
+ *   4  C++ exception caught (ASSERT, std::exception, etc.) */
+int webarkit_cpp_binomial_pyramid_build_level(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    int target_octave,
+    int target_scale,
+    float* dst_out,
+    int dst_capacity_floats);
+
 #ifdef __cplusplus
 }
 #endif
