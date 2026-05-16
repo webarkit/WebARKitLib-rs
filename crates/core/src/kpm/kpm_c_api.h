@@ -239,6 +239,31 @@ int webarkit_cpp_match_features_guided(
 int  webarkit_cpp_fast_random(int* seed);
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed);
 
+/* ---- Dual-mode validation: DoGScaleInvariantDetector bridge (Milestone 8, #128) ---- */
+
+/* Build a BinomialPyramid32f from `src` and run a DoGScaleInvariantDetector
+ * with the supplied configuration. Writes the number of detected keypoints
+ * to `*count_out`. Both Rust and C++ sides must call with identical config
+ * for the dual-mode parity test to be meaningful.
+ *
+ * `find_orientation` is treated as boolean (0 = false, non-zero = true).
+ *
+ * Returns:
+ *   0  success
+ *   1  validation error (null ptr, bad dims, out-of-range indices)
+ *   2  pyramid too small for the requested octave count
+ *   4  C++ exception caught (ASSERT, std::exception, etc.) */
+int webarkit_cpp_dog_detect_count(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    float laplacian_threshold,
+    float edge_threshold,
+    int max_num_feature_points,
+    int find_orientation,
+    int* count_out);
+
 /* ---- Dual-mode validation: BinomialPyramid32f bridge (Milestone 8, #127) ---- */
 
 /* Build a vision::BinomialPyramid32f from `src` (grayscale, src_w x src_h,
