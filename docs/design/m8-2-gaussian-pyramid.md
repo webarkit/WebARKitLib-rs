@@ -111,6 +111,53 @@ int webarkit_cpp_binomial_pyramid_build_level(
 
 Returns 0 on success; non-zero codes for validation failure, octave too small, buffer overflow, C++ exception.
 
+### 3.5 Bilinear interpolation formula
+
+Implemented verbatim as the issue spec requested in
+[`crates/core/src/kpm/freak/interpolate.rs:85`](../../crates/core/src/kpm/freak/interpolate.rs#L85)
+and
+[`crates/core/src/kpm/freak/interpolate.rs:110`](../../crates/core/src/kpm/freak/interpolate.rs#L110):
+
+```rust
+let dx = x - x0 as f32;
+let dy = y - y0 as f32;
+(1.0 - dy) * ((1.0 - dx) * p00 + dx * p01) + dy * ((1.0 - dx) * p10 + dx * p11)
+```
+
+Where `p00, p01, p10, p11` are the four neighbor pixels surrounding the
+sample point `(x, y)`, with `x0 = floor(x)` and `y0 = floor(y)`. Returns
+`0.0` when `(x, y)` requires a neighbor outside the image bounds (Rust
+safety improvement over the C++ `ASSERT`s).
+
+#### Relation to the C++ source
+
+The C++ in `interpolate.h` uses the equivalent 4-weight form:
+
+```cpp
+res = w0 * p00 + w1 * p01 + w2 * p10 + w3 * p11;
+// w0 = (xp_plus_1 - x) * (yp_plus_1 - y)   = (1 - dx) * (1 - dy)
+// w1 = (x - xp)        * (yp_plus_1 - y)   =      dx  * (1 - dy)
+// w2 = (xp_plus_1 - x) * (y - yp)          = (1 - dx) *      dy
+// w3 = (x - xp)        * (y - yp)          =      dx  *      dy
+```
+
+Algebraically identical to the factored Rust form. The factored form has
+**4 multiplications** (vs C++'s **8**) for the same result. For `f32`
+the two forms are not guaranteed to produce bit-identical output because
+floating-point addition is not associative, but the bilinear
+interpolation **is not part of the dual-mode parity test** — only the
+binomial filter is. The bilinear functions are exercised by
+`test_bilinear_interpolate_*` unit tests that assert values within a
+small tolerance.
+
+#### Single shared implementation
+
+`bilinear_interpolate_u8` does not duplicate the formula — it forwards
+to `bilinear_interpolate(image.as_slice(), image.cols, image.rows, x, y)`
+so the actual math lives in one place. `bilinear_interpolate_f32`
+duplicates the formula because it operates on `&Matrix<f32>` (different
+pixel type), but the structure is identical.
+
 ---
 
 ## 4. Assumptions
