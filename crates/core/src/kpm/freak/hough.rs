@@ -386,12 +386,6 @@ impl HoughSimilarityVoting {
     }
 }
 
-/// Stub types for M8 (to be implemented in Milestone 8).
-/// These are placeholders to allow M7 to compile independently.
-/// Placeholder for DoGScaleInvariantDetector from M8.
-#[derive(Clone, Debug)]
-pub struct DoGScaleInvariantDetector;
-
 /// Placeholder for Keyframe from M8.
 #[derive(Clone, Debug)]
 pub struct Keyframe {
@@ -443,7 +437,7 @@ pub struct HoughMatch {
 /// Stub for FindFeatures (M8 will implement).
 pub fn find_features(
     _keyframe: &mut Keyframe,
-    _detector: &DoGScaleInvariantDetector,
+    _detector: &super::detector::DoGScaleInvariantDetector,
     _pyramid: &super::gaussian_pyramid::GaussianScaleSpacePyramid,
 ) -> Result<(), KpmError> {
     arlog_i!("find_features: stub implementation (M8 pending)");
