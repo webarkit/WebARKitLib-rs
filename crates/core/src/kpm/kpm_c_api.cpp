@@ -56,6 +56,7 @@
 #include <math/linear_solvers.h>
 #include <math/rand.h>
 #include <homography_estimation/robust_homography.h>
+#include <detectors/DoG_scale_invariant_detector.h>
 #include <detectors/gaussian_scale_space_pyramid.h>
 #include <framework/image.h>
 #include <Eigen/Core>
@@ -505,6 +506,62 @@ int webarkit_cpp_fast_random(int* seed) {
 
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed) {
     vision::ArrayShuffle<int>(v, pop_size, sample_size, *seed);
+}
+
+/* ---- Dual-mode validation: DoGScaleInvariantDetector bridge (Milestone 8, #128) ---- */
+
+int webarkit_cpp_dog_detect_count(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    float laplacian_threshold,
+    float edge_threshold,
+    int max_num_feature_points,
+    int find_orientation,
+    int* count_out) {
+
+    if (!src || !count_out || src_w < 5 || src_h < 5 || num_octaves < 1
+        || edge_threshold <= 0.0f || max_num_feature_points <= 0) {
+        return 1;
+    }
+
+    // Ensure all octaves are at least 5x5 (binomial filter requirement).
+    {
+        int w = src_w;
+        int h = src_h;
+        for (int o = 0; o < num_octaves; ++o) {
+            if (w < 5 || h < 5) {
+                return 2;
+            }
+            w >>= 1;
+            h >>= 1;
+        }
+    }
+
+    try {
+        vision::Image image(
+            const_cast<unsigned char*>(src), vision::IMAGE_UINT8,
+            src_w, src_h, src_w /* step */, 1);
+
+        vision::BinomialPyramid32f pyr;
+        pyr.alloc(src_w, src_h, num_octaves);
+        pyr.build(image);
+
+        vision::DoGScaleInvariantDetector det;
+        det.alloc(&pyr);
+        det.setLaplacianThreshold(laplacian_threshold);
+        det.setEdgeThreshold(edge_threshold);
+        det.setMaxNumFeaturePoints(static_cast<size_t>(max_num_feature_points));
+        det.setFindOrientation(find_orientation != 0);
+
+        det.detect(&pyr);
+
+        *count_out = static_cast<int>(det.features().size());
+        return 0;
+    } catch (...) {
+        return 4;
+    }
 }
 
 /* ---- Dual-mode validation: BinomialPyramid32f bridge (Milestone 8, #127) ---- */
