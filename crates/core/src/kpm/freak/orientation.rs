@@ -59,6 +59,15 @@ const ONE_OVER_2PI: f32 = 1.0 / TWO_PI;
 /// The 15-digit literals are taken verbatim from the C++ source with the
 /// explicit `_f32` suffix so Rust rounds them directly to the same f32
 /// bit pattern as the C++ `float` literals.
+///
+/// `clippy::excessive_precision` would suggest truncating to ~8 digits
+/// (the limit of f32 precision). We deliberately keep the full 15-digit
+/// form for source-level fidelity with the C++ port — a reviewer
+/// cross-referencing the C++ can compare digit-for-digit without doing
+/// the rounding mentally. Rust's f32 literal parser handles the trailing
+/// digits identically to clipping them, so there is no behavioral
+/// difference; this is purely about source readability.
+#[allow(clippy::excessive_precision)]
 const SMOOTH_KERNEL: [f32; 3] = [
     0.274_068_619_061_197_f32,
     0.451_862_761_877_606_f32,
