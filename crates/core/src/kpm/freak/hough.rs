@@ -386,12 +386,6 @@ impl HoughSimilarityVoting {
     }
 }
 
-/// Placeholder for Keyframe from M8.
-#[derive(Clone, Debug)]
-pub struct Keyframe {
-    pub features: Vec<FeaturePoint>,
-}
-
 /// A feature point with position, orientation, scale, and extremum type.
 /// C equivalent: vision::FeaturePoint
 #[derive(Clone, Debug, Copy)]
@@ -434,13 +428,39 @@ pub struct HoughMatch {
     pub distance: f32,
 }
 
-/// Stub for FindFeatures (M8 will implement).
+/// Detect keypoints in the Gaussian pyramid and extract FREAK descriptors
+/// into `keyframe.store`.
+///
+/// Caller responsibilities:
+/// - `pyramid` is already built (via `pyramid.build(image)?`).
+/// - `detector` is configured with `find_orientation = true`. Otherwise
+///   keypoints have `angle = 0.0` and the resulting FREAK descriptors are
+///   rotation-variant, defeating the FREAK design.
+///
+/// C equivalent: `vision::FindFeatures` (`visual_database.h` lines 207–239).
 pub fn find_features(
-    _keyframe: &mut Keyframe,
-    _detector: &super::detector::DoGScaleInvariantDetector,
-    _pyramid: &super::gaussian_pyramid::GaussianScaleSpacePyramid,
+    keyframe: &mut super::keyframe::Keyframe,
+    pyramid: &super::gaussian_pyramid::GaussianScaleSpacePyramid,
+    detector: &super::detector::DoGScaleInvariantDetector,
 ) -> Result<(), KpmError> {
-    arlog_i!("find_features: stub implementation (M8 pending)");
+    // 1. Detect keypoints (M8-3).
+    let dog_points = detector.detect(pyramid);
+
+    // 2. Project rich DoG keypoints to persistent FeaturePoint (M8-3 From impl).
+    let points: Vec<FeaturePoint> = dog_points.iter().map(FeaturePoint::from).collect();
+
+    // 3. Extract FREAK descriptors as a flat Vec<u8>.
+    let mut buf =
+        Vec::<u8>::with_capacity(points.len() * super::descriptor::FREAK_DESCRIPTOR_BYTES);
+    super::descriptor::extract_freak_descriptors(pyramid, &points, &mut buf);
+
+    // 4. Populate the keyframe's FeatureStore.
+    for (i, point) in points.iter().enumerate() {
+        let start = i * super::descriptor::FREAK_DESCRIPTOR_BYTES;
+        let desc = &buf[start..start + super::descriptor::FREAK_DESCRIPTOR_BYTES];
+        keyframe.store.add(*point, desc)?;
+    }
+
     Ok(())
 }
 
