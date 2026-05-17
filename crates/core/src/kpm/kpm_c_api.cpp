@@ -59,6 +59,7 @@
 #include <detectors/DoG_scale_invariant_detector.h>
 #include <detectors/gaussian_scale_space_pyramid.h>
 #include <framework/image.h>
+#include <matchers/freak.h>
 #include <Eigen/Core>
 #include <unsupported/Eigen/MatrixFunctions>
 
@@ -506,6 +507,72 @@ int webarkit_cpp_fast_random(int* seed) {
 
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed) {
     vision::ArrayShuffle<int>(v, pop_size, sample_size, *seed);
+}
+
+/* ---- Dual-mode validation: FREAKExtractor bridge (Milestone 8, #129) ---- */
+
+int webarkit_cpp_extract_freak_descriptors(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    const float* keypoints,
+    int num_keypoints,
+    unsigned char* dst_out,
+    int dst_capacity_bytes) {
+
+    if (!src || (!keypoints && num_keypoints > 0) || !dst_out
+        || src_w < 5 || src_h < 5 || num_octaves < 1 || num_keypoints < 0) {
+        return 1;
+    }
+    // Verify all octaves fit the binomial filter (M8-2 invariant: each octave >= 5x5).
+    {
+        int w = src_w;
+        int h = src_h;
+        for (int o = 0; o < num_octaves; ++o) {
+            if (w < 5 || h < 5) {
+                return 2;
+            }
+            w >>= 1;
+            h >>= 1;
+        }
+    }
+    if (dst_capacity_bytes < num_keypoints * 96) {
+        return 3;
+    }
+
+    try {
+        vision::Image image(
+            const_cast<unsigned char*>(src), vision::IMAGE_UINT8,
+            src_w, src_h, src_w /* step */, 1);
+
+        vision::BinomialPyramid32f pyr;
+        pyr.alloc(src_w, src_h, num_octaves);
+        pyr.build(image);
+
+        std::vector<vision::FeaturePoint> points;
+        points.reserve(static_cast<size_t>(num_keypoints));
+        for (int i = 0; i < num_keypoints; ++i) {
+            const float* k = &keypoints[i * 4];
+            // maxima is unused by FREAK extraction; pass true.
+            points.emplace_back(k[0], k[1], k[2], k[3], /*maxima=*/true);
+        }
+
+        vision::BinaryFeatureStore store;
+        // store.setNumBytesPerFeature(96) is called inside extract().
+        vision::FREAKExtractor extractor;
+        extractor.extract(store, &pyr, points);
+
+        if (num_keypoints > 0) {
+            std::memcpy(
+                dst_out,
+                store.feature(0),
+                static_cast<size_t>(num_keypoints) * 96);
+        }
+        return 0;
+    } catch (...) {
+        return 4;
+    }
 }
 
 /* ---- Dual-mode validation: DoGScaleInvariantDetector bridge (Milestone 8, #128) ---- */

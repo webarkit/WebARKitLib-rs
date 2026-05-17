@@ -239,6 +239,41 @@ int webarkit_cpp_match_features_guided(
 int  webarkit_cpp_fast_random(int* seed);
 void webarkit_cpp_array_shuffle(int* v, int pop_size, int sample_size, int* seed);
 
+/* ---- Dual-mode validation: FREAKExtractor bridge (Milestone 8, #129) ---- */
+
+/* Build a vision::BinomialPyramid32f from `src`, then run
+ * vision::FREAKExtractor::extract at the caller-supplied keypoints.
+ * Writes `num_keypoints * 96` bytes to `dst_out` (84 bytes of FREAK
+ * descriptor data + 12 bytes zero padding per feature, matching the
+ * C++ BinaryFeatureStore layout).
+ *
+ * `keypoints` is a flat float array of 4 floats per keypoint:
+ * [x0, y0, angle0, scale0, x1, y1, angle1, scale1, ...]. The `maxima`
+ * flag of vision::FeaturePoint is unused by the FREAK descriptor
+ * algorithm so it is omitted from the serialization.
+ *
+ * Both sides must use identical config (`num_octaves` and the same
+ * source image) for the dual-mode parity test to be meaningful. Rust
+ * supplies the keypoints (it has already run its own detection), so
+ * this shim tests the descriptor algorithm in isolation from the
+ * detection pipeline.
+ *
+ * Returns:
+ *   0  success
+ *   1  validation error (null ptr, bad dims, negative count)
+ *   2  pyramid too small for the requested octave count
+ *   3  dst_capacity_bytes < num_keypoints * 96
+ *   4  C++ exception caught (ASSERT, std::exception, etc.) */
+int webarkit_cpp_extract_freak_descriptors(
+    const unsigned char* src,
+    int src_w,
+    int src_h,
+    int num_octaves,
+    const float* keypoints,
+    int num_keypoints,
+    unsigned char* dst_out,
+    int dst_capacity_bytes);
+
 /* ---- Dual-mode validation: DoGScaleInvariantDetector bridge (Milestone 8, #128) ---- */
 
 /* Build a BinomialPyramid32f from `src` and run a DoGScaleInvariantDetector
