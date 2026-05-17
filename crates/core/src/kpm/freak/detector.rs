@@ -1196,6 +1196,11 @@ mod tests {
     fn test_dog_keypoints_match_cpp_count() {
         // Tolerance covers sort tie-breaking and bucket ordering variance
         // only. Any algorithm-level error would dwarf this.
+        //
+        // Empirical local result (Windows MSVC, clean rebuild): |diff| = 0.
+        // The tolerance is kept at 5 to absorb potential cross-platform
+        // FP variance (Linux GCC / macOS Apple clang) before tightening
+        // to exact match in a follow-up if CI shows consistent equality.
         const MAX_TIE_DIVERGENCE: i32 = 5;
 
         let img = load_grayscale("../../benchmarks/data/found.jpg");
@@ -1227,6 +1232,68 @@ mod tests {
         assert!(
             diff <= MAX_TIE_DIVERGENCE,
             "keypoint count divergence: rust={rust_count}, cpp={cpp_count}, |diff|={diff} > {MAX_TIE_DIVERGENCE}"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "dual-mode")]
+    fn test_dog_keypoints_match_cpp_count_with_orientation() {
+        // Companion to `test_dog_keypoints_match_cpp_count` with
+        // `find_orientation = true`, exercising the OrientationAssignment
+        // gradient-histogram step.
+        //
+        // Why the tolerance is wider (10 vs 5):
+        //   1. Each keypoint can produce *multiple* DoGFeaturePoint copies
+        //      (one per dominant orientation peak >= 0.8 · max_height).
+        //      Tie-breaking at the peak threshold boundary multiplies any
+        //      f32 rounding variance.
+        //   2. The orientation smoothing kernel
+        //      `[0.274068619061197, 0.451862761877606, ...]` sums to
+        //      exactly 1.0 in f64 but its f32 representation may differ
+        //      by 1 ULP between platforms. Five smoothing iterations
+        //      compound that variance.
+        //   3. Bucket pruning runs before orientation in C++, so the
+        //      pre-orientation count is bounded by max_pts. Post-
+        //      orientation, the count can exceed max_pts (each keypoint
+        //      contributing 1..N orientations).
+        //
+        // Empirical local result (Windows MSVC, clean rebuild): |diff| = 0.
+        // The orientation step did NOT introduce any divergence on this
+        // image, contrary to the speculative concern that the 1-ULP
+        // SMOOTH_KERNEL change might shift peak detection. The tolerance
+        // is set to 10 (vs 5 for orientation-off) to absorb potential
+        // cross-platform variance in the orientation gradient histogram.
+        const MAX_TIE_DIVERGENCE: i32 = 10;
+
+        let img = load_grayscale("../../benchmarks/data/found.jpg");
+        let num_octaves = 3;
+        let laplacian_threshold = 0.0;
+        let edge_threshold = 10.0;
+        let max_pts = 5000;
+        let find_orientation = true;
+
+        let pyr = build_test_pyramid(&img, num_octaves);
+        let det = DoGScaleInvariantDetector::new(
+            laplacian_threshold,
+            edge_threshold,
+            max_pts,
+            find_orientation,
+        );
+        let rust_count = det.detect(&pyr).len() as i32;
+
+        let cpp_count = cpp_detect_count(
+            &img,
+            num_octaves,
+            laplacian_threshold,
+            edge_threshold,
+            max_pts,
+            find_orientation,
+        );
+
+        let diff = (rust_count - cpp_count).abs();
+        assert!(
+            diff <= MAX_TIE_DIVERGENCE,
+            "with-orientation keypoint count divergence: rust={rust_count}, cpp={cpp_count}, |diff|={diff} > {MAX_TIE_DIVERGENCE}"
         );
     }
 }
