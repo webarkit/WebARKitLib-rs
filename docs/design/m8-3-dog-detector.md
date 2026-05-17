@@ -133,7 +133,34 @@ impl DoGScaleInvariantDetector {
 6. **Orientation assignment** (when `find_orientation == true`): precompute one gradient image per pyramid level; for each refined point query `OrientationAssignment::compute(...)`; emit one copy per dominant peak (zero peaks ⇒ keypoint dropped, matches C++).
 7. **Bucket pruning**: distribute keypoints across `num_buckets_x × num_buckets_y` fine-image spatial buckets; take best-by-|score| per bucket round-robin until `max_num_feature_points` reached.
 
-### 3.4 FFI shim (`kpm_c_api.h/.cpp`)
+### 3.4 Replacing the C++ `NONMAX_CHECK` preprocessor macro
+
+The C++ `extractFeatures` uses an `#define NONMAX_CHECK(OPERATOR, VALUE)` macro that expands to a chain of 26 short-circuit `&&` comparisons (9 from `im0`, 8 from `im1` excluding the center, 9 from `im2`). It is parameterized by an operator token (`>` or `<`) so a single macro covers both maxima and minima detection, and a single chain runs at full speed because each comparison is inlined by the preprocessor.
+
+Rust doesn't let you pass operator tokens as macro parameters as cleanly, so the macro is replaced by **an `enum NonMaxOp { Greater, Less }` plus three private inlined helper functions**, one per dimension pattern:
+
+| Function | C++ macro instance |
+|---|---|
+| `nonmax_same_octave(op, val, im0, im1, im2, w, row, col)` | SameOctave (all three `im*` same dims) |
+| `nonmax_fine_octave(op, val, im0, im1, im2, w, row, col, ds_x, ds_y)` | FineOctavePair (`im2` half-sized → 9 `bilinear_interpolate_f32` lookups) |
+| `nonmax_coarse_octave(op, val, im0, im1, im2, w, row, col, us_x, us_y)` | CoarseOctavePair (`im0` double-sized → 9 `bilinear_interpolate_f32` lookups) |
+
+Each helper builds a `cmp` closure with a `match op { Greater => a > b, Less => a < b }` and chains the 26 `cmp(val, neighbor)` calls with `&&`. The call site mirrors the C++ `if/else if`:
+
+```rust
+let extrema = nonmax_same_octave(NonMaxOp::Greater, value, d0, d1, d2, w, row, col)
+    || nonmax_same_octave(NonMaxOp::Less, value, d0, d1, d2, w, row, col);
+```
+
+**Trade-offs considered:**
+
+- **Trait-generic `fn nonmax<C: Fn(f32, f32) -> bool>(cmp: C, ...)`** — would force monomorphization twice per call site and bloat the call graph; rejected.
+- **`macro_rules!` macro** — would match the C++ structure most literally, but Rust hygiene requires explicit captures of every variable, making the macro definition harder to read than the function form; rejected.
+- **Inline expansion** of all 156 comparisons (26 × 2 operators × 3 patterns) — rejected as repetitive.
+
+The enum-with-closure form is shorter than the alternatives and the `#[inline]` annotation gives the compiler the same opportunity to specialize as the C++ macro got at preprocess time. In optimized builds the `match op` is constant-folded per call site because the caller passes a literal `NonMaxOp::Greater` or `NonMaxOp::Less`.
+
+### 3.5 FFI shim (`kpm_c_api.h/.cpp`)
 
 ```c
 int webarkit_cpp_dog_detect_count(
