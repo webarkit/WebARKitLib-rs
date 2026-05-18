@@ -50,6 +50,7 @@ use crate::kpm::backend::KpmError;
 use crate::{arlog_d, arlog_e};
 
 use super::clustering::{hamming_distance_96, BinaryHierarchicalClustering};
+use super::homography::matrix_inverse_3x3;
 use super::hough::{FeaturePoint, Match};
 
 /// Default ratio test threshold (matches C++ `BinaryFeatureMatcher::mThreshold`).
@@ -345,7 +346,8 @@ impl FeatureMatcher {
         }
         Self::ensure_feature_size(query, reference)?;
 
-        let h_inv = matrix_inverse_3x3(h)?;
+        // 1e-20 preserves the historic match_guided behavior (almost never reject).
+        let h_inv = matrix_inverse_3x3(h, 1e-20)?;
         let tr_sqr = tr * tr;
 
         self.matches.reserve(query.num_features());
@@ -442,40 +444,8 @@ fn descriptor_96(store: &FeatureStore, i: usize) -> &[u8; 96] {
     <&[u8; 96]>::try_from(store.descriptor(i)).expect("bytes_per_feature == 96")
 }
 
-/// Inverts a 3x3 row-major matrix.
-///
-/// C equivalent: `MatrixInverse3x3`
-fn matrix_inverse_3x3(m: &[f32; 9]) -> Result<[f32; 9], KpmError> {
-    let a = m[0];
-    let b = m[1];
-    let c = m[2];
-    let d = m[3];
-    let e = m[4];
-    let f = m[5];
-    let g = m[6];
-    let h = m[7];
-    let i = m[8];
-
-    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-
-    if det.abs() < 1e-20 {
-        arlog_e!("matrix_inverse_3x3: singular matrix (det={})", det);
-        return Err(KpmError::InvalidInput("Singular homography matrix".into()));
-    }
-
-    let inv_det = 1.0 / det;
-    Ok([
-        (e * i - f * h) * inv_det,
-        (c * h - b * i) * inv_det,
-        (b * f - c * e) * inv_det,
-        (f * g - d * i) * inv_det,
-        (a * i - c * g) * inv_det,
-        (c * d - a * f) * inv_det,
-        (d * h - e * g) * inv_det,
-        (b * g - a * h) * inv_det,
-        (a * e - b * d) * inv_det,
-    ])
-}
+// `matrix_inverse_3x3` was promoted to `pub fn` in `homography.rs` in M9-1
+// (issue #140) so `visual_database::check_homography_heuristics` can reuse it.
 
 /// Applies a 3x3 row-major homography to a 2D point (inhomogeneous output).
 ///
@@ -706,21 +676,9 @@ mod tests {
     }
 
     // ----- Helper tests -----
-
-    #[test]
-    fn test_matrix_inverse_3x3_identity() {
-        let id: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let inv = matrix_inverse_3x3(&id).unwrap();
-        for (a, b) in inv.iter().zip(id.iter()) {
-            assert!((a - b).abs() < 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_matrix_inverse_3x3_singular() {
-        let zero: [f32; 9] = [0.0; 9];
-        assert!(matrix_inverse_3x3(&zero).is_err());
-    }
+    //
+    // Tests for matrix_inverse_3x3 live in `homography.rs` after the function
+    // moved there in M9-1 (issue #140).
 
     #[test]
     fn test_homography_point_identity() {
