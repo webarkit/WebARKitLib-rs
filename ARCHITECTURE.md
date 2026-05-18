@@ -40,6 +40,8 @@ The unified core library containing all AR functionality:
         -   `freak::hough` — Hough similarity voting (4D bin discretization over translation × angle × scale) for filtering matches by transformation consistency.
         -   `freak::clustering` — K-Medoids partitioning + Binary Hierarchical Clustering (BHC) vocabulary tree for fast approximate-NN search on 96-byte FREAK descriptors. Hamming distance via 24×32-bit bit-magic. Includes a byte-identical port of C++ `vision::FastRandom` / `vision::ArrayShuffle` so the BHC tree topology matches the C++ baseline given the same seed.
         -   `freak::matcher` — `FeatureStore` (points + flat descriptor buffer) and `FeatureMatcher` with three match variants: brute force, BHC-indexed (fast path), and homography-guided (spatial filter via 3×3 inverse + `tr` radius). All three apply the C++ ratio test (default 0.7) and filter by `FeaturePoint::maxima`.
+        -   `freak::image_pyramid` — image pyramid construction via `BoxFilterPyramid8u` (box filtering for 8-bit grayscale) and `BinomialPyramid32f` (32-bit floating-point binomial pyramid with scale-space interpolation).
+        -   `freak::feature_extraction` — keypoint detection via Difference-of-Gaussians (DoG), dominant orientation assignment via circular gradient voting, and FREAK descriptor computation with native Rust implementation of the FREAK binary pattern and bit-pair comparison.
 -   **Types** (`types`): core data structures (`ARHandle`, `ARParam`, etc.).
 
 ### `crates/wasm` — `webarkitlib-wasm`

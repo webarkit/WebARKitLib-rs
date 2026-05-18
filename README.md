@@ -38,14 +38,14 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.5"
+webarkitlib-rs = "0.6"
 ```
 
 To enable the C++ FFI backend for KPM (Natural Feature Tracking):
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.5", features = ["ffi-backend"] }
+webarkitlib-rs = { version = "0.6", features = ["ffi-backend"] }
 ```
 
 > When installing from crates.io, no extra setup is required — the C++
@@ -204,7 +204,7 @@ Enable the `log-helpers` feature and call the bundled initializer once in your b
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.5", features = ["log-helpers"] }
+webarkitlib-rs = { version = "0.6", features = ["log-helpers"] }
 ```
 
 ```rust
@@ -338,8 +338,15 @@ The workspace contains two crates:
   - K-Medoids clustering + Binary Hierarchical Clustering vocabulary tree, including a byte-identical `FastRandom` / `ArrayShuffle` PRNG port — 889 LOC
   - `FeatureStore` + `FeatureMatcher` with three match variants (brute, BHC-indexed, homography-guided), C++-faithful ratio test (default 0.7), and `maxima` filtering — 1167 LOC
   - **Dual-mode FFI tests run in CI on Linux / macOS / Windows** with sorted-pair equality vs the C++ baseline for brute/indexed/guided matchers (the M7 milestone validation gate). Surfaced and fixed three latent cross-platform issues: macOS `libc++` linking, GCC `<limits>` include order, and ARM64 FMA tolerance in M6-2 solvers.
+- **M8 -- KPM image pyramid & feature extraction in pure Rust** (4 steps):
+  - **Step 1**: `BoxFilterPyramid8u` — box filtering for efficient 8-bit grayscale pyramid construction
+  - **Step 2**: `interpolate.h` + `BinomialPyramid32f` — binomial pyramid and interpolation utilities for scale-space analysis
+  - **Step 3**: `DoG detector` + `OrientationAssignment` — difference-of-Gaussians keypoint detection and dominant orientation estimation
+  - **Step 4**: `FREAK descriptor` + `Keyframe` — native Rust FREAK descriptor computation and keyframe pipeline
+  - Completes the KPM feature extraction and image pyramid components in pure Rust
 
 ### 🎯 Short-term Goals (toward v1.0.0)
+- **M9 -- Integrate pure-Rust KPM pipeline**: Wire M8 image pyramid and feature extraction components with M7 matching for end-to-end native Rust NFT support.
 - **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.
 - **Enhanced Documentation**: Expand API reference with complete module-level docs, integration walkthroughs for JS/TS, and detailed usage examples.
 - **WASM Memory Management**: Improve resource cleanup when switching engines or markers in long-running browser sessions.
