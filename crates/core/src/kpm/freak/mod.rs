@@ -52,12 +52,17 @@ pub mod matcher;
 pub mod math;
 pub mod orientation;
 pub mod pyramid;
+pub mod visual_database;
 
 // Public re-exports for convenience
 pub use clustering::{hamming_distance_96, BhcNode, BinaryHierarchicalClustering, KMedoids};
 pub use descriptor::{extract_freak_descriptors, FREAK_DESCRIPTOR_BYTES};
 pub use detector::{DoGFeaturePoint, DoGScaleInvariantDetector};
 pub use gaussian_pyramid::{num_octaves_for, GaussianPyramidError, GaussianScaleSpacePyramid};
+pub use homography::{
+    area_of_triangle, line_point_side, matrix_inverse_3x3, quadrilateral_convex,
+    smallest_triangle_area,
+};
 pub use hough::{
     find_features, find_hough_matches, find_hough_similarity, BinParams, FeaturePoint, HoughMatch,
     HoughSimilarityVoting, Match,
@@ -70,3 +75,4 @@ pub use keyframe::Keyframe;
 pub use matcher::{FeatureMatcher, FeatureStore};
 pub use orientation::{compute_polar_gradient_image, OrientationAssignment};
 pub use pyramid::{Pyramid, PyramidError};
+pub use visual_database::VisualDatabase;

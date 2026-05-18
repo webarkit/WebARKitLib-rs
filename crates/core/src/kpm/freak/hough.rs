@@ -533,32 +533,91 @@ pub fn find_hough_similarity(
 
 /// Filters matches to those consistent with the winning Hough bin.
 ///
+/// For each input match, recomputes the similarity transformation from its
+/// query/reference feature points (mirroring [`compute_similarity`], which is
+/// also what [`HoughSimilarityVoting::vote`] does internally), maps it to
+/// floating-point bin coordinates, and retains the match if its bin-space
+/// distance to the winning bin's center is `< bin_delta` in all four
+/// dimensions (with circular wrap-around on the angle axis).
+///
 /// # Arguments
-/// * `out_matches` - Output vector for inlier matches
-/// * `voting` - Voter containing the winning bin index
-/// * `all_matches` - All matches to filter
-/// * `max_hough_index` - The winning bin index
-/// * `bin_delta` - Maximum bin distance to be considered an inlier
+/// * `out_matches` — Output vector for matches that fall within the winning bin.
+/// * `voting` — Voter containing the winning bin index.
+/// * `query_points` — Feature points from the query image.
+/// * `ref_points` — Feature points from the reference image.
+/// * `in_matches` — All matches to filter (one [`HoughMatch`] per pair).
+/// * `max_hough_index` — The winning bin's linear index (from
+///   [`find_hough_similarity`]).
+/// * `bin_delta` — Maximum bin-space distance to be considered an inlier
+///   (typically `kHoughBinDelta = 1.0` in C++).
+///
+/// # C++ equivalent
+/// `vision::FindHoughMatches` from `visual_database.h:327`. The Rust port
+/// recomputes the float bin position per match rather than caching
+/// `mSubBinLocations` / `mSubBinLocationIndices` during [`vote`]
+/// (M9-1 decision D15: recomputation cost is trivial; keeps state simpler).
 pub fn find_hough_matches(
     out_matches: &mut Vec<HoughMatch>,
     voting: &HoughSimilarityVoting,
-    all_matches: &[HoughMatch],
+    query_points: &[FeaturePoint],
+    ref_points: &[FeaturePoint],
+    in_matches: &[HoughMatch],
     max_hough_index: i32,
-    _bin_delta: i32,
+    bin_delta: f32,
 ) -> Result<(), KpmError> {
-    let (_max_bx, _max_by, _max_ba, _max_bs) = voting.params.bins_from_index(max_hough_index);
     out_matches.clear();
+    out_matches.reserve(in_matches.len());
 
-    for m in all_matches {
-        // For now, accept all matches (stub: needs FeaturePoint access for real filtering)
-        // This will be properly implemented once we have the actual point data flow
-        out_matches.push(*m);
+    let (max_bx, max_by, max_ba, max_bs) = voting.params.bins_from_index(max_hough_index);
+    let ref_bin_x = max_bx as f32 + 0.5;
+    let ref_bin_y = max_by as f32 + 0.5;
+    let ref_bin_a = max_ba as f32 + 0.5;
+    let ref_bin_s = max_bs as f32 + 0.5;
+    let num_angle_bins = voting.params.num_angle_bins as f32;
+
+    const PI: f32 = std::f32::consts::PI;
+
+    for m in in_matches {
+        let q_pt = &query_points[m.query_idx as usize];
+        let r_pt = &ref_points[m.ref_idx as usize];
+
+        let (x, y, angle, scale) =
+            compute_similarity(q_pt, r_pt, voting.center_x, voting.center_y)?;
+
+        // Skip transformations that fall outside the voting volume — they
+        // contributed no vote, so they cannot be near the winning bin.
+        if x < voting.params.min_x
+            || x >= voting.params.max_x
+            || y < voting.params.min_y
+            || y >= voting.params.max_y
+            || angle <= -PI
+            || angle > PI
+            || scale < voting.params.min_scale
+            || scale >= voting.params.max_scale
+        {
+            continue;
+        }
+
+        let (fb_x, fb_y, fb_angle, fb_scale) = voting.params.map_to_bin(x, y, angle, scale);
+
+        let d_x = (fb_x - ref_bin_x).abs();
+        let d_y = (fb_y - ref_bin_y).abs();
+        let d_s = (fb_scale - ref_bin_s).abs();
+
+        // Angle is circular: shortest distance wraps at num_angle_bins.
+        let d_a_raw = (fb_angle - ref_bin_a).abs();
+        let d_a = d_a_raw.min(num_angle_bins - d_a_raw);
+
+        if d_x < bin_delta && d_y < bin_delta && d_a < bin_delta && d_s < bin_delta {
+            out_matches.push(*m);
+        }
     }
 
     arlog_d!(
-        "find_hough_matches: found {} inliers from {} total matches",
+        "find_hough_matches: retained {} of {} matches within bin_delta={}",
         out_matches.len(),
-        all_matches.len()
+        in_matches.len(),
+        bin_delta
     );
     Ok(())
 }
@@ -718,27 +777,127 @@ mod tests {
     }
 
     #[test]
-    fn test_find_hough_matches() {
+    fn test_find_hough_matches_empty_input() {
+        // With no input matches the output is also empty regardless of bin_delta.
         let params =
             BinParams::new(10, 10, 8, 5, 0.0, 100.0, 0.0, 100.0, 0.5, 2.0, 2.0).expect("valid");
         let voting = HoughSimilarityVoting::new(params, 50.0, 50.0, 200, 200).expect("valid");
+        let query_points: [FeaturePoint; 0] = [];
+        let ref_points: [FeaturePoint; 0] = [];
+        let in_matches: [HoughMatch; 0] = [];
 
-        let all_matches = vec![
+        let mut out = Vec::new();
+        find_hough_matches(
+            &mut out,
+            &voting,
+            &query_points,
+            &ref_points,
+            &in_matches,
+            0,
+            1.0,
+        )
+        .expect("ok");
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn test_find_hough_matches_filters_by_bin_delta() {
+        // Build two matches:
+        //   - match A: query and ref points coincide exactly → similarity is
+        //     pure identity → falls into a specific bin.
+        //   - match B: ref point shifted far enough to land in a completely
+        //     different bin.
+        // Run voting once to discover the winning bin (which is A's bin), then
+        // verify that find_hough_matches retains A and rejects B.
+
+        let params = BinParams::new(
+            12, 12, 12, 10, // bins
+            -100.0, 100.0, // x range
+            -100.0, 100.0, // y range
+            -2.0, 2.0, // log-scale range
+            2.0, // scale_k
+        )
+        .expect("valid");
+        let mut voting = HoughSimilarityVoting::new(params, 0.0, 0.0, 200, 200).expect("valid");
+
+        // Match A: identity transform.
+        let qa = FeaturePoint {
+            x: 10.0,
+            y: 20.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        let ra = FeaturePoint {
+            x: 10.0,
+            y: 20.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        // Match B: large translation → different bin.
+        let qb = FeaturePoint {
+            x: 80.0,
+            y: 80.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        let rb = FeaturePoint {
+            x: 10.0,
+            y: 20.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+
+        let query_pts = vec![qa, qb];
+        let ref_pts = vec![ra, rb];
+
+        // Vote for both (only A succeeds; B may also vote into a different bin).
+        let (xa, ya, aa, sa) =
+            compute_similarity(&qa, &ra, voting.center_x, voting.center_y).unwrap();
+        voting.vote(xa, ya, aa, sa).unwrap();
+        let (xb, yb, ab, sb) =
+            compute_similarity(&qb, &rb, voting.center_x, voting.center_y).unwrap();
+        let _ = voting.vote(xb, yb, ab, sb); // may be in-bounds or not; we don't care here.
+
+        let in_matches = vec![
             HoughMatch {
                 query_idx: 0,
                 ref_idx: 0,
-                distance: 0.1,
+                distance: 0.0,
             },
             HoughMatch {
                 query_idx: 1,
                 ref_idx: 1,
-                distance: 0.2,
+                distance: 0.0,
             },
         ];
 
-        let mut out_matches = Vec::new();
-        let result = find_hough_matches(&mut out_matches, &voting, &all_matches, 0, 2);
-        assert!(result.is_ok());
-        assert_eq!(out_matches.len(), all_matches.len());
+        // Pick A's bin as the winner: recompute its bin index.
+        let (fb_x, fb_y, fb_angle, fb_scale) = voting.params.map_to_bin(xa, ya, aa, sa);
+        let bx = (fb_x - 0.5).floor() as i32;
+        let by = (fb_y - 0.5).floor() as i32;
+        let mut ba = (fb_angle - 0.5).floor() as i32;
+        let bs = (fb_scale - 0.5).floor() as i32;
+        ba = (ba + voting.params.num_angle_bins) % voting.params.num_angle_bins;
+        let winning_idx = voting.params.bin_index(bx, by, ba, bs);
+
+        let mut out = Vec::new();
+        find_hough_matches(
+            &mut out,
+            &voting,
+            &query_pts,
+            &ref_pts,
+            &in_matches,
+            winning_idx,
+            1.0,
+        )
+        .expect("ok");
+
+        // A must be retained; B must not.
+        assert_eq!(out.len(), 1, "expected exactly 1 retained match");
+        assert_eq!(out[0].query_idx, 0);
     }
 }
