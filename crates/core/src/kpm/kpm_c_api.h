@@ -223,6 +223,26 @@ int webarkit_cpp_match_features_guided(
     const float* h, float tr, float threshold,
     int* ins_out, int* ref_out);
 
+/* ---- Dual-mode validation: BHC bridge with Keyframe::buildIndex settings
+ *      (Milestone 9, #146) ----
+ *
+ * Build a vision::BinaryHierarchicalClustering<96> from `features` (a flat
+ * array of `num_features * 96` bytes), configured with the four parameters
+ * mirroring C++ `Keyframe<>::buildIndex` (keyframe.h:116-122). Query it once
+ * with `query_feat` (96 bytes) and write up to `num_features` returned
+ * candidate indices into `out_indices`.
+ *
+ * Returns the number of indices written (>= 0) or -1 on error.
+ *
+ * Used by `bhc_with_keyframe_settings_matches_cpp` in clustering.rs to
+ * isolate BHC parity from the full VisualDatabase pipeline. */
+int webarkit_cpp_bhc_build_and_query_with_settings(
+    const unsigned char* features, int num_features,
+    int num_hypotheses, int num_centers,
+    int max_nodes_to_pop, int min_features_per_node,
+    const unsigned char* query_feat,
+    int* out_indices);
+
 /* ---- Dual-mode validation: PRNG bridges (Milestone 7, #116) ---- */
 
 /* Thin wrappers around vision::FastRandom and vision::ArrayShuffle from
