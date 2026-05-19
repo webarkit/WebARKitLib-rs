@@ -85,7 +85,7 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "simple_nft"
-required-features = ["ffi-backend"]
+required-features = ["ffi-backend", "log-helpers"]
 
 [[example]]
 name = "load_nft"
