@@ -496,6 +496,39 @@ int webarkit_cpp_match_features_guided(
     return copy_matches(matcher.matches(), ins_out, ref_out);
 }
 
+/* ---- Dual-mode validation: BHC bridge with Keyframe::buildIndex settings
+ *      (Milestone 9, #146) ---- */
+
+int webarkit_cpp_bhc_build_and_query_with_settings(
+    const unsigned char* features, int num_features,
+    int num_hypotheses, int num_centers,
+    int max_nodes_to_pop, int min_features_per_node,
+    const unsigned char* query_feat,
+    int* out_indices) {
+    if (!features || num_features <= 0 ||
+        !query_feat || !out_indices ||
+        num_hypotheses <= 0 || num_centers <= 0 || min_features_per_node <= 0) {
+        return -1;
+    }
+
+    vision::BinaryHierarchicalClustering<96> bhc;
+    bhc.setNumHypotheses(num_hypotheses);
+    bhc.setNumCenters(num_centers);
+    bhc.setMaxNodesToPop(max_nodes_to_pop);
+    bhc.setMinFeaturesPerNode(min_features_per_node);
+
+    bhc.build(features, num_features);
+    bhc.query(query_feat);
+
+    const std::vector<int>& indices = bhc.reverseIndex();
+    int n = static_cast<int>(indices.size());
+    if (n > num_features) n = num_features; // safety cap on caller-allocated buffer
+    for (int i = 0; i < n; i++) {
+        out_indices[i] = indices[i];
+    }
+    return n;
+}
+
 /* ---- Dual-mode validation: PRNG bridges (Milestone 7, #116) ---- */
 
 /* Thin wrappers around vision::FastRandom and vision::ArrayShuffle from
