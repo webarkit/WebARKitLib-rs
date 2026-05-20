@@ -45,16 +45,21 @@ use crate::kpm::backend::KpmError;
 use crate::{arlog_d, arlog_e, arlog_i};
 use std::collections::HashMap;
 
+use super::math::{fast_median_f32, safe_division_f32};
+
 /// Minimum number of votes required for a bin to be considered a valid result.
 const MIN_VOTES_THRESHOLD: i32 = 3;
 
 /// Encapsulates bin discretization parameters and provides bin calculation utilities.
 #[derive(Clone)]
 pub struct BinParams {
-    /// Number of bins for x translation.
-    pub num_x_bins: i32,
-    /// Number of bins for y translation.
-    pub num_y_bins: i32,
+    /// Number of bins for x translation. Private since M9 #150 because
+    /// auto-adjust mutates this and the dependent `a` / `b` strides must
+    /// stay in sync — see [`Self::set_xy_bins`]. Read via [`Self::num_x_bins`].
+    num_x_bins: i32,
+    /// Number of bins for y translation. See [`num_x_bins`] for the
+    /// visibility rationale.
+    num_y_bins: i32,
     /// Number of bins for angle (rotation).
     pub num_angle_bins: i32,
     /// Number of bins for scale.
@@ -79,6 +84,12 @@ pub struct BinParams {
     a: i32,
     /// Precomputed stride: a * num_angle_bins
     b: i32,
+    /// When true, [`HoughSimilarityVoting::recompute_xy_bins_from_matches`]
+    /// recomputes `num_x_bins` / `num_y_bins` from the median projected
+    /// dimension of input matches before each voting pass. Mirrors C++
+    /// `mAutoAdjustXYNumBins` (set by `init` when both numXBins and
+    /// numYBins are 0). Set by [`Self::new_auto_xy`], cleared by [`Self::new`].
+    pub(crate) auto_adjust_xy: bool,
 }
 
 impl BinParams {
@@ -186,7 +197,74 @@ impl BinParams {
             scale_one_over_log_k,
             a,
             b,
+            auto_adjust_xy: false,
         })
+    }
+
+    /// Construct a `BinParams` with auto-adjusting x/y bins.
+    ///
+    /// `num_x_bins` and `num_y_bins` are initialised to 5 (the minimum
+    /// clamp value used by [`HoughSimilarityVoting::recompute_xy_bins_from_matches`])
+    /// so the BinParams is in a valid state even before any votes are cast.
+    /// Before each voting pass, the voter recomputes both bin counts from
+    /// the median projected dimension of the input matches.
+    ///
+    /// Mirrors C++ `HoughSimilarityVoting::init(min_x, max_x, min_y, max_y,
+    /// 0, 0, num_angle_bins, num_scale_bins)` from
+    /// `hough_similarity_voting.cpp:95-99`, where `numXBins == 0 &&
+    /// numYBins == 0` toggles `mAutoAdjustXYNumBins = true`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_auto_xy(
+        num_angle_bins: i32,
+        num_scale_bins: i32,
+        min_x: f32,
+        max_x: f32,
+        min_y: f32,
+        max_y: f32,
+        min_scale: f32,
+        max_scale: f32,
+        scale_k: f32,
+    ) -> Result<Self, KpmError> {
+        // Initial bin count = clamp floor. recompute_xy_bins_from_matches will
+        // replace these before the first vote.
+        let mut params = Self::new(
+            5,
+            5,
+            num_angle_bins,
+            num_scale_bins,
+            min_x,
+            max_x,
+            min_y,
+            max_y,
+            min_scale,
+            max_scale,
+            scale_k,
+        )?;
+        params.auto_adjust_xy = true;
+        Ok(params)
+    }
+
+    /// Number of x bins (read-only accessor; mutated atomically with
+    /// [`num_y_bins`] via [`set_xy_bins`]).
+    #[inline]
+    pub fn num_x_bins(&self) -> i32 {
+        self.num_x_bins
+    }
+
+    /// Number of y bins (read-only accessor).
+    #[inline]
+    pub fn num_y_bins(&self) -> i32 {
+        self.num_y_bins
+    }
+
+    /// Atomically update both x/y bin counts and recompute the dependent
+    /// strides `a` and `b`. Crate-private — only called by
+    /// [`HoughSimilarityVoting::recompute_xy_bins_from_matches`].
+    pub(crate) fn set_xy_bins(&mut self, num_x_bins: i32, num_y_bins: i32) {
+        self.num_x_bins = num_x_bins;
+        self.num_y_bins = num_y_bins;
+        self.a = num_x_bins * num_y_bins;
+        self.b = self.a * self.num_angle_bins;
     }
 
     /// Maps a transformation vote to floating-point bin coordinates.
@@ -361,6 +439,68 @@ impl HoughSimilarityVoting {
             .map(|(&idx, &count)| (idx, count))
     }
 
+    /// Recompute `num_x_bins` / `num_y_bins` from the median projected
+    /// dimension of the input matches.
+    ///
+    /// For each match, the "projected dimension" is
+    /// `safe_division(query_scale, ref_scale) * max(ref_image_width, ref_image_height)`.
+    /// The bin size is `0.25 × median(projected_dim)`, and the bin count
+    /// along each axis is `ceil((max - min) / bin_size)`, clamped to a
+    /// minimum of 5.
+    ///
+    /// Mirrors C++ `HoughSimilarityVoting::autoAdjustXYNumBins`
+    /// (`hough_similarity_voting.cpp:204-236`). Called from
+    /// [`find_hough_similarity`] when [`BinParams::auto_adjust_xy`] is true.
+    ///
+    /// A no-op if `matches` is empty (preserves the current 5×5 default).
+    pub(crate) fn recompute_xy_bins_from_matches(
+        &mut self,
+        query_points: &[FeaturePoint],
+        ref_points: &[FeaturePoint],
+        matches: &[HoughMatch],
+    ) -> Result<(), KpmError> {
+        if matches.is_empty() {
+            arlog_d!("recompute_xy_bins_from_matches: no matches, keeping current bin count");
+            return Ok(());
+        }
+
+        let max_dim = self.ref_image_width.max(self.ref_image_height) as f32;
+        let mut projected_dim: Vec<f32> = matches
+            .iter()
+            .map(|m| {
+                let q_scale = query_points[m.query_idx as usize].scale;
+                let r_scale = ref_points[m.ref_idx as usize].scale;
+                let scale = safe_division_f32(q_scale, r_scale);
+                scale * max_dim
+            })
+            .collect();
+
+        let median = fast_median_f32(&mut projected_dim);
+        let bin_size = 0.25 * median;
+        if bin_size <= 0.0 || !bin_size.is_finite() {
+            arlog_d!(
+                "recompute_xy_bins_from_matches: degenerate bin_size={}, keeping current bins",
+                bin_size
+            );
+            return Ok(());
+        }
+
+        let raw_x = ((self.params.max_x - self.params.min_x) / bin_size).ceil() as i32;
+        let raw_y = ((self.params.max_y - self.params.min_y) / bin_size).ceil() as i32;
+        let new_x = raw_x.max(5);
+        let new_y = raw_y.max(5);
+        self.params.set_xy_bins(new_x, new_y);
+
+        arlog_d!(
+            "recompute_xy_bins_from_matches: median={}, bin_size={}, bins=({}, {})",
+            median,
+            bin_size,
+            new_x,
+            new_y
+        );
+        Ok(())
+    }
+
     /// Converts a bin index to the corresponding similarity transformation.
     ///
     /// C++ equivalent: `getSimilarityFromIndex`
@@ -493,6 +633,13 @@ pub fn find_hough_similarity(
         return Err(KpmError::InvalidInput(
             "insufficient votes for feature matching".into(),
         ));
+    }
+
+    // M9 #150: auto-adjust x/y bin counts from the median projected
+    // dimension of the input matches. Mirrors C++ vote() invoking
+    // autoAdjustXYNumBins when mAutoAdjustXYNumBins is true.
+    if voting.params.auto_adjust_xy {
+        voting.recompute_xy_bins_from_matches(query_points, ref_points, matches)?;
     }
 
     voting.reset();
@@ -679,6 +826,135 @@ mod tests {
             .expect("valid params");
         assert_eq!(params.a, 100);
         assert_eq!(params.b, 800);
+        assert!(!params.auto_adjust_xy, "new() must keep auto-adjust off");
+    }
+
+    // ------------------------------------------------------------------
+    // M9 #150: auto-adjust factory + atomic stride mutator
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_bin_params_new_auto_xy_initial_state() {
+        let p = BinParams::new_auto_xy(12, 10, -100.0, 100.0, -100.0, 100.0, -1.0, 1.0, 10.0)
+            .expect("valid auto-xy params");
+        assert_eq!(p.num_x_bins(), 5, "initial x bins = clamp floor");
+        assert_eq!(p.num_y_bins(), 5, "initial y bins = clamp floor");
+        assert!(p.auto_adjust_xy, "new_auto_xy must set the flag");
+        // Strides reflect the initial 5×5 grid.
+        assert_eq!(p.a, 25);
+        assert_eq!(p.b, 25 * 12);
+    }
+
+    #[test]
+    fn test_bin_params_set_xy_bins_updates_strides_atomically() {
+        let mut p =
+            BinParams::new_auto_xy(12, 10, -100.0, 100.0, -100.0, 100.0, -1.0, 1.0, 10.0).unwrap();
+        p.set_xy_bins(13, 17);
+        assert_eq!(p.num_x_bins(), 13);
+        assert_eq!(p.num_y_bins(), 17);
+        assert_eq!(p.a, 13 * 17, "a stride must update");
+        assert_eq!(p.b, 13 * 17 * 12, "b stride must update");
+    }
+
+    #[test]
+    fn test_recompute_xy_bins_from_matches_known_input() {
+        // Construct a voter with simple parameters:
+        //   ref_image_width = ref_image_height = 100 → max_dim = 100
+        //   min_x..max_x = -100..100 (span = 200)
+        //   min_y..max_y = -100..100 (span = 200)
+        // All matches have ins_scale == ref_scale == 1.0, so
+        //   safe_division = 1.0, projected_dim = 1.0 * 100 = 100 for each.
+        // C++ FastMedian on [100, 100, 100, 100, 100] (n=5) returns the
+        //   2nd smallest = 100.
+        // bin_size = 0.25 * 100 = 25
+        // num_x_bins = ceil(200 / 25) = 8, num_y_bins = 8.
+        let params =
+            BinParams::new_auto_xy(12, 10, -100.0, 100.0, -100.0, 100.0, -1.0, 1.0, 10.0).unwrap();
+        let mut voter = HoughSimilarityVoting::new(params, 50.0, 50.0, 100, 100).unwrap();
+
+        let pt = FeaturePoint {
+            x: 0.0,
+            y: 0.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        let query = vec![pt; 5];
+        let refs = vec![pt; 5];
+        let matches: Vec<HoughMatch> = (0..5)
+            .map(|i| HoughMatch {
+                query_idx: i,
+                ref_idx: i,
+                distance: 0.0,
+            })
+            .collect();
+
+        voter
+            .recompute_xy_bins_from_matches(&query, &refs, &matches)
+            .unwrap();
+        assert_eq!(voter.params.num_x_bins(), 8);
+        assert_eq!(voter.params.num_y_bins(), 8);
+    }
+
+    #[test]
+    fn test_recompute_xy_bins_from_matches_clamps_at_5() {
+        // Degenerate case: huge projected dimensions → ceil((max-min)/bin_size)
+        // becomes < 5. Verify clamp to 5.
+        // Use a tiny range relative to max_dim:
+        //   ref_image dims = 10000 → max_dim = 10000
+        //   range = 100 (small)
+        //   all scales = 1.0 → projected_dim = 10000
+        //   bin_size = 2500
+        //   raw_x = ceil(100 / 2500) = 1 → clamps to 5.
+        let params =
+            BinParams::new_auto_xy(12, 10, -50.0, 50.0, -50.0, 50.0, -1.0, 1.0, 10.0).unwrap();
+        let mut voter = HoughSimilarityVoting::new(params, 0.0, 0.0, 10000, 10000).unwrap();
+
+        let pt = FeaturePoint {
+            x: 0.0,
+            y: 0.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        let query = vec![pt; 3];
+        let refs = vec![pt; 3];
+        let matches: Vec<HoughMatch> = (0..3)
+            .map(|i| HoughMatch {
+                query_idx: i,
+                ref_idx: i,
+                distance: 0.0,
+            })
+            .collect();
+
+        voter
+            .recompute_xy_bins_from_matches(&query, &refs, &matches)
+            .unwrap();
+        assert_eq!(voter.params.num_x_bins(), 5, "must clamp to floor of 5");
+        assert_eq!(voter.params.num_y_bins(), 5, "must clamp to floor of 5");
+    }
+
+    #[test]
+    fn test_recompute_xy_bins_from_matches_empty_is_noop() {
+        let params =
+            BinParams::new_auto_xy(12, 10, -100.0, 100.0, -100.0, 100.0, -1.0, 1.0, 10.0).unwrap();
+        let mut voter = HoughSimilarityVoting::new(params, 50.0, 50.0, 100, 100).unwrap();
+
+        let initial_x = voter.params.num_x_bins();
+        let initial_y = voter.params.num_y_bins();
+
+        voter.recompute_xy_bins_from_matches(&[], &[], &[]).unwrap();
+
+        assert_eq!(
+            voter.params.num_x_bins(),
+            initial_x,
+            "empty must not mutate"
+        );
+        assert_eq!(
+            voter.params.num_y_bins(),
+            initial_y,
+            "empty must not mutate"
+        );
     }
 
     #[test]
@@ -899,5 +1175,158 @@ mod tests {
         // A must be retained; B must not.
         assert_eq!(out.len(), 1, "expected exactly 1 retained match");
         assert_eq!(out[0].query_idx, 0);
+    }
+}
+
+// ============================================================================
+// Dual-mode validation against the C++ baseline (Milestone 9, #150)
+// ============================================================================
+//
+// Verifies that the Rust `recompute_xy_bins_from_matches` produces
+// byte-identical `(num_x_bins, num_y_bins)` to C++ `autoAdjustXYNumBins`
+// for the same seeded random inputs. Isolates the auto-adjust parity at
+// the algorithm level, separately from the end-to-end VisualDatabase
+// parity gate in `visual_database.rs`.
+
+#[cfg(feature = "dual-mode")]
+extern "C" {
+    /// M9 #150: reimplementation of `HoughSimilarityVoting::autoAdjustXYNumBins`
+    /// in `kpm_c_api.cpp` (the C++ method is private, so the shim ports the
+    /// formula using public `vision::SafeDivision` + `vision::FastMedian`).
+    /// See `kpm_c_api.h` for full doc.
+    #[allow(clippy::too_many_arguments)]
+    fn webarkit_cpp_auto_adjust_xy_num_bins(
+        ins: *const f32,
+        ref_pts: *const f32,
+        size: i32,
+        ref_image_width: i32,
+        ref_image_height: i32,
+        min_x: f32,
+        max_x: f32,
+        min_y: f32,
+        max_y: f32,
+        num_angle_bins: i32,
+        num_scale_bins: i32,
+        out_num_x_bins: *mut i32,
+        out_num_y_bins: *mut i32,
+    ) -> i32;
+}
+
+#[cfg(all(test, feature = "dual-mode"))]
+mod dual_mode_tests {
+    use super::*;
+    use rand::rngs::StdRng;
+    use rand::{Rng, SeedableRng};
+
+    /// Sweep seeded random match pairs through both Rust and C++
+    /// auto-adjust paths and assert byte-identical `(num_x_bins, num_y_bins)`.
+    #[test]
+    fn auto_adjust_xy_num_bins_matches_cpp() {
+        let mut rng = StdRng::seed_from_u64(0xABCDEF01u64);
+        let num_angle_bins = 12i32;
+        let num_scale_bins = 10i32;
+
+        for trial in 0..40 {
+            let size = rng.random_range(5..=300);
+            let ref_w = rng.random_range(200..=2000);
+            let ref_h = rng.random_range(200..=2000);
+            let half_dx = rng.random_range(100.0_f32..3000.0);
+            let half_dy = rng.random_range(100.0_f32..3000.0);
+
+            // Build seeded match pairs. We only read [3] (scale) so the
+            // other fields are arbitrary noise. ins and ref are flat
+            // arrays of (x, y, angle, scale) — 4 floats per match.
+            let mut ins = vec![0.0_f32; (size * 4) as usize];
+            let mut refs = vec![0.0_f32; (size * 4) as usize];
+            for i in 0..size as usize {
+                ins[i * 4 + 3] = rng.random_range(0.1_f32..10.0);
+                refs[i * 4 + 3] = rng.random_range(0.1_f32..10.0);
+            }
+
+            // ----- Rust path -----
+            // We exercise the Rust code via the public-ish hooks: build a
+            // BinParams with new_auto_xy, a HoughSimilarityVoting, then
+            // call recompute_xy_bins_from_matches directly with synthetic
+            // FeaturePoint + HoughMatch arrays whose `scale` reads pull
+            // from the same source data.
+            let params = BinParams::new_auto_xy(
+                num_angle_bins,
+                num_scale_bins,
+                -half_dx,
+                half_dx,
+                -half_dy,
+                half_dy,
+                -1.0,
+                1.0,
+                10.0,
+            )
+            .unwrap();
+            let mut voter = HoughSimilarityVoting::new(params, 0.0, 0.0, ref_w, ref_h).unwrap();
+
+            // Inflate ins/refs into FeaturePoint arrays (only `scale` matters).
+            let query_pts: Vec<FeaturePoint> = (0..size as usize)
+                .map(|i| FeaturePoint {
+                    x: 0.0,
+                    y: 0.0,
+                    angle: 0.0,
+                    scale: ins[i * 4 + 3],
+                    maxima: true,
+                })
+                .collect();
+            let ref_pts: Vec<FeaturePoint> = (0..size as usize)
+                .map(|i| FeaturePoint {
+                    x: 0.0,
+                    y: 0.0,
+                    angle: 0.0,
+                    scale: refs[i * 4 + 3],
+                    maxima: true,
+                })
+                .collect();
+            let matches: Vec<HoughMatch> = (0..size as u32)
+                .map(|i| HoughMatch {
+                    query_idx: i,
+                    ref_idx: i,
+                    distance: 0.0,
+                })
+                .collect();
+            voter
+                .recompute_xy_bins_from_matches(&query_pts, &ref_pts, &matches)
+                .unwrap();
+            let rust_x = voter.params.num_x_bins();
+            let rust_y = voter.params.num_y_bins();
+
+            // ----- C++ path -----
+            let mut cpp_x = 0i32;
+            let mut cpp_y = 0i32;
+            let rc = unsafe {
+                webarkit_cpp_auto_adjust_xy_num_bins(
+                    ins.as_ptr(),
+                    refs.as_ptr(),
+                    size,
+                    ref_w,
+                    ref_h,
+                    -half_dx,
+                    half_dx,
+                    -half_dy,
+                    half_dy,
+                    num_angle_bins,
+                    num_scale_bins,
+                    &mut cpp_x,
+                    &mut cpp_y,
+                )
+            };
+            assert_eq!(rc, 0, "trial {}: C++ shim returned error", trial);
+
+            assert_eq!(
+                rust_x, cpp_x,
+                "trial {} (size={}, ref={}x{}): num_x_bins rust={} cpp={}",
+                trial, size, ref_w, ref_h, rust_x, cpp_x
+            );
+            assert_eq!(
+                rust_y, cpp_y,
+                "trial {} (size={}, ref={}x{}): num_y_bins rust={} cpp={}",
+                trial, size, ref_w, ref_h, rust_y, cpp_y
+            );
+        }
     }
 }
