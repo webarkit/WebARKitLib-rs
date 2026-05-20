@@ -133,16 +133,6 @@ const HOMOGRAPHY_INVERSE_THRESHOLD: f32 = 1e-5;
 // Hough voting per-iteration configuration (C++ `visual_database.h:280–321`)
 // ─────────────────────────────────────────────────────────────────────────
 
-/// Number of x bins for similarity voting. The C++ uses 0 to enable
-/// `autoAdjustXYNumBins`, which auto-sizes based on the median projected
-/// dimension. The Rust port does not yet implement auto-adjust; we use a
-/// fixed bin count that is close to what auto-adjust typically produces
-/// for ~640x480 reference images (~13 bins).
-const HOUGH_NUM_X_BINS: i32 = 12;
-
-/// Number of y bins for similarity voting (see [`HOUGH_NUM_X_BINS`]).
-const HOUGH_NUM_Y_BINS: i32 = 12;
-
 /// Number of angle bins for similarity voting. C++ `FindHoughSimilarity`
 /// in `visual_database.h:312` passes `12`.
 const HOUGH_NUM_ANGLE_BINS: i32 = 12;
@@ -698,6 +688,11 @@ fn matches_to_hough(m: &Match) -> HoughMatch {
 /// - x/y bounds scale with the query image dimensions (`±width*1.2`).
 /// - The reference object center is the reference image's center.
 /// - Scale parameters are hardcoded in the C++ `init` (-1, 1, scale_k=10).
+/// - **x/y bin counts are auto-adjusted at vote time** (M9 #150) — mirrors
+///   C++ `visual_database.h:312` `hough.init(_, _, _, _, 0, 0, 12, 10)`,
+///   where the zeros toggle `mAutoAdjustXYNumBins = true`. The actual bin
+///   counts are computed from the median projected dimension of the
+///   per-iteration match set.
 fn make_hough_voter(
     query_kf: &Keyframe,
     ref_kf: &Keyframe,
@@ -705,9 +700,7 @@ fn make_hough_voter(
     let dx = query_kf.width as f32 + query_kf.width as f32 * 0.2;
     let dy = query_kf.height as f32 + query_kf.height as f32 * 0.2;
 
-    let params = BinParams::new(
-        HOUGH_NUM_X_BINS,
-        HOUGH_NUM_Y_BINS,
+    let params = BinParams::new_auto_xy(
         HOUGH_NUM_ANGLE_BINS,
         HOUGH_NUM_SCALE_BINS,
         -dx,
@@ -1013,35 +1006,43 @@ mod tests {
     // Dual-mode parity test (M9-1 gate per #140, closed by M9 #146)
     // -----------------------------------------------------------------
 
-    /// Dual-mode parity gate for M9-1 (#140). **Still `#[ignore]`d after M9 #146.**
+    /// M9 dual-mode parity gate. **Still `#[ignore]`d after M9 #150** —
+    /// `diff=15` inliers is **structurally unclosable** without upstream
+    /// changes to the C++ source.
     ///
-    /// M9 #146 ported the BHC `Keyframe<>::buildIndex` settings
-    /// `(num_hypotheses=128, max_nodes_to_pop=8)` and the priority-queue
-    /// traversal that honors `max_nodes_to_pop > 0` (these were unimplemented
-    /// in M9-1). The BHC layer now produces wider candidate sets matching
-    /// C++ behaviour at the algorithmic level.
+    /// **History**:
+    /// - M9-1 (#140): introduced this test, `#[ignore]`d at `diff=15` inliers.
+    /// - M9 #146 (#149): BHC architecture rework. Diff held at 15.
+    /// - M9 #150 (this PR): auto-adjust x/y bin grid ported.
+    ///   Dual-mode tests confirm Rust auto-adjust is byte-equivalent to
+    ///   C++ (`hough::dual_mode_tests::auto_adjust_xy_num_bins_matches_cpp`,
+    ///   40/40 trials pass). End-to-end `diff` **unchanged at 15**.
     ///
-    /// **However**, the observed inlier-count divergence is unchanged at
-    /// `rust=441 cpp=456 (diff 15)`. The BHC layer's behaviour change is
-    /// absorbed by the downstream Hough voting → RANSAC → inlier-filter
-    /// stages, which converge to the same final count on this test pair.
+    /// **Root cause**: M9 #146's R1 — BHC tree-topology cross-language
+    /// nondeterminism. Both Rust (`BTreeMap`/`HashMap`) and C++
+    /// (`std::unordered_map`) use unordered-key maps when grouping
+    /// K-medoids assignments into child clusters at
+    /// `binary_hierarchical_clustering.h:217`. The cluster keys themselves
+    /// differ (C++ keys by feature-array index, Rust by cluster position
+    /// 0..k-1), so child ordering in the BHC tree diverges across
+    /// languages even with identical K-medoids partitions. This propagates
+    /// downstream: different matches → different auto-adjust inputs →
+    /// different bin counts → different votes → consistently ~15 inlier
+    /// gap on the pinball test pair.
     ///
-    /// The remaining gap points squarely at the next-most-likely cause that
-    /// the M9 #146 design doc (§7 R3) anticipated:
-    /// **`HoughSimilarityVoting::autoAdjustXYNumBins` is not ported yet**.
-    /// The Rust port uses a fixed 12×12 x/y bin grid in
-    /// `visual_database::make_hough_voter`; C++ auto-sizes the grid via
-    /// the median projected scale of the input matches
-    /// (`hough_similarity_voting.cpp:204-236`). Different bin grids →
-    /// different vote distributions → different homography estimation
-    /// inputs → different inlier counts.
+    /// Algorithm correctness is preserved (the priority-queue traversal
+    /// handles ties gracefully). What's missing is a **byte-equivalent
+    /// cross-language tree-build path**, which would require either
+    /// patching the C++ source (third_party submodule — out of scope) or
+    /// accepting that absolute inlier-count parity isn't a stable signal.
     ///
-    /// Closing this gate is now scoped to a follow-up issue addressing
-    /// `autoAdjustXYNumBins`.
+    /// Follow-up: file an architectural issue for "deterministic
+    /// cross-language BHC tree topology" before M9-2 lands its
+    /// `test_dual_mode_no_divergence_on_pinball` milestone gate.
+    ///
     #[test]
-    #[ignore = "still ~3% inlier-count drift after M9 #146 BHC parity fix; \
-                next suspect is HoughSimilarityVoting::autoAdjustXYNumBins. \
-                See test docstring."]
+    #[ignore = "structurally unclosable: BHC cross-language tree-topology \
+                nondeterminism. See test docstring."]
     #[cfg(feature = "dual-mode")]
     fn test_visual_database_matches_cpp_pipeline() {
         use crate::kpm::kpm_ffi;

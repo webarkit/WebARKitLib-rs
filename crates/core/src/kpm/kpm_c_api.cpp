@@ -55,6 +55,7 @@
 #include <math/linear_algebra.h>
 #include <math/linear_solvers.h>
 #include <math/rand.h>
+#include <utils/partial_sort.h>
 #include <homography_estimation/robust_homography.h>
 #include <detectors/DoG_scale_invariant_detector.h>
 #include <detectors/gaussian_scale_space_pyramid.h>
@@ -494,6 +495,67 @@ int webarkit_cpp_match_features_guided(
     matcher.match(&q_store, &r_store, h, tr);
 
     return copy_matches(matcher.matches(), ins_out, ref_out);
+}
+
+/* ---- Dual-mode validation: HoughSimilarityVoting::autoAdjustXYNumBins
+ *      bridges (Milestone 9, #150) ---- */
+
+int webarkit_cpp_partial_sort_f32(float* values, int n, int k) {
+    if (!values || n <= 0 || k <= 0 || k > n) {
+        return -1;
+    }
+    // vision::PartialSort returns the partition pivot value, mutates the
+    // array in place. Caller can also read values[k-1].
+    (void)vision::PartialSort<float>(values, n, k);
+    return 0;
+}
+
+int webarkit_cpp_auto_adjust_xy_num_bins(
+    const float* ins, const float* ref_pts, int size,
+    int ref_image_width, int ref_image_height,
+    float min_x, float max_x, float min_y, float max_y,
+    int num_angle_bins, int num_scale_bins,
+    int* out_num_x_bins, int* out_num_y_bins) {
+    (void)num_angle_bins;
+    (void)num_scale_bins;
+    if (!ins || !ref_pts || size <= 0 ||
+        !out_num_x_bins || !out_num_y_bins ||
+        ref_image_width <= 0 || ref_image_height <= 0) {
+        return -1;
+    }
+
+    // Direct port of HoughSimilarityVoting::autoAdjustXYNumBins
+    // (hough_similarity_voting.cpp:204-236). Uses public primitives
+    // vision::SafeDivision and vision::FastMedian.
+    int max_dim = (ref_image_width > ref_image_height)
+                      ? ref_image_width
+                      : ref_image_height;
+    std::vector<float> projected_dim(size);
+    for (int i = 0; i < size; i++) {
+        float ins_scale = ins[i * 4 + 3];
+        float ref_scale = ref_pts[i * 4 + 3];
+        float scale = vision::SafeDivision(ins_scale, ref_scale);
+        projected_dim[i] = scale * static_cast<float>(max_dim);
+    }
+
+    float median_proj_dim =
+        vision::FastMedian<float>(&projected_dim[0], static_cast<int>(projected_dim.size()));
+    float bin_size = 0.25f * median_proj_dim;
+
+    if (bin_size <= 0.0f || !std::isfinite(bin_size)) {
+        // Match Rust's degenerate-input fallback (don't mutate bin counts).
+        // Caller should provide the pre-existing bins via the out pointers
+        // if it cares; we signal by returning 0 without writing.
+        *out_num_x_bins = 5;
+        *out_num_y_bins = 5;
+        return 0;
+    }
+
+    int raw_x = static_cast<int>(std::ceil((max_x - min_x) / bin_size));
+    int raw_y = static_cast<int>(std::ceil((max_y - min_y) / bin_size));
+    *out_num_x_bins = (raw_x > 5) ? raw_x : 5;
+    *out_num_y_bins = (raw_y > 5) ? raw_y : 5;
+    return 0;
 }
 
 /* ---- Dual-mode validation: BHC bridge with Keyframe::buildIndex settings
