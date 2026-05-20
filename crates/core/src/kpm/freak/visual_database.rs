@@ -1006,60 +1006,84 @@ mod tests {
     // Dual-mode parity test (M9-1 gate per #140, closed by M9 #146)
     // -----------------------------------------------------------------
 
-    /// M9 dual-mode parity gate. **Still `#[ignore]`d after M9 #150** —
-    /// `diff=15` inliers is **structurally unclosable** without upstream
-    /// changes to the C++ source.
+    /// Project the four corners of a reference image of size `(w, h_dim)`
+    /// through the given 3×3 row-major homography. Returns the projected
+    /// points in order: top-left, top-right, bottom-right, bottom-left.
     ///
-    /// **History**:
-    /// - M9-1 (#140): introduced this test, `#[ignore]`d at `diff=15` inliers.
-    /// - M9 #146 (#149): BHC architecture rework. Diff held at 15.
-    /// - M9 #150 (this PR): auto-adjust x/y bin grid ported.
-    ///   Dual-mode tests confirm Rust auto-adjust is byte-equivalent to
-    ///   C++ (`hough::dual_mode_tests::auto_adjust_xy_num_bins_matches_cpp`,
-    ///   40/40 trials pass). End-to-end `diff` **unchanged at 15**.
+    /// Used by [`test_visual_database_matches_cpp_pipeline`] to measure
+    /// how differently the Rust vs C++ pipelines warp the reference image
+    /// — a metric intrinsically invariant to BHC tree-topology
+    /// cross-language nondeterminism (M9 #146 R1).
+    #[cfg(feature = "dual-mode")]
+    fn reproject_corners(h: &[f32; 9], w: i32, h_dim: i32) -> [[f32; 2]; 4] {
+        let corners: [[f32; 2]; 4] = [
+            [0.0, 0.0],
+            [w as f32, 0.0],
+            [w as f32, h_dim as f32],
+            [0.0, h_dim as f32],
+        ];
+        let mut out = [[0.0_f32; 2]; 4];
+        for (i, c) in corners.iter().enumerate() {
+            multiply_point_homography_inhomogenous(&mut out[i], h, c);
+        }
+        out
+    }
+
+    /// M9 dual-mode parity gate.
     ///
-    /// **Root cause**: M9 #146's R1 — BHC tree-topology cross-language
-    /// nondeterminism. Both Rust (`BTreeMap`/`HashMap`) and C++
-    /// (`std::unordered_map`) use unordered-key maps when grouping
-    /// K-medoids assignments into child clusters at
-    /// `binary_hierarchical_clustering.h:217`. The cluster keys themselves
-    /// differ (C++ keys by feature-array index, Rust by cluster position
-    /// 0..k-1), so child ordering in the BHC tree diverges across
-    /// languages even with identical K-medoids partitions. This propagates
-    /// downstream: different matches → different auto-adjust inputs →
-    /// different bin counts → different votes → consistently ~15 inlier
-    /// gap on the pinball test pair.
+    /// Asserts that the Rust and C++ pipelines warp the reference image
+    /// into the same query-image region within a few pixels of agreement
+    /// — a metric intrinsically invariant to BHC tree-topology
+    /// cross-language nondeterminism (M9 #146 R1).
     ///
-    /// Algorithm correctness is preserved (the priority-queue traversal
-    /// handles ties gracefully). What's missing is a **byte-equivalent
-    /// cross-language tree-build path**, which would require either
-    /// patching the C++ source (third_party submodule — out of scope) or
-    /// accepting that absolute inlier-count parity isn't a stable signal.
+    /// **History**: introduced in M9-1 (#140) with a `±5 inliers`
+    /// absolute-count assertion that proved structurally unclosable
+    /// across three PRs of algorithmic fixes (#145, #149, #151), each
+    /// verified byte-equivalent to C++ at the unit level via dedicated
+    /// dual-mode FFI tests. The residual gap (`diff=15`) was diagnosed as
+    /// BHC tree-topology nondeterminism — both languages use unordered-key
+    /// maps when grouping K-medoids assignments into child clusters during
+    /// BHC build (`binary_hierarchical_clustering.h:217`). Algorithm
+    /// correctness was preserved throughout. M9 #152 (this rewrite)
+    /// redefines the metric to be intrinsically invariant to that
+    /// variance: corner reprojection error rather than absolute inlier
+    /// count.
     ///
-    /// Follow-up: file an architectural issue for "deterministic
-    /// cross-language BHC tree topology" before M9-2 lands its
-    /// `test_dual_mode_no_divergence_on_pinball` milestone gate.
+    /// **Metric**: project the 4 reference corners through both
+    /// homographies (Rust's `matched_geometry` and C++'s `pose_out[0..9]`,
+    /// which is the same 3×3 homography per `kpm_c_api.cpp:156-166`).
+    /// Compute Euclidean distance between each corresponding pair.
+    /// Assert `max <= TOLERANCE_PX`.
     ///
+    /// **Tolerance**: set per M9 #146 Decision 10 (`max(2.0, observed)`)
+    /// with a 5 px ceiling. If observed > 5 px, investigate before
+    /// merging — see [`docs/design/m9-parity-metric.md`].
     #[test]
-    #[ignore = "structurally unclosable: BHC cross-language tree-topology \
-                nondeterminism. See test docstring."]
     #[cfg(feature = "dual-mode")]
     fn test_visual_database_matches_cpp_pipeline() {
+        use crate::arlog_i;
         use crate::kpm::kpm_ffi;
 
         let reference = load_grayscale("../../benchmarks/data/found.jpg");
         let query = load_grayscale("../../benchmarks/data/img.jpg");
+        let ref_w = reference.cols as i32;
+        let ref_h = reference.rows as i32;
 
         // ----- Rust path -----
         let mut db = VisualDatabase::new().expect("new");
         db.add_image(&reference, 0).expect("add_image");
         let rust_matched = db.query(&query).expect("query");
         let rust_id = db.matched_db_id();
-        let rust_inliers = db.inliers().len();
+        let rust_h = *db
+            .matched_geometry()
+            .expect("Rust matched, must have geometry");
 
-        // ----- C++ path via kpm_* FFI -----
+        // ----- C++ path via existing kpm_query (no new FFI needed) -----
+        // `pose_out[0..9]` is the 3×3 row-major homography normalized
+        // so [8] = 1; `pose_out[9..12]` is FFI zero-padding. See
+        // `kpm_c_api.cpp:156-166`.
+        let cpp_h: [f32; 9];
         let cpp_id;
-        let cpp_inliers;
         unsafe {
             let handle = kpm_ffi::kpm_create(query.cols as i32, query.rows as i32);
             assert!(!handle.is_null(), "kpm_create returned null");
@@ -1067,8 +1091,8 @@ mod tests {
             let rc = kpm_ffi::kpm_add_ref_image(
                 handle,
                 reference.data.as_ptr(),
-                reference.cols as i32,
-                reference.rows as i32,
+                ref_w,
+                ref_h,
                 72.0, // default DPI
                 0,    // page_no
                 0,    // image_no
@@ -1087,41 +1111,72 @@ mod tests {
                 &mut error_out,
                 &mut page_no_out,
             );
+            assert!(
+                rc >= 0,
+                "C++ kpm_query failed (rc={}) — both pipelines should match",
+                rc
+            );
 
-            cpp_id = if rc >= 0 {
-                kpm_ffi::kpm_matched_id(handle)
-            } else {
-                -1
-            };
-            cpp_inliers = if cpp_id >= 0 {
-                kpm_ffi::kpm_get_inlier_count(handle) as usize
-            } else {
-                0
-            };
+            cpp_id = kpm_ffi::kpm_matched_id(handle);
+            cpp_h = [
+                pose[0], pose[1], pose[2], pose[3], pose[4], pose[5], pose[6], pose[7], pose[8],
+            ];
 
             kpm_ffi::kpm_destroy(handle);
         }
 
-        // ----- Parity assertions -----
-        assert_eq!(
-            rust_matched,
-            cpp_id >= 0,
-            "Rust matched={} but C++ matched_id={}",
-            rust_matched,
-            cpp_id
-        );
+        // ----- Cross-language sanity -----
+        assert!(rust_matched, "Rust must match on the pinball pair");
         assert_eq!(
             rust_id, cpp_id,
             "matched_db_id divergence: rust={} cpp={}",
             rust_id, cpp_id
         );
-        let diff = (rust_inliers as i32 - cpp_inliers as i32).abs();
+
+        // ----- Corner reprojection parity (M9 #152) -----
+        let rust_corners = reproject_corners(&rust_h, ref_w, ref_h);
+        let cpp_corners = reproject_corners(&cpp_h, ref_w, ref_h);
+        let mut max_displacement = 0.0_f32;
+        let mut per_corner = [0.0_f32; 4];
+        for i in 0..4 {
+            let dx = rust_corners[i][0] - cpp_corners[i][0];
+            let dy = rust_corners[i][1] - cpp_corners[i][1];
+            let d = (dx * dx + dy * dy).sqrt();
+            per_corner[i] = d;
+            if d > max_displacement {
+                max_displacement = d;
+            }
+        }
+
+        arlog_i!(
+            "M9 dual-mode parity: max corner displacement = {:.4} px \
+             (per corner: tl={:.4}, tr={:.4}, br={:.4}, bl={:.4})",
+            max_displacement,
+            per_corner[0],
+            per_corner[1],
+            per_corner[2],
+            per_corner[3]
+        );
+
+        // Tolerance set per M9 #146 Decision 10: max(2.0, ceil(observed)).
+        // Observed during implementation: max_displacement ≈ 0.24 px on the
+        // pinball pair (per-corner range: 0.06–0.24 px). The 2.0 px floor
+        // gives ~8× safety margin against future float-rounding drift in
+        // upstream pyramid / DoG / FREAK / matching components.
+        //
+        // If a future change drives this above 2.0 px, the assertion
+        // message reports the new value — update this constant in the same
+        // PR. If observed > 5 px, halt and investigate per
+        // `docs/design/m9-parity-metric.md` §R1: BHC variance shouldn't
+        // produce that much geometric drift.
+        const TOLERANCE_PX: f32 = 2.0;
         assert!(
-            diff <= 5,
-            "inlier count divergence: rust={} cpp={} (diff {} > 5)",
-            rust_inliers,
-            cpp_inliers,
-            diff
+            max_displacement <= TOLERANCE_PX,
+            "Rust and C++ homographies warp the reference into significantly \
+             different query-image regions: max corner displacement = {:.4} px \
+             > tolerance {} px",
+            max_displacement,
+            TOLERANCE_PX
         );
     }
 }
