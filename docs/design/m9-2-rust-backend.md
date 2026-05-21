@@ -242,3 +242,39 @@ The milestone-gate test exercised:
 - Final: `divergence_count() == 0`, `last_divergence_reason() == None`.
 
 The diagnostic trail from M9-1 → #146 → #150 → #152 is now sealed: each PR ruled out one named suspect; #152 redefined the metric; #141 (this PR) validates the redefinition holds across a 3-frame test sequence.
+
+### End-to-end pose comparison: CppFreakMatcher vs RustFreakMatcher
+
+Beyond the milestone-gate test, ran `simple_nft` on the pinball image with each backend (CppFreakMatcher on the pre-PR `feat/freak-visual-database@4fea4e2` state; RustFreakMatcher on this PR's HEAD). Both pipelines produced an AR-usable pose on the same input.
+
+**Both matched the same page (id = 0).** No matched_id divergence.
+
+| Pose element | C++ (CppFreakMatcher) | Rust (RustFreakMatcher) | Diff |
+|---|---|---|---|
+| **KPM error** | 7.1455 | 5.0903 | Rust ~28% lower (tighter inlier fit) |
+| Rotation `R[0][0]` | 0.9862 | 0.9865 | 0.0003 |
+| Rotation `R[0][1]` | 0.1671 | 0.1634 | 0.0037 |
+| Rotation `R[0][2]` | 0.0641 | 0.0275 | **0.0366** (worst element) |
+| Rotation `R[1][0]` | 0.1634 | 0.1609 | 0.0025 |
+| Rotation `R[1][1]` | −0.9192 | −0.9223 | 0.0031 |
+| Rotation `R[1][2]` | −0.3507 | −0.3507 | 0.0000 |
+| Rotation `R[2][0]` | 0.0090 | −0.0311 | **0.0401** (worst element) |
+| Rotation `R[2][1]` | 0.3572 | 0.3504 | 0.0068 |
+| Rotation `R[2][2]` | −0.9344 | −0.9361 | 0.0017 |
+| Translation `t[0]` (mm) | −182.1635 | −181.8963 | 0.27 mm |
+| Translation `t[1]` (mm) | 63.5585 | 63.9757 | 0.42 mm |
+| Translation `t[2]` (mm, Z = working distance) | 587.0607 | 589.8297 | **2.77 mm** (≈ 0.47%) |
+
+**Interpretation**:
+- Sub-degree rotation differences (max element diff 0.04).
+- Translation differs by < 0.5% at AR working distance.
+- Rust's lower KPM error indicates a slightly tighter homography fit on these particular inliers.
+
+This is the expected BHC-variance envelope: cross-language `unordered_map` child ordering → slightly different inlier sets → slightly different ICP solutions. M9 #152's corner-reprojection metric is designed precisely to absorb this kind of small drift, and the milestone gate confirms the homographies agree at sub-pixel level (0.24 px max corner displacement on the M9 #152 baseline measurement).
+
+**This validates the M9 #155 hypothesis** that the failing `test_full_pipeline_pose` baseline is stale relative to both current backends:
+- The test's expected `R[0][2] = 0.00272`.
+- Current C++ produces `R[0][2] = 0.0641` (diff from baseline = `0.0614 ≈ 6.13e-2`, matches the failure).
+- Current Rust produces `R[0][2] = 0.0275`.
+
+Neither current backend matches the hard-coded baseline — option A from #155 (regenerate baseline against current state) is the right fix.
