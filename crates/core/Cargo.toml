@@ -85,7 +85,9 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "simple_nft"
-required-features = ["ffi-backend"]
+# M9-2 #141: switched from CppFreakMatcher to RustFreakMatcher. The Rust
+# backend builds on the default feature set, so no `required-features` is
+# needed anymore.
 
 [[example]]
 name = "load_nft"
