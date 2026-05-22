@@ -73,6 +73,23 @@ jobs:
     - name: Run dual-mode tests
       run: cargo test -p webarkitlib-rs --lib --features dual-mode
 
+    # Integration tests under tests/ that exercise the C++-backed KPM
+    # pipeline (CppFreakMatcher + KPM/AR2 wiring). Until issue #155 these
+    # were silently skipped on CI because no job ran integration tests
+    # with --features ffi-backend, which let a stale numerical baseline
+    # in test_full_pipeline_pose slip through every M9 PR.
+    #
+    # Ubuntu-only: matches the toolchain the baseline was regenerated on
+    # and avoids the unrelated cross-platform issues noted above.
+    - name: Run ffi-backend integration tests
+      if: runner.os == 'Linux'
+      run: |
+        cargo test -p webarkitlib-rs \
+          --test kpm_regression \
+          --test nft_pipeline \
+          --test ar2_pinball_io \
+          --features ffi-backend
+
   submodule-drift-check:
     runs-on: ubuntu-latest
     steps:
