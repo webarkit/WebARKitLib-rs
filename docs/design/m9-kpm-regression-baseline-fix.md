@@ -90,6 +90,16 @@
   *Mitigation:* CI step is Ubuntu-only and matches the workstation used
   to regenerate. If a future toolchain bump perturbs the numbers, the
   same regeneration procedure (documented in D5) reproduces them.
+  - **R2 materialized during PR #158.** Initial regen was done on
+    Windows and the recorded values failed CI on Linux by ~6e-2 in
+    `pose[0][2]` — far above the 1e-2 tolerance. The Linux baseline
+    was actually correct all along; the local Windows failure that
+    motivated this PR was cross-platform variance, not staleness.
+    Resolution: restored the original Linux baseline and added
+    `#[cfg(all(feature = "ffi-backend", target_os = "linux"))]` to the
+    test so Windows/macOS skip rather than misreport. The CI gate
+    (Ubuntu-only step) is unchanged and still catches genuine drift on
+    the platform that owns the baseline.
 - **R3.** Adding a CI step lengthens `kpm-build`. *Mitigation:*
   integration tests reuse the same `target/` from the preceding build
   step in the job; incremental cost is small.
