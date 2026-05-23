@@ -315,7 +315,13 @@ fn main() {
         }
     };
     let ref_dims = match feed_ref_data(&mut dual, &ref_data_a) {
-        Ok(d) => d,
+        Ok(d) => {
+            arlog_i!("  Reference pyramid ({} levels):", d.len());
+            for (i, (w, h)) in d.iter().enumerate() {
+                arlog_i!("    db_id={} -> {}x{} px", i, w, h);
+            }
+            d
+        }
         Err(e) => {
             arlog_e!("failed to feed ref data into DualFreakMatcher: {e}");
             return;
