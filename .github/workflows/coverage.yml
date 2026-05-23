@@ -33,8 +33,7 @@ jobs:
             --output-dir coverage \
             --timeout 300 \
             --exclude-files "tests/*" \
-            --ignore-panics \
-            --ignore-timeouts
+            --ignore-panics
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
