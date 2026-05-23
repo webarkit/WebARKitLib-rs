@@ -1,0 +1,5 @@
+[coverage]
+timeout = 300
+ignore-panics = true
+ignore-timeouts = true
+exclude-files = ["tests/*", "benches/*"]
