@@ -42,20 +42,34 @@
 //! one drives [`DualFreakMatcher`] (M9-2, #141) so the C++ and pure-Rust
 //! FREAK backends can be compared on the same query.
 //!
+//! **Side-by-side comparison granularity**: the per-backend comparison is
+//! at the **homography (3×3 H)** level — that is what [`matched_geometry`]
+//! exposes on each backend. Only **one** 3×4 camera pose is computed (from
+//! the C++ ground-truth homography via [`KpmHandle::get_pose`]) and fed to
+//! AR2. Per-backend 3×4 poses are intentionally not computed here; if you
+//! need them, run `kpm_util_get_pose_binary` with each backend's inliers
+//! manually.
+//!
+//! [`matched_geometry`]: webarkitlib_rs::kpm::DualFreakMatcher::cpp_matched_geometry
+//! [`KpmHandle::get_pose`]: webarkitlib_rs::kpm::KpmHandle::get_pose
+//!
 //! What you should see (on the bundled pinball assets, modulo float noise
 //! across machines):
 //!
 //! - Both backends agree on the matched id (no tier-1 / matched_id divergence).
-//! - Per-backend KPM error matching `docs/design/m9-2-rust-backend.md` §10
-//!   (~7.14 C++ / ~5.09 Rust).
-//! - Two homographies printed side-by-side; their corner reprojections
-//!   typically diverge by single-digit-to-low-double-digit pixels on
-//!   pinball — this is the cross-language BHC-variance envelope §10
-//!   discusses, and it is **larger** than the M9 #152 tier-2 tolerance
-//!   (2.0 px) so a non-zero `divergence_count` is the normal observation
-//!   on this dataset. The milestone-gate test
+//! - Two homographies printed side-by-side. Their corner reprojections
+//!   on pinball typically diverge by single-digit-to-low-double-digit
+//!   pixels — this is the cross-language BHC-variance envelope
+//!   `docs/design/m9-2-rust-backend.md` §10 discusses, and it is
+//!   **larger** than the M9 #152 tier-2 tolerance (2.0 px), so a
+//!   non-zero `divergence_count` is the normal observation on this
+//!   dataset. The milestone-gate test
 //!   (`test_dual_mode_no_divergence_on_pinball`) covers the `found.jpg`/
-//!   `img.jpg` pair where divergence stays at zero.
+//!   `img.jpg` pair, where divergence stays at zero.
+//! - One 3×4 KPM camera pose (C++-derived) matching §10 — KPM error
+//!   ≈ 7.1455 and pose row 0 ≈ `[0.9862, 0.1671, 0.0641, -182.1635]`.
+//!   The Rust-derived 3×4 pose is **not** printed (it would require
+//!   running `kpm_util_get_pose_binary` on the Rust inliers separately).
 //!
 //! Read non-zero divergences here as informational, not as a regression
 //! — the C++ pose still feeds AR2 cleanly (M9-2 D5).
@@ -332,6 +346,10 @@ fn main() {
 
     match (dual.cpp_matched_geometry(), dual.rust_matched_geometry()) {
         (Some(cpp_h), Some(rust_h)) => {
+            arlog_i!("  Side-by-side comparison is at the HOMOGRAPHY level (3x3 H).");
+            arlog_i!("  The 3x4 camera pose printed in Phase B is derived from the");
+            arlog_i!("  C++ homography only (DualFreakMatcher returns C++ as ground");
+            arlog_i!("  truth, M9-2 D5); per-backend 3x4 poses are not computed here.");
             arlog_i!("  C++ homography (3x3):");
             for r in 0..3 {
                 arlog_i!(
@@ -361,8 +379,10 @@ fn main() {
                 Some(&(ref_w, ref_h)) => {
                     let max_disp =
                         max_corner_displacement(cpp_h, rust_h, ref_w as f32, ref_h as f32);
+                    arlog_i!("  Homography agreement (M9 #152 tier-2 metric):");
+                    arlog_i!("    max corner displacement between H_cpp and H_rust");
                     arlog_i!(
-                        "  max corner displacement = {:.4} px (ref {}x{}, M9 #152 tolerance: 2.0 px)",
+                        "    = {:.4} px (ref image {}x{}, tolerance: 2.0 px)",
                         max_disp,
                         ref_w,
                         ref_h
