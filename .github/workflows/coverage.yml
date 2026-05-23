@@ -1,0 +1,53 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    name: Generate Coverage Report
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage report
+        run: |
+          cargo tarpaulin \
+            --workspace \
+            --out Xml \
+            --output-dir coverage \
+            --timeout 300 \
+            --exclude-files "tests/*" \
+            --ignore-panics \
+            --ignore-timeouts
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage/cobertura.xml
+          flags: rust
+          name: coverage-report
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Archive coverage report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: coverage-report
+          path: coverage/
