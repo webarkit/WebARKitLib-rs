@@ -23,7 +23,6 @@ cargo tarpaulin \
     --timeout 300 \
     --exclude-files "tests/*" \
     --ignore-panics \
-    --ignore-timeouts \
     --verbose
 
 echo ""
