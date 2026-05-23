@@ -111,14 +111,14 @@ const WORLD: &[[f32; 3]] = &[
 ///
 /// ```ignore
 /// let _ = env_logger::try_init();
-/// webarkitlib_rs::arlog_e!("pose: {:?}", pose);
-/// webarkitlib_rs::arlog_e!("error: {:e}", error);
+/// webarkitlib_rs::arlog_i!("pose: {:?}", pose);
+/// webarkitlib_rs::arlog_i!("error: {:e}", error);
 /// ```
 ///
-/// Then run:
+/// Then run (`arlog_i!` is informational — needs `RUST_LOG=info`):
 ///
 /// ```sh
-/// RUST_LOG=error cargo test -p webarkitlib-rs --test kpm_regression \
+/// RUST_LOG=info cargo test -p webarkitlib-rs --test kpm_regression \
 ///     --features ffi-backend test_full_pipeline_pose -- --nocapture
 /// ```
 ///
