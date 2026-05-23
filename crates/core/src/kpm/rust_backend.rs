@@ -412,6 +412,21 @@ impl DualFreakMatcher {
         self.last_divergence_reason.as_deref()
     }
 
+    /// Homography from the most recent `query` as observed by the C++
+    /// backend, or `None` if no query has matched yet. Delegates to
+    /// [`CppFreakMatcher::matched_geometry`]. Used by the
+    /// `simple_nft_dual` example (#157) to print per-backend geometry.
+    pub fn cpp_matched_geometry(&self) -> Option<&[f32; 9]> {
+        self.cpp.matched_geometry()
+    }
+
+    /// Homography from the most recent `query` as observed by the
+    /// pure-Rust backend, or `None` if no query has matched yet.
+    /// Delegates to [`RustFreakMatcher::matched_geometry`].
+    pub fn rust_matched_geometry(&self) -> Option<&[f32; 9]> {
+        self.rust.matched_geometry()
+    }
+
     /// Project the four reference-image corners through `h` (3x3 row-major
     /// homography). Returns the projected points in order: top-left,
     /// top-right, bottom-right, bottom-left. Mirrors M9 #152's

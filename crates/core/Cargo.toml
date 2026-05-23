@@ -90,6 +90,14 @@ name = "simple_nft"
 # needed anymore.
 
 [[example]]
+name = "simple_nft_dual"
+# M9-2 #157: diagnostic sibling of simple_nft, drives DualFreakMatcher to
+# compare C++ vs pure-Rust FREAK backends on the same query.
+# - dual-mode   -> DualFreakMatcher (transitively pulls ffi-backend)
+# - log-helpers -> ar_log_init_default() so arlog_*! macros emit output
+required-features = ["dual-mode", "log-helpers"]
+
+[[example]]
 name = "load_nft"
 required-features = ["log-helpers"]
 
