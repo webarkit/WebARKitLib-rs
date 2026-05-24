@@ -35,9 +35,10 @@ jobs:
             --exclude-files "tests/*" \
             --ignore-panics
 
-      - name: Upload to Codecov
+      - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/cobertura.xml
           flags: rust
           name: coverage-report
