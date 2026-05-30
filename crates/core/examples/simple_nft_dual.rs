@@ -78,6 +78,17 @@
 //! example becomes a niche debugging tool — most useful right now,
 //! while both backends are still routinely available.
 //!
+//! Visualization output: after the homography comparison, two PNGs are
+//! written to `target/simple_nft_dual_output/` (workspace `target/`,
+//! gitignored), each showing the query frame with the matched marker
+//! outline drawn in blue using one backend's homography:
+//!
+//! - `pinball-demo_cpp.png`  — outline placed by C++ FREAK
+//! - `pinball-demo_rust.png` — outline placed by pure-Rust FREAK
+//!
+//! Visually diff the two to see the ~`max corner displacement` px gap
+//! between backends (the M9 #152 tier-2 metric). Useful for #160 triage.
+//!
 //! Run with:
 //!
 //! ```sh
@@ -87,9 +98,11 @@
 //! ```
 
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use image::{Rgb, RgbImage};
+use imageproc::drawing::draw_line_segment_mut;
 use webarkitlib_rs::ar2::{
     ar2_read_surface_set, ar2_surface_set_marker_info, ar2_tracking, AR2Handle,
 };
@@ -109,6 +122,76 @@ fn project(h: &[f32; 9], x: f32, y: f32) -> (f32, f32) {
         (h[0] * x + h[1] * y + h[2]) / w,
         (h[3] * x + h[4] * y + h[5]) / w,
     )
+}
+
+/// Project the four reference-image corners through `h` into query-image
+/// pixel coordinates. Returns the projected corners in order: top-left,
+/// top-right, bottom-right, bottom-left.
+fn reproject_corners(h: &[f32; 9], rw: f32, rh: f32) -> [(f32, f32); 4] {
+    [
+        project(h, 0.0, 0.0),
+        project(h, rw, 0.0),
+        project(h, rw, rh),
+        project(h, 0.0, rh),
+    ]
+}
+
+/// Draw a line of `thickness` pixels between `p0` and `p1` by stacking
+/// `thickness` parallel single-pixel lines along the segment's normal.
+/// Out-of-bounds pixels are silently clipped by `draw_line_segment_mut`.
+fn draw_thick_line(
+    img: &mut RgbImage,
+    p0: (f32, f32),
+    p1: (f32, f32),
+    color: Rgb<u8>,
+    thickness: i32,
+) {
+    let dx = p1.0 - p0.0;
+    let dy = p1.1 - p0.1;
+    let len = (dx * dx + dy * dy).sqrt().max(1e-6);
+    let nx = -dy / len;
+    let ny = dx / len;
+    let half = (thickness as f32 - 1.0) * 0.5;
+    let mut k = -half;
+    while k <= half + 1e-3 {
+        let ox = nx * k;
+        let oy = ny * k;
+        draw_line_segment_mut(img, (p0.0 + ox, p0.1 + oy), (p1.0 + ox, p1.1 + oy), color);
+        k += 1.0;
+    }
+}
+
+/// Draw the closed quadrilateral connecting the four corners (in order)
+/// in `color` with the given line thickness.
+fn draw_quadrilateral(
+    img: &mut RgbImage,
+    corners: &[(f32, f32); 4],
+    color: Rgb<u8>,
+    thickness: i32,
+) {
+    for i in 0..4 {
+        draw_thick_line(img, corners[i], corners[(i + 1) % 4], color, thickness);
+    }
+}
+
+/// Save a visualization PNG showing where one backend places the marker
+/// outline on the query frame. `corners` are the four reprojected
+/// reference-image corners in query-image pixel coordinates.
+fn save_visualization(
+    rgb_pixels: &[u8],
+    width: u32,
+    height: u32,
+    corners: &[(f32, f32); 4],
+    out_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut img = RgbImage::from_raw(width, height, rgb_pixels.to_vec())
+        .ok_or("RgbImage::from_raw: pixel buffer wrong size")?;
+    draw_quadrilateral(&mut img, corners, Rgb([0, 0, 255]), 3);
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    img.save(out_path)?;
+    Ok(())
 }
 
 /// Max per-corner displacement between two homographies' reprojections
@@ -393,6 +476,54 @@ fn main() {
                         ref_w,
                         ref_h
                     );
+
+                    // Save per-backend visualizations: each PNG is the
+                    // query frame with the matched-scale marker
+                    // outline drawn in blue using that backend's
+                    // homography. Diff with any image tool to see the
+                    // ~max_disp px corner divergence visually.
+                    //
+                    // Output dir is the workspace's target/ (gitignored),
+                    // resolved relative to the example's CARGO_MANIFEST_DIR
+                    // so it works regardless of the current directory.
+                    let out_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("..")
+                        .join("..")
+                        .join("target")
+                        .join("simple_nft_dual_output");
+
+                    let cpp_corners = reproject_corners(cpp_h, ref_w as f32, ref_h as f32);
+                    let rust_corners = reproject_corners(rust_h, ref_w as f32, ref_h as f32);
+
+                    let cpp_path = out_dir.join("pinball-demo_cpp.png");
+                    let rust_path = out_dir.join("pinball-demo_rust.png");
+
+                    let log_path = |p: &Path| {
+                        p.canonicalize()
+                            .ok()
+                            .map(|cp| cp.display().to_string())
+                            .unwrap_or_else(|| p.display().to_string())
+                    };
+                    match save_visualization(
+                        &pixels,
+                        width as u32,
+                        height as u32,
+                        &cpp_corners,
+                        &cpp_path,
+                    ) {
+                        Ok(()) => arlog_i!("  Saved C++  outline -> {}", log_path(&cpp_path)),
+                        Err(e) => arlog_e!("failed to save C++ visualization: {e}"),
+                    }
+                    match save_visualization(
+                        &pixels,
+                        width as u32,
+                        height as u32,
+                        &rust_corners,
+                        &rust_path,
+                    ) {
+                        Ok(()) => arlog_i!("  Saved Rust outline -> {}", log_path(&rust_path)),
+                        Err(e) => arlog_e!("failed to save Rust visualization: {e}"),
+                    }
                 }
                 None => {
                     arlog_i!(
