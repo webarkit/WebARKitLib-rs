@@ -51,7 +51,9 @@
     main { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px; }
     #canvasWrap { background: #0e1014; border: 1px dashed #3a3f47; border-radius: 6px; min-height: 480px; max-height: calc(100vh - 120px); overflow: auto; position: relative; }
     #canvasWrap.dragover { border-color: #4ea1ff; background: #11202e; }
-    #canvas { display: block; cursor: crosshair; }
+    #canvas { display: block; cursor: crosshair; transform-origin: 0 0; image-rendering: pixelated; image-rendering: crisp-edges; }
+    #zoomHud { position: sticky; top: 6px; left: 6px; display: inline-block; background: rgba(20,22,26,0.85); color: #c5cdd6; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none; z-index: 10; }
+    #zoomHud.hidden { display: none; }
     #placeholder { padding: 60px 20px; text-align: center; color: #687078; font-size: 14px; line-height: 1.6; }
     #placeholder code { background: #0a0c0f; padding: 2px 6px; border-radius: 3px; color: #d8a4ff; }
     .panel { background: #14161a; border: 1px solid #2b2e34; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
@@ -72,10 +74,17 @@
     .status.done { background: #1f3a2a; color: #b7e8c6; border-left: 3px solid #34a85b; }
     .status .target { font-weight: 700; font-size: 16px; display: block; margin-top: 4px; }
     .corners-list { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; }
-    .corners-list .row { display: flex; justify-content: space-between; padding: 3px 6px; border-radius: 3px; }
+    .corners-list .row { display: flex; justify-content: space-between; padding: 3px 6px; border-radius: 3px; cursor: default; user-select: none; }
     .corners-list .row.has-value { background: #1c2330; color: #d8e3f0; }
+    .corners-list .row.has-value.clickable { cursor: pointer; }
+    .corners-list .row.has-value.clickable:hover { background: #243044; }
+    .corners-list .row.editing { background: #3a2e1c !important; border-left: 3px solid #ffb74d; padding-left: 3px; }
+    .corners-list .row.editing .role { color: #ffb74d; font-weight: 700; }
     .corners-list .role { color: #95a0ab; }
     .corners-list .coords { color: #d8a4ff; }
+    .corners-list .edit-hint { display: none; font-size: 10px; color: #687078; padding: 4px 6px 0; }
+    .corners-list.editable .edit-hint { display: block; }
+    .status.editing { background: #3a2e1c; color: #ffd9a8; border-left: 3px solid #ffb74d; }
     pre.json-output { background: #0a0c0f; border: 1px solid #2b2e34; border-radius: 4px; padding: 10px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; max-height: 240px; overflow: auto; color: #c5cdd6; white-space: pre-wrap; word-break: break-all; }
     .row-split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .hint { font-size: 11px; color: #687078; margin-top: 4px; }
@@ -96,6 +105,7 @@
         The order must match the reference image's corners
         (<code>(0,0), (W,0), (W,H), (0,H)</code>) so CI corner-by-corner comparison works.
       </div>
+      <div id="zoomHud" class="hidden">100%</div>
       <canvas id="canvas" width="0" height="0" style="display:none"></canvas>
     </div>
 
@@ -114,11 +124,18 @@
           <div class="row" data-i="1"><span class="role">2. top_right</span><span class="coords">—</span></div>
           <div class="row" data-i="2"><span class="role">3. bottom_right</span><span class="coords">—</span></div>
           <div class="row" data-i="3"><span class="role">4. bottom_left</span><span class="coords">—</span></div>
+          <div class="edit-hint">Click a row above to re-position that single corner. Esc to cancel.</div>
         </div>
         <div class="row-split">
           <button id="undoBtn" class="secondary" disabled>Undo last</button>
           <button id="resetBtn" class="secondary" disabled>Start over</button>
         </div>
+      </div>
+
+      <div class="panel">
+        <h2>View</h2>
+        <p class="hint">Scroll-wheel over the image to zoom (centered on the cursor). Scrollbars on the canvas area handle panning.</p>
+        <button id="zoomResetBtn" class="secondary" disabled>Reset zoom (100%)</button>
       </div>
 
       <div class="panel">
@@ -158,7 +175,13 @@
     imageDims: [0, 0],   // [w, h]
     corners: [],         // Array<{x: number, y: number}> in canvas/image px
     cursor: null,        // {x, y} for the hover crosshair, or null
+    editIndex: null,     // index of corner being re-positioned post-completion, or null
+    zoom: 1.0,           // CSS scale applied to the canvas
   };
+
+  const ZOOM_MIN = 0.25;
+  const ZOOM_MAX = 8.0;
+  const ZOOM_STEP = 1.2;
 
   // ─────────────────────────────────────────────────────────────────────
   // DOM
@@ -177,6 +200,8 @@
   const annotatorInput = document.getElementById('annotator');
   const toleranceInput = document.getElementById('tolerance');
   const notesInput = document.getElementById('notes');
+  const zoomHud = document.getElementById('zoomHud');
+  const zoomResetBtn = document.getElementById('zoomResetBtn');
 
   const ctx = canvas.getContext('2d');
 
@@ -187,10 +212,7 @@
     if (!state.image) return;
     ctx.drawImage(state.image, 0, 0);
 
-    // Existing clicked corners with numbered crosshairs.
-    state.corners.forEach((c, i) => drawCrosshair(c.x, c.y, COLORS[i], String(i + 1)));
-
-    // Closed quad once all 4 are in.
+    // Closed quad once all 4 are in (drawn first so crosshairs sit on top).
     if (state.corners.length === 4) {
       ctx.beginPath();
       ctx.strokeStyle = '#ffffff';
@@ -204,16 +226,35 @@
       ctx.setLineDash([]);
     }
 
-    // Hover crosshair for alignment, only while a target is pending.
-    if (state.cursor && state.corners.length < 4) {
-      drawCrosshair(state.cursor.x, state.cursor.y, COLORS[state.corners.length], null, true);
+    // Existing clicked corners with numbered crosshairs. The corner
+    // being edited gets a thicker, pulsing-amber emphasis.
+    state.corners.forEach((c, i) =>
+      drawCrosshair(c.x, c.y, COLORS[i], String(i + 1), false, i === state.editIndex)
+    );
+
+    // Hover crosshair for alignment — show when capturing the next
+    // sequential corner, or when in edit mode for any corner.
+    if (state.cursor) {
+      const targetIdx = activeTargetIndex();
+      if (targetIdx !== null) {
+        drawCrosshair(state.cursor.x, state.cursor.y, COLORS[targetIdx], null, true);
+      }
     }
   }
 
-  function drawCrosshair(x, y, color, label, faint = false) {
-    const r = 18;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = faint ? 1 : 2;
+  /// Returns the index of the corner the next canvas click will set:
+  /// the next-in-sequence corner during initial capture, the edited
+  /// corner during edit mode, or null if there's nothing to capture.
+  function activeTargetIndex() {
+    if (state.editIndex !== null) return state.editIndex;
+    if (state.corners.length < 4) return state.corners.length;
+    return null;
+  }
+
+  function drawCrosshair(x, y, color, label, faint = false, emphasis = false) {
+    const r = emphasis ? 26 : 18;
+    ctx.strokeStyle = emphasis ? '#ffb74d' : color;
+    ctx.lineWidth = emphasis ? 3 : (faint ? 1 : 2);
     ctx.globalAlpha = faint ? 0.45 : 1;
     // Cross.
     ctx.beginPath();
@@ -222,12 +263,12 @@
     ctx.stroke();
     // Inner ring.
     ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.arc(x, y, emphasis ? 7 : 4, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
     // Label
     if (label) {
-      ctx.fillStyle = color;
+      ctx.fillStyle = emphasis ? '#ffb74d' : color;
       ctx.font = 'bold 14px sans-serif';
       ctx.fillText(label, x + r + 4, y - 6);
     }
@@ -237,37 +278,47 @@
   // UI updates
   // ─────────────────────────────────────────────────────────────────────
   function refreshUI() {
+    const complete = state.corners.length === 4;
+    const editing = state.editIndex !== null;
+
     // Status.
     if (!state.image) {
       statusEl.className = 'status idle';
       statusEl.textContent = 'No image loaded yet.';
-    } else if (state.corners.length === 4) {
+    } else if (editing) {
+      statusEl.className = 'status editing';
+      statusEl.innerHTML = 'Re-positioning corner:<span class="target" style="color:#ffb74d">' +
+        ROLE_LABELS[state.editIndex] + '</span>Click anywhere on the canvas to place it. Esc to cancel.';
+    } else if (complete) {
       statusEl.className = 'status done';
-      statusEl.innerHTML = 'All 4 corners captured. Verify the dashed-white quad fits the marker, then export.';
+      statusEl.innerHTML = 'All 4 corners captured. Click a row below to re-position one corner, or export.';
     } else {
       const i = state.corners.length;
       statusEl.className = 'status awaiting';
       statusEl.innerHTML = 'Click the next corner:<span class="target" style="color:' + COLORS[i] + '">' + ROLE_LABELS[i] + '</span>';
     }
-    // Corner list.
+    // Corner list rows.
+    cornersList.classList.toggle('editable', complete);
     cornersList.querySelectorAll('.row').forEach((row, i) => {
       const coordsEl = row.querySelector('.coords');
       if (state.corners[i]) {
         row.classList.add('has-value');
+        row.classList.toggle('clickable', complete);
+        row.classList.toggle('editing', i === state.editIndex);
         coordsEl.textContent = '(' + state.corners[i].x.toFixed(1) + ', ' + state.corners[i].y.toFixed(1) + ')';
       } else {
-        row.classList.remove('has-value');
+        row.classList.remove('has-value', 'clickable', 'editing');
         coordsEl.textContent = '—';
       }
     });
     // Buttons.
-    undoBtn.disabled = state.corners.length === 0;
+    undoBtn.disabled = state.corners.length === 0 || editing;
     resetBtn.disabled = state.corners.length === 0;
-    const ready = state.image && state.corners.length === 4;
-    exportBtn.disabled = !ready;
-    copyBtn.disabled = !ready;
+    exportBtn.disabled = !(state.image && complete) || editing;
+    copyBtn.disabled = !(state.image && complete) || editing;
+    zoomResetBtn.disabled = !state.image || Math.abs(state.zoom - 1) < 1e-3;
     // JSON preview.
-    if (ready) {
+    if (state.image && complete) {
       jsonOut.hidden = false;
       jsonOut.textContent = buildJson();
     } else {
@@ -339,10 +390,17 @@
         state.imageName = file.name;
         state.imageDims = [img.naturalWidth, img.naturalHeight];
         state.corners = [];
+        state.editIndex = null;
+        state.zoom = 1.0;
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         canvas.style.display = 'block';
+        canvas.style.transform = 'scale(1)';
         placeholder.style.display = 'none';
+        zoomHud.textContent = '100%';
+        zoomHud.classList.remove('hidden');
+        canvasWrap.scrollLeft = 0;
+        canvasWrap.scrollTop = 0;
         redraw();
         refreshUI();
       };
@@ -390,18 +448,37 @@
   });
 
   canvas.addEventListener('click', (ev) => {
-    if (!state.image || state.corners.length >= 4) return;
+    if (!state.image) return;
+    const targetIdx = activeTargetIndex();
+    if (targetIdx === null) return;
     const p = clientToImagePx(ev);
     // Clamp to image bounds (corners can lie on the edge but shouldn't go off).
     p.x = Math.max(0, Math.min(canvas.width - 1, p.x));
     p.y = Math.max(0, Math.min(canvas.height - 1, p.y));
-    state.corners.push(p);
+    if (state.editIndex !== null) {
+      state.corners[state.editIndex] = p;
+      state.editIndex = null;
+    } else {
+      state.corners.push(p);
+    }
+    redraw();
+    refreshUI();
+  });
+
+  // Click a corner row (post-completion) to enter edit mode for that corner.
+  cornersList.addEventListener('click', (ev) => {
+    const row = ev.target.closest('.row');
+    if (!row) return;
+    const i = Number(row.dataset.i);
+    if (!Number.isInteger(i) || !state.corners[i] || state.corners.length !== 4) return;
+    state.editIndex = (state.editIndex === i) ? null : i;
     redraw();
     refreshUI();
   });
 
   undoBtn.addEventListener('click', () => {
     if (state.corners.length === 0) return;
+    state.editIndex = null;
     state.corners.pop();
     redraw();
     refreshUI();
@@ -409,9 +486,44 @@
 
   resetBtn.addEventListener('click', () => {
     state.corners = [];
+    state.editIndex = null;
     redraw();
     refreshUI();
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Zoom (CSS transform on the canvas; container scrollbars handle pan)
+  // ─────────────────────────────────────────────────────────────────────
+  function setZoom(z, anchorClientX, anchorClientY) {
+    if (!state.image) return;
+    const oldZoom = state.zoom;
+    const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    if (Math.abs(newZoom - oldZoom) < 1e-4) return;
+    state.zoom = newZoom;
+    canvas.style.transform = 'scale(' + newZoom + ')';
+    zoomHud.textContent = Math.round(newZoom * 100) + '%';
+    zoomHud.classList.remove('hidden');
+    // Adjust scroll so the anchor point (mouse cursor by default) stays
+    // visually pinned across the zoom change.
+    if (typeof anchorClientX === 'number' && typeof anchorClientY === 'number') {
+      const rect = canvasWrap.getBoundingClientRect();
+      const factor = newZoom / oldZoom;
+      const ax = anchorClientX - rect.left;
+      const ay = anchorClientY - rect.top;
+      canvasWrap.scrollLeft = (canvasWrap.scrollLeft + ax) * factor - ax;
+      canvasWrap.scrollTop = (canvasWrap.scrollTop + ay) * factor - ay;
+    }
+    refreshUI();
+  }
+
+  canvasWrap.addEventListener('wheel', (ev) => {
+    if (!state.image) return;
+    ev.preventDefault();
+    const factor = ev.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+    setZoom(state.zoom * factor, ev.clientX, ev.clientY);
+  }, { passive: false });
+
+  zoomResetBtn.addEventListener('click', () => setZoom(1.0));
 
   exportBtn.addEventListener('click', exportJson);
   copyBtn.addEventListener('click', copyJson);
@@ -425,7 +537,16 @@
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoBtn.click(); }
-    if (e.key === 'Escape') resetBtn.click();
+    if (e.key === 'Escape') {
+      if (state.editIndex !== null) {
+        state.editIndex = null;
+        redraw();
+        refreshUI();
+      } else {
+        resetBtn.click();
+      }
+    }
+    if (e.key === '0' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); setZoom(1.0); }
   });
 
   // Initial UI state.
