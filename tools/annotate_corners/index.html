@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<!--
+  index.html
+  WebARKitLib-rs
+
+  This file is part of WebARKitLib-rs - WebARKit.
+
+  WebARKitLib-rs is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Lesser General Public License as published by
+  the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  WebARKitLib-rs is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  GNU Lesser General Public License for more details.
+
+  You should have received a copy of the GNU Lesser General Public License
+  along with WebARKitLib-rs.  If not, see <http://www.gnu.org/licenses/>.
+
+  As a special exception, the copyright holders of this library give you
+  permission to link this library with independent modules to produce an
+  executable, regardless of the license terms of these independent modules, and to
+  copy and distribute the resulting executable under terms of your choice,
+  provided that you also meet, for each linked independent module, the terms and
+  conditions of the license of that module. An independent module is a module
+  which is neither derived from nor based on this library. If you modify this
+  library, you may extend this exception to your version of the library, but you
+  are not obligated to do so. If you do not wish to do so, delete this exception
+  statement from your version.
+
+  Copyright 2026 WebARKit.
+
+  Author(s): Walter Perdan @kalwalt https://github.com/kalwalt
+
+  Marker-corner annotation tool for the WebARKitLib-rs absolute corner-error
+  test gate. See issue #166 for the gate's design and this tool's role in it.
+  Standalone static HTML — open the file directly in any modern browser,
+  no server or build step required.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebARKitLib-rs — Corner annotator</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1d1f23; color: #e6e8eb; }
+    header { padding: 12px 20px; background: #14161a; border-bottom: 1px solid #2b2e34; }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header p { margin: 4px 0 0; color: #95a0ab; font-size: 13px; }
+    main { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px; }
+    #canvasWrap { background: #0e1014; border: 1px dashed #3a3f47; border-radius: 6px; min-height: 480px; max-height: calc(100vh - 120px); overflow: auto; position: relative; }
+    #canvasWrap.dragover { border-color: #4ea1ff; background: #11202e; }
+    #canvas { display: block; cursor: crosshair; }
+    #placeholder { padding: 60px 20px; text-align: center; color: #687078; font-size: 14px; line-height: 1.6; }
+    #placeholder code { background: #0a0c0f; padding: 2px 6px; border-radius: 3px; color: #d8a4ff; }
+    .panel { background: #14161a; border: 1px solid #2b2e34; border-radius: 6px; padding: 14px; margin-bottom: 12px; }
+    .panel h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; color: #c5cdd6; text-transform: uppercase; }
+    label { display: block; font-size: 12px; color: #95a0ab; margin: 6px 0 3px; }
+    input[type=text], input[type=number], textarea { width: 100%; padding: 7px 9px; background: #0e1014; border: 1px solid #2b2e34; color: #e6e8eb; border-radius: 4px; font-family: inherit; font-size: 13px; }
+    textarea { resize: vertical; min-height: 60px; }
+    button { width: 100%; padding: 9px 12px; margin-top: 6px; background: #2a4d7c; border: none; color: #fff; border-radius: 4px; font-size: 13px; cursor: pointer; font-weight: 500; }
+    button:hover:not(:disabled) { background: #356099; }
+    button:disabled { background: #2a2d33; color: #5a626c; cursor: not-allowed; }
+    button.secondary { background: #2d3036; }
+    button.secondary:hover:not(:disabled) { background: #3a3f47; }
+    button.primary { background: #2c8b4d; }
+    button.primary:hover:not(:disabled) { background: #34a85b; }
+    .status { padding: 10px 12px; border-radius: 4px; font-size: 14px; line-height: 1.4; }
+    .status.idle { background: #1f2228; color: #95a0ab; }
+    .status.awaiting { background: #2c3a52; color: #c5dbff; border-left: 3px solid #4ea1ff; }
+    .status.done { background: #1f3a2a; color: #b7e8c6; border-left: 3px solid #34a85b; }
+    .status .target { font-weight: 700; font-size: 16px; display: block; margin-top: 4px; }
+    .corners-list { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; line-height: 1.7; }
+    .corners-list .row { display: flex; justify-content: space-between; padding: 3px 6px; border-radius: 3px; }
+    .corners-list .row.has-value { background: #1c2330; color: #d8e3f0; }
+    .corners-list .role { color: #95a0ab; }
+    .corners-list .coords { color: #d8a4ff; }
+    pre.json-output { background: #0a0c0f; border: 1px solid #2b2e34; border-radius: 4px; padding: 10px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 11px; max-height: 240px; overflow: auto; color: #c5cdd6; white-space: pre-wrap; word-break: break-all; }
+    .row-split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .hint { font-size: 11px; color: #687078; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WebARKitLib-rs — Corner annotator</h1>
+    <p>Click the four printed-marker corners of a query frame in order: top-left → top-right → bottom-right → bottom-left. Export the resulting JSON for the absolute corner-error test gate (issue #166).</p>
+  </header>
+
+  <main>
+    <div id="canvasWrap">
+      <div id="placeholder">
+        Drop a JPEG / PNG query frame here, or use the file picker on the right.<br>
+        <br>
+        Click each marker corner in <strong>TL → TR → BR → BL</strong> order.<br>
+        The order must match the reference image's corners
+        (<code>(0,0), (W,0), (W,H), (0,H)</code>) so CI corner-by-corner comparison works.
+      </div>
+      <canvas id="canvas" width="0" height="0" style="display:none"></canvas>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <h2>1. Load frame</h2>
+        <input type="file" id="fileInput" accept="image/*">
+        <p class="hint">Tip: you can also drag and drop the image onto the canvas area.</p>
+      </div>
+
+      <div class="panel">
+        <h2>2. Click corners</h2>
+        <div id="status" class="status idle">No image loaded yet.</div>
+        <div class="corners-list" id="cornersList">
+          <div class="row" data-i="0"><span class="role">1. top_left</span><span class="coords">—</span></div>
+          <div class="row" data-i="1"><span class="role">2. top_right</span><span class="coords">—</span></div>
+          <div class="row" data-i="2"><span class="role">3. bottom_right</span><span class="coords">—</span></div>
+          <div class="row" data-i="3"><span class="role">4. bottom_left</span><span class="coords">—</span></div>
+        </div>
+        <div class="row-split">
+          <button id="undoBtn" class="secondary" disabled>Undo last</button>
+          <button id="resetBtn" class="secondary" disabled>Start over</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>3. Metadata</h2>
+        <label for="annotator">Annotator (GitHub handle)</label>
+        <input type="text" id="annotator" placeholder="kalwalt" />
+        <label for="tolerance">Tolerance (px)</label>
+        <input type="number" id="tolerance" value="2.0" step="0.5" min="0" />
+        <label for="notes">Notes (optional)</label>
+        <textarea id="notes" placeholder="e.g. lighting, marker visibility, occlusions"></textarea>
+      </div>
+
+      <div class="panel">
+        <h2>4. Export</h2>
+        <button id="exportBtn" class="primary" disabled>Download JSON</button>
+        <button id="copyBtn" class="secondary" disabled>Copy JSON to clipboard</button>
+        <pre id="jsonOut" class="json-output" hidden></pre>
+        <p class="hint">Saves alongside the image as <code>&lt;image-name&gt;.corners.json</code>. Drop into <code>crates/core/tests/fixtures/annotated_frames/</code>.</p>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+  'use strict';
+
+  // ─────────────────────────────────────────────────────────────────────
+  // State
+  // ─────────────────────────────────────────────────────────────────────
+  const ROLES = ['top_left', 'top_right', 'bottom_right', 'bottom_left'];
+  const ROLE_LABELS = ['TOP-LEFT', 'TOP-RIGHT', 'BOTTOM-RIGHT', 'BOTTOM-LEFT'];
+  // Distinct visible colors for the 4 corners.
+  const COLORS = ['#ff5252', '#34a85b', '#4ea1ff', '#ffb74d'];
+
+  const state = {
+    image: null,         // HTMLImageElement once loaded
+    imageName: null,     // string, original file name
+    imageDims: [0, 0],   // [w, h]
+    corners: [],         // Array<{x: number, y: number}> in canvas/image px
+    cursor: null,        // {x, y} for the hover crosshair, or null
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // DOM
+  // ─────────────────────────────────────────────────────────────────────
+  const canvas = document.getElementById('canvas');
+  const canvasWrap = document.getElementById('canvasWrap');
+  const placeholder = document.getElementById('placeholder');
+  const fileInput = document.getElementById('fileInput');
+  const statusEl = document.getElementById('status');
+  const cornersList = document.getElementById('cornersList');
+  const undoBtn = document.getElementById('undoBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const copyBtn = document.getElementById('copyBtn');
+  const jsonOut = document.getElementById('jsonOut');
+  const annotatorInput = document.getElementById('annotator');
+  const toleranceInput = document.getElementById('tolerance');
+  const notesInput = document.getElementById('notes');
+
+  const ctx = canvas.getContext('2d');
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Rendering
+  // ─────────────────────────────────────────────────────────────────────
+  function redraw() {
+    if (!state.image) return;
+    ctx.drawImage(state.image, 0, 0);
+
+    // Existing clicked corners with numbered crosshairs.
+    state.corners.forEach((c, i) => drawCrosshair(c.x, c.y, COLORS[i], String(i + 1)));
+
+    // Closed quad once all 4 are in.
+    if (state.corners.length === 4) {
+      ctx.beginPath();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 4]);
+      state.corners.forEach((c, i) => {
+        if (i === 0) ctx.moveTo(c.x, c.y); else ctx.lineTo(c.x, c.y);
+      });
+      ctx.closePath();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Hover crosshair for alignment, only while a target is pending.
+    if (state.cursor && state.corners.length < 4) {
+      drawCrosshair(state.cursor.x, state.cursor.y, COLORS[state.corners.length], null, true);
+    }
+  }
+
+  function drawCrosshair(x, y, color, label, faint = false) {
+    const r = 18;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = faint ? 1 : 2;
+    ctx.globalAlpha = faint ? 0.45 : 1;
+    // Cross.
+    ctx.beginPath();
+    ctx.moveTo(x - r, y); ctx.lineTo(x + r, y);
+    ctx.moveTo(x, y - r); ctx.lineTo(x, y + r);
+    ctx.stroke();
+    // Inner ring.
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Label
+    if (label) {
+      ctx.fillStyle = color;
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(label, x + r + 4, y - 6);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // UI updates
+  // ─────────────────────────────────────────────────────────────────────
+  function refreshUI() {
+    // Status.
+    if (!state.image) {
+      statusEl.className = 'status idle';
+      statusEl.textContent = 'No image loaded yet.';
+    } else if (state.corners.length === 4) {
+      statusEl.className = 'status done';
+      statusEl.innerHTML = 'All 4 corners captured. Verify the dashed-white quad fits the marker, then export.';
+    } else {
+      const i = state.corners.length;
+      statusEl.className = 'status awaiting';
+      statusEl.innerHTML = 'Click the next corner:<span class="target" style="color:' + COLORS[i] + '">' + ROLE_LABELS[i] + '</span>';
+    }
+    // Corner list.
+    cornersList.querySelectorAll('.row').forEach((row, i) => {
+      const coordsEl = row.querySelector('.coords');
+      if (state.corners[i]) {
+        row.classList.add('has-value');
+        coordsEl.textContent = '(' + state.corners[i].x.toFixed(1) + ', ' + state.corners[i].y.toFixed(1) + ')';
+      } else {
+        row.classList.remove('has-value');
+        coordsEl.textContent = '—';
+      }
+    });
+    // Buttons.
+    undoBtn.disabled = state.corners.length === 0;
+    resetBtn.disabled = state.corners.length === 0;
+    const ready = state.image && state.corners.length === 4;
+    exportBtn.disabled = !ready;
+    copyBtn.disabled = !ready;
+    // JSON preview.
+    if (ready) {
+      jsonOut.hidden = false;
+      jsonOut.textContent = buildJson();
+    } else {
+      jsonOut.hidden = true;
+      jsonOut.textContent = '';
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // JSON output (canonical schema, matches issue #166)
+  // ─────────────────────────────────────────────────────────────────────
+  function buildJson() {
+    const obj = {
+      schema: 1,
+      image: state.imageName || 'unknown.jpg',
+      image_dims: [state.imageDims[0], state.imageDims[1]],
+      annotator: annotatorInput.value.trim() || 'unknown',
+      date: new Date().toISOString().slice(0, 10),
+      marker_corners_px: state.corners.map((c, i) => ({
+        role: ROLES[i],
+        x: Number(c.x.toFixed(2)),
+        y: Number(c.y.toFixed(2)),
+      })),
+      tolerance_px: Number(toleranceInput.value) || 2.0,
+      notes: notesInput.value.trim() || (
+        'Corners are the four printed-marker rectangle corners, ' +
+        'in the same order as reference-image corners ' +
+        '(0,0)/(W,0)/(W,H)/(0,H).'
+      ),
+    };
+    return JSON.stringify(obj, null, 2);
+  }
+
+  function exportJson() {
+    const blob = new Blob([buildJson()], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const base = (state.imageName || 'corners').replace(/\.[^.]+$/, '');
+    a.download = base + '.corners.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  }
+
+  async function copyJson() {
+    try {
+      await navigator.clipboard.writeText(buildJson());
+      const oldText = copyBtn.textContent;
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = oldText, 1200);
+    } catch (e) {
+      alert('Clipboard write failed: ' + e.message);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Image loading
+  // ─────────────────────────────────────────────────────────────────────
+  function loadFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      alert('Please drop or pick an image file.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        state.image = img;
+        state.imageName = file.name;
+        state.imageDims = [img.naturalWidth, img.naturalHeight];
+        state.corners = [];
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.style.display = 'block';
+        placeholder.style.display = 'none';
+        redraw();
+        refreshUI();
+      };
+      img.onerror = () => alert('Failed to decode image.');
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Event handlers
+  // ─────────────────────────────────────────────────────────────────────
+  fileInput.addEventListener('change', (e) => loadFile(e.target.files[0]));
+
+  canvasWrap.addEventListener('dragover', (e) => { e.preventDefault(); canvasWrap.classList.add('dragover'); });
+  canvasWrap.addEventListener('dragleave', () => canvasWrap.classList.remove('dragover'));
+  canvasWrap.addEventListener('drop', (e) => {
+    e.preventDefault();
+    canvasWrap.classList.remove('dragover');
+    if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+  });
+
+  // Convert a DOM mouse event into native-image pixel coordinates,
+  // accounting for any CSS scaling (browser-level Ctrl+/- zoom, etc.).
+  function clientToImagePx(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (ev.clientX - rect.left) * scaleX,
+      y: (ev.clientY - rect.top) * scaleY,
+    };
+  }
+
+  canvas.addEventListener('mousemove', (ev) => {
+    if (!state.image) return;
+    state.cursor = clientToImagePx(ev);
+    redraw();
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    if (!state.image) return;
+    state.cursor = null;
+    redraw();
+  });
+
+  canvas.addEventListener('click', (ev) => {
+    if (!state.image || state.corners.length >= 4) return;
+    const p = clientToImagePx(ev);
+    // Clamp to image bounds (corners can lie on the edge but shouldn't go off).
+    p.x = Math.max(0, Math.min(canvas.width - 1, p.x));
+    p.y = Math.max(0, Math.min(canvas.height - 1, p.y));
+    state.corners.push(p);
+    redraw();
+    refreshUI();
+  });
+
+  undoBtn.addEventListener('click', () => {
+    if (state.corners.length === 0) return;
+    state.corners.pop();
+    redraw();
+    refreshUI();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    state.corners = [];
+    redraw();
+    refreshUI();
+  });
+
+  exportBtn.addEventListener('click', exportJson);
+  copyBtn.addEventListener('click', copyJson);
+
+  // Live-update JSON preview when metadata changes.
+  [annotatorInput, toleranceInput, notesInput].forEach((el) =>
+    el.addEventListener('input', () => { if (state.corners.length === 4) refreshUI(); })
+  );
+
+  // Keyboard shortcuts.
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoBtn.click(); }
+    if (e.key === 'Escape') resetBtn.click();
+  });
+
+  // Initial UI state.
+  refreshUI();
+  </script>
+</body>
+</html>
