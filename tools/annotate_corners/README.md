@@ -27,19 +27,41 @@ works.
 4. After the 4th click, the tool draws a dashed-white quadrilateral
    connecting the four corners — verify it tightly follows the printed
    marker boundary before exporting.
-5. Fill in your GitHub handle (`Annotator`), adjust `Tolerance (px)` if
+5. **Adjust individual corners (optional)**: after all 4 are placed,
+   click any row in the corner list to re-position that single corner.
+   The selected row highlights amber, the corresponding crosshair turns
+   amber and grows, and the next canvas click moves that one corner.
+   Press `Esc` to cancel without changing it.
+6. Fill in your GitHub handle (`Annotator`), adjust `Tolerance (px)` if
    the frame warrants it (default 2.0 px matches the M9 #152 envelope),
    and add any `Notes` (lighting, occlusion, motion blur, etc.).
-6. Click **Download JSON** to save `<image-name>.corners.json` to your
+7. Click **Download JSON** to save `<image-name>.corners.json` to your
    Downloads folder, or **Copy JSON to clipboard** for paste-into-editor
    workflows.
-7. Move both the image and the JSON into
+8. Move both the image and the JSON into
    `crates/core/tests/fixtures/annotated_frames/`.
+
+## Zoom
+
+For sub-pixel accuracy on small marker corners, scroll the mouse wheel
+over the canvas to zoom centered on the cursor. Range is 25%–800%; the
+current zoom level appears as a small overlay in the top-left of the
+canvas area. Use the **Reset zoom (100%)** button in the View panel or
+press `Ctrl/Cmd + 0` to return to 100%.
+
+Panning at high zoom uses the canvas-area scrollbars (the same overflow
+that handles oversized images at 100%); on a trackpad, two-finger drag
+on those scrollbars works as expected.
+
+`image-rendering: pixelated` is set on the canvas, so the underlying
+pixels stay crisp when you zoom in rather than blurring under the
+default bilinear filter — important for picking exact corner pixels.
 
 ## Keyboard shortcuts
 
-- `Ctrl/Cmd + Z` — undo last click
-- `Escape` — clear all clicks (start over for current image)
+- `Ctrl/Cmd + Z` — undo last click (during initial capture)
+- `Ctrl/Cmd + 0` — reset zoom to 100%
+- `Esc` — cancel edit mode if active, otherwise start over (clear all clicks)
 
 ## JSON schema produced
 
