@@ -78,6 +78,10 @@ env_logger = "0.11"
 criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3"
+# Used by the absolute corner-error integration test (#166) to parse
+# annotation JSONs and read/write the regression baseline.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [[example]]
 name = "simple"
