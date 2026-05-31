@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "image": "pinball-seq4.jpg",
+  "image_dims": [
+    2000,
+    1500
+  ],
+  "annotator": "unknown",
+  "date": "2026-05-31",
+  "marker_corners_px": [
+    {
+      "role": "top_left",
+      "x": 519.77,
+      "y": 198.78
+    },
+    {
+      "role": "top_right",
+      "x": 1376.59,
+      "y": 183.02
+    },
+    {
+      "role": "bottom_right",
+      "x": 1320.8,
+      "y": 1201.35
+    },
+    {
+      "role": "bottom_left",
+      "x": 587.28,
+      "y": 1148.1
+    }
+  ],
+  "tolerance_px": 2,
+  "notes": "Corners are the four printed-marker rectangle corners, in the same order as reference-image corners (0,0)/(W,0)/(W,H)/(0,H)."
+}
