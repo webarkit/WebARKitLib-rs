@@ -90,6 +90,31 @@ jobs:
           --test ar2_pinball_io \
           --features ffi-backend
 
+    # Absolute corner-error gate (#166 Track A). Reprojects each backend's
+    # matched-scale reference corners through its homography and asserts
+    # that the resulting per-corner error against hand-annotated ground
+    # truth doesn't regress beyond the 0.5 px epsilon baselined in
+    # crates/core/tests/fixtures/annotated_frames/baseline.json. Unlike
+    # the symmetric M9 #152 tier-2 gate, this measures each backend's
+    # accuracy independently — catching "Rust got better" and "Rust got
+    # worse" as distinct signals.
+    #
+    # Ubuntu-only for the same reason as the step above: float-noise
+    # envelope is per-platform, baseline is captured against one
+    # toolchain. If this step fails on CI, options are:
+    #   1. Regen the baseline on Linux from the failing run's --nocapture
+    #      output (the printed table) and commit it.
+    #   2. Widen REGRESSION_EPSILON_PX in absolute_corner_error.rs.
+    #
+    # See #170 for the known Rust-side run-to-run nondeterminism that
+    # constrained today's fixture set to three deterministic frames.
+    - name: Run absolute corner-error gate
+      if: runner.os == 'Linux'
+      run: |
+        cargo test -p webarkitlib-rs \
+          --test absolute_corner_error \
+          --features dual-mode -- --nocapture
+
   submodule-drift-check:
     runs-on: ubuntu-latest
     steps:
