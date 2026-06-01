@@ -92,13 +92,30 @@ const BASELINE_FILE: &str = "tests/fixtures/annotated_frames/baseline.json";
 const REGEN_ENV: &str = "WEBARKIT_REGEN_CORNER_BASELINE";
 const MARKER_NAME: &str = "pinball";
 
-/// Float-noise / cross-platform tolerance for the regression gate.
+/// Float-noise + cross-platform tolerance for the regression gate.
 ///
 /// Below this threshold, a per-cell delta is treated as noise; above
-/// it, the cell is flagged as a regression. 0.5 px is roughly the
-/// expected float-noise envelope for a full KPM + ICP pipeline on
-/// identical input across the architectures we target.
-const REGRESSION_EPSILON_PX: f32 = 0.5;
+/// it, the cell is flagged as a regression.
+///
+/// **Why 2.0 px**: the gate has to absorb three sources of variance:
+///
+/// 1. Float-noise on identical input (sub-pixel — what 0.5 px would
+///    have covered).
+/// 2. Cross-platform float-arithmetic / stdlib-version drift in the
+///    KPM + ICP pipeline. CI runs on Linux (libstdc++); contributors
+///    often run on Windows or macOS. We've measured ~1.8 px of
+///    legitimate Rust-side per-platform drift on a master-scale
+///    fixture (`pinball-seq4.jpg`).
+/// 3. Implementation-defined `std::unordered_map` iteration order in
+///    the C++ backend, which also varies across platforms and can
+///    produce different inlier sets at borderline matches.
+///
+/// 2.0 px is intentionally chosen to match the M9 #152 tier-2
+/// homography tolerance. It's loose enough to absorb (1)–(3) on
+/// every fixture we ship today, while still tight enough to flag a
+/// real backend regression. When #170 lands cross-platform
+/// determinism for both backends, this can drop back to ~0.5 px.
+const REGRESSION_EPSILON_PX: f32 = 2.0;
 
 const ROLES: [&str; 4] = ["top_left", "top_right", "bottom_right", "bottom_left"];
 
