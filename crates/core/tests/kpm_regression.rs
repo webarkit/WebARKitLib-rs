@@ -85,16 +85,24 @@ const WORLD: &[[f32; 3]] = &[
 /// (`CppFreakMatcher`) on `pinball-demo.jpg` with the camera parameters
 /// from `benchmarks/data/camera_para.dat` rescaled to 2000x1500.
 ///
-/// ## Platform sensitivity (issue #155)
+/// ## Platform sensitivity (issues #155 and #170)
 ///
-/// These values are **Linux-specific**. The full pipeline accumulates
-/// rounding through the C++ FREAK detector + matcher + RANSAC homography
-/// + ICP, and the result is sensitive to differences in `cc` / Eigen
-/// codegen across platforms. On Windows the same inputs produce
-/// `pose[0][2] ≈ 6.4e-2` instead of the `≈ 2.7e-3` recorded here — a
-/// real ~6e-2 divergence, not ULP noise.
+/// Before issue #170 was resolved, these values were **Linux-specific**:
+/// the matcher's `std::unordered_map` iteration order differed between
+/// libstdc++ and MSVC STL, so the same input produced
+/// `pose[0][2] ≈ 6.4e-2` on Windows but `≈ 2.7e-3` on Linux — a real
+/// ~6e-2 divergence, not ULP noise.
 ///
-/// The test is therefore gated to `target_os = "linux"`, matching the
+/// After the C++ fix (`webarkit/WebARKitLib#39`, landed via this repo's
+/// submodule bump in PR #172) the matcher is iteration-order-
+/// deterministic, and **the Linux baseline now matches what Windows was
+/// always producing** (the canonical M9-2 §10 values). The new baseline
+/// captures this post-fix state.
+///
+/// The test stays gated to `target_os = "linux"` for now: even with the
+/// matcher fixed, lower-level float-arithmetic accumulation through the
+/// FREAK detector + RANSAC + ICP can still produce sub-pixel cross-
+/// platform drift that exceeds the 1e-2 tolerance. The gate matches the
 /// CI step in `.github/workflows/ci.yml` (`Run ffi-backend integration
 /// tests`) which is `if: runner.os == 'Linux'`.
 ///
@@ -127,29 +135,29 @@ const WORLD: &[[f32; 3]] = &[
 /// baseline fails the gate.
 const EXPECTED_FULL_POSE: [[f32; 4]; 3] = [
     [
-        9.865_806_10e-01,
-        1.642_652_60e-01,
-        2.721_034_69e-03,
-        -1.819_168_24e+02,
+        9.861_529e-01,
+        1.671_001_5e-01,
+        6.406_289e-02,
+        -1.821_635_4e+02,
     ],
     [
-        1.531_157_05e-01,
-        -9.196_614_62e-01,
-        -3.611_836_73e-01,
-        6.468_621_06e+01,
+        1.634_216_9e-01,
+        -9.192_480e-01,
+        -3.506_962e-01,
+        6.355_852_5e+01,
     ],
     [
-        -5.632_056_67e-02,
-        3.567_525_45e-01,
-        -9.324_958_92e-01,
-        5.905_904_54e+02,
+        8.996_143e-03,
+        3.571_981_2e-01,
+        -9.343_946e-01,
+        5.870_606_7e+02,
     ],
 ];
 
 /// Full-pipeline reprojection error (Linux baseline).
 ///
 /// Regeneration: see [`EXPECTED_FULL_POSE`] doc comment.
-const EXPECTED_FULL_ERROR: f32 = 4.883_277_89e+00;
+const EXPECTED_FULL_ERROR: f32 = 7.145_503_5e+00;
 
 /// ICP-refined pose from C++ (standalone ICP on the 6 correspondences above).
 const EXPECTED_ICP_POSE: [[f32; 4]; 3] = [
@@ -353,28 +361,6 @@ fn test_full_pipeline_pose() {
         .expect("kpm_matching should find a valid pose for pinball-demo.jpg");
 
     assert_eq!(page_no, 0, "matched page should be 0");
-
-    // TEMP: capture block for regenerating EXPECTED_FULL_POSE +
-    // EXPECTED_FULL_ERROR after the webarkit/WebARKitLib#39 C++ fix
-    // converges Linux matched_id with the canonical Windows value.
-    // Remove this block once the constants below are updated.
-    // (Uses println! intentionally so cargo test --nocapture surfaces
-    //  the values without needing a logger.)
-    println!("REGEN_BEGIN");
-    println!("EXPECTED_FULL_POSE = [");
-    for row in pose.iter() {
-        print!("    [");
-        for (i, v) in row.iter().enumerate() {
-            if i > 0 {
-                print!(", ");
-            }
-            print!("{v:e}");
-        }
-        println!("],");
-    }
-    println!("];");
-    println!("EXPECTED_FULL_ERROR = {error:e};");
-    println!("REGEN_END");
 
     // Compare pose to C++ baseline (tolerance: 1e-2 for full pipeline).
     // See `EXPECTED_FULL_POSE` doc comment for the regeneration recipe.
