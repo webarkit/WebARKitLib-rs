@@ -43,7 +43,7 @@
 
 use crate::kpm::backend::KpmError;
 use crate::{arlog_d, arlog_e, arlog_i};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use super::math::{fast_median_f32, safe_division_f32};
 
@@ -313,7 +313,14 @@ pub struct HoughSimilarityVoting {
     pub ref_image_width: i32,
     pub ref_image_height: i32,
     /// Vote map: bin_index → vote count.
-    votes: HashMap<i32, i32>,
+    ///
+    /// `BTreeMap` (not `HashMap`) guarantees deterministic iteration order
+    /// across runs. With `HashMap`, Rust's per-process `RandomState` would
+    /// make `get_maximum_votes`' tie-breaking (`max_by_key` returns the
+    /// last equal element in iteration order) non-deterministic across
+    /// runs — a documented source of intra-Rust matcher variance, see
+    /// issue #170.
+    votes: BTreeMap<i32, i32>,
 }
 
 impl HoughSimilarityVoting {
@@ -342,7 +349,7 @@ impl HoughSimilarityVoting {
             center_y,
             ref_image_width,
             ref_image_height,
-            votes: HashMap::new(),
+            votes: BTreeMap::new(),
         })
     }
 
