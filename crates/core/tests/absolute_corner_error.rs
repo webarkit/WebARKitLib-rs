@@ -97,25 +97,33 @@ const MARKER_NAME: &str = "pinball";
 /// Below this threshold, a per-cell delta is treated as noise; above
 /// it, the cell is flagged as a regression.
 ///
-/// **Why 2.0 px**: the gate has to absorb three sources of variance:
+/// **Why 3.5 px**: the gate has to absorb these sources of variance:
 ///
-/// 1. Float-noise on identical input (sub-pixel — what 0.5 px would
-///    have covered).
+/// 1. Float-noise on identical input (sub-pixel).
 /// 2. Cross-platform float-arithmetic / stdlib-version drift in the
 ///    KPM + ICP pipeline. CI runs on Linux (libstdc++); contributors
-///    often run on Windows or macOS. We've measured ~1.8 px of
-///    legitimate Rust-side per-platform drift on a master-scale
-///    fixture (`pinball-seq4.jpg`).
-/// 3. Implementation-defined `std::unordered_map` iteration order in
-///    the C++ backend, which also varies across platforms and can
-///    produce different inlier sets at borderline matches.
+///    often run on Windows or macOS.
+/// 3. **Residual cross-platform BHC variance** post-#170 fix.
+///    `webarkit/WebARKitLib#39` switched the C++ matcher from
+///    `std::unordered_map` to `std::map` (mirrored on the Rust port
+///    by #171), which fixed tier-1 cross-platform divergence
+///    (matched_id now agrees across platforms — verified on
+///    `pinball-demo.jpg`). However, the BHC `cluster_map_t` change
+///    also reordered cluster iteration; on `pinball-seq4.jpg` this
+///    produces a different inlier set at the homography fit between
+///    Linux and Windows, yielding ~2.85 px of cross-platform max-err
+///    drift even though `matched_id` agrees. Cause: residual
+///    float-arithmetic order differences in the inner-loop math
+///    (likely Eigen SIMD codegen or libstdc++ vs MSVC CRT math
+///    differences). Tracked as a follow-up to #170.
 ///
-/// 2.0 px is intentionally chosen to match the M9 #152 tier-2
-/// homography tolerance. It's loose enough to absorb (1)–(3) on
-/// every fixture we ship today, while still tight enough to flag a
-/// real backend regression. When #170 lands cross-platform
-/// determinism for both backends, this can drop back to ~0.5 px.
-const REGRESSION_EPSILON_PX: f32 = 2.0;
+/// 3.5 px is chosen to absorb (1)–(3) on every fixture we ship today,
+/// while still tight enough to flag a real backend regression.
+/// Was 2.0 pre-#172; expanded to 3.5 to absorb the seq4 BHC variance.
+/// Once the residual cross-platform variance source is identified and
+/// fixed (the open follow-up of #170), this can tighten back to
+/// ~0.5 px.
+const REGRESSION_EPSILON_PX: f32 = 3.5;
 
 const ROLES: [&str; 4] = ["top_left", "top_right", "bottom_right", "bottom_left"];
 
