@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "generated_with": "@webarkit/jsartoolkit-nft@1.9.0 via tools/jsartoolkitnft-bridge/run.js",
+  "generated_at": "2026-06-01T21:57:58.358Z",
+  "notes": "JS-stack reference output for the cross-stack parity gate. Pre-rebuild WebARKitLib#39 status: the npm-published dist still uses the pre-fix C++ matcher, so these numbers reflect that. Regenerate after jsartoolkitNFT republishes post-#39 to update the comparison reference.",
+  "per_frame": {
+    "pinball-demo.jpg": {
+      "loaded_marker_id": 0,
+      "nft_data": {
+        "id": 0,
+        "width": 893,
+        "height": 1117,
+        "dpi": 120
+      },
+      "camera_matrix": [
+        1.9052195134651717,
+        0,
+        0,
+        0,
+        0,
+        2.528857670126365,
+        0,
+        0,
+        -0.011280347968173565,
+        -0.009312304597921983,
+        -1.0000002000000199,
+        -1,
+        0,
+        0,
+        -0.00020000002000000202,
+        0
+      ],
+      "first_match": {
+        "id": 0,
+        "error": 0.9179872274398804,
+        "found": 1,
+        "pose": [
+          0.9867026805877686,
+          0.16252774000167847,
+          0.0015941221499815583,
+          -182.5176239013672,
+          0.15249000489711761,
+          -0.9222801327705383,
+          -0.35517066717147827,
+          64.27685546875,
+          -0.05625486373901367,
+          0.35069096088409424,
+          -0.9348000884056091,
+          584.3177490234375
+        ]
+      }
+    }
+  }
+}
