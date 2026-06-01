@@ -18,32 +18,46 @@ per backend per frame.
 annotated_frames/
 ├── README.md                       (this file)
 ├── baseline.json                   (committed regression baseline — do not edit by hand)
-├── pinball-demo.corners.json       (refs ../../../examples/Data/pinball-demo.jpg)
 ├── pinball-seq1.jpg
 ├── pinball-seq1.corners.json
 ├── pinball-seq4.jpg
 └── pinball-seq4.corners.json
 ```
 
-Three matchable fixtures total. The JPEG for `pinball-demo` lives in
-`crates/core/examples/Data/` because it's also an example asset; the
-test resolves it by searching this directory first and falling back to
-`examples/Data/`.
+Two matchable fixtures today. The test resolves each JSON's `image`
+field by searching this directory first and falling back to
+`crates/core/examples/Data/` (the original asset location).
 
-### Why only three frames
+### Why only two frames
 
-Earlier iterations of this directory included `pinball-seq2` and
-`pinball-seq3`. Both were dropped after they exposed run-to-run
-nondeterminism in the Rust backend: between consecutive identical
-test runs, Rust's matched id (and therefore its homography) flipped
-unpredictably, while the C++ backend stayed stable. The most likely
-source is Rust's default `HashMap` random hash state affecting BHC
-tree topology between runs.
+The fixture set has been pared down twice for stability reasons,
+each time backed by issue #170 ("matcher non-determinism"):
 
-The regression-baseline approach assumes deterministic measurements,
-so flaky fixtures generate false-positive regressions. The dropped
-fixtures will be re-added once the Rust nondeterminism is fixed
-(separately tracked).
+1. **`pinball-seq2.jpg` + `pinball-seq3.jpg`** were dropped after
+   exposing **run-to-run nondeterminism in the Rust backend** on the
+   same machine: between consecutive identical test runs, Rust's
+   matched id (and therefore its homography) flipped unpredictably,
+   while the C++ backend stayed stable. Most likely cause: Rust's
+   default `HashMap` random hash state affecting BHC tree topology.
+
+2. **`pinball-demo.jpg`** was dropped after CI exposed
+   **cross-platform divergence in the C++ backend**: on Windows
+   (locally) C++ matched `db_id=2` (595×745); on Ubuntu CI
+   (libstdc++) C++ matched `db_id=1` (750×938). This is the same
+   `unordered_map` iteration-order mechanism §10 of
+   `docs/design/m9-2-rust-backend.md` discusses for Rust↔C++
+   variance — turns out C++↔C++ also varies across stdlib
+   implementations. The `.jpg` stays in `crates/core/examples/Data/`
+   for its example role; only the annotation here was removed.
+
+`pinball-seq1.jpg` is rock-solid (sub-pixel agreement across
+platforms). `pinball-seq4.jpg` has ~1.8 px of Rust-side per-platform
+drift but matches the same id consistently. Both are absorbed by the
+2.0 px regression epsilon (see `REGRESSION_EPSILON_PX` in
+`absolute_corner_error.rs` for the full rationale).
+
+The dropped fixtures will be re-added once #170 lands cross-platform
+determinism in both backends.
 
 ## Schema reference
 
