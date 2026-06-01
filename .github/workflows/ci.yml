@@ -88,6 +88,7 @@ jobs:
           --test kpm_regression \
           --test nft_pipeline \
           --test ar2_pinball_io \
+          --test cross_stack_parity \
           --features ffi-backend
 
     # Absolute corner-error gate (#166 Track A). Reprojects each backend's
