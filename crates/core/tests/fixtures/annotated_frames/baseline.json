@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "regenerated_with": "regenerated 2026-05-31T15:12:58Z via WEBARKIT_REGEN_CORNER_BASELINE=1",
+  "regenerated_with": "regenerated 2026-06-01T12:23:53Z via WEBARKIT_REGEN_CORNER_BASELINE=1",
   "per_frame": {
     "pinball-demo.jpg": {
       "cpp_max_err_px": 18.78568,
@@ -13,31 +13,23 @@
       "tier1_diverged": false
     },
     "pinball-seq1.jpg": {
-      "cpp_max_err_px": null,
-      "rust_max_err_px": null,
-      "matched_id": -1,
-      "ref_dims": null,
-      "tier1_diverged": false
-    },
-    "pinball-seq2.jpg": {
-      "cpp_max_err_px": null,
-      "rust_max_err_px": null,
-      "matched_id": -1,
-      "ref_dims": null,
-      "tier1_diverged": false
-    },
-    "pinball-seq3.jpg": {
-      "cpp_max_err_px": null,
-      "rust_max_err_px": null,
-      "matched_id": -1,
-      "ref_dims": null,
+      "cpp_max_err_px": 3.440674,
+      "rust_max_err_px": 2.7545714,
+      "matched_id": 2,
+      "ref_dims": [
+        595,
+        745
+      ],
       "tier1_diverged": false
     },
     "pinball-seq4.jpg": {
-      "cpp_max_err_px": null,
-      "rust_max_err_px": null,
-      "matched_id": -1,
-      "ref_dims": null,
+      "cpp_max_err_px": 4.671063,
+      "rust_max_err_px": 5.9503746,
+      "matched_id": 0,
+      "ref_dims": [
+        893,
+        1117
+      ],
       "tier1_diverged": false
     }
   }
