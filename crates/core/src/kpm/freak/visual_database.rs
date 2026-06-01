@@ -71,7 +71,7 @@
 //! [`matched_db_id`]: VisualDatabase::matched_db_id
 //! [`matched_geometry`]: VisualDatabase::matched_geometry
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use purecv::core::Matrix;
 
@@ -174,8 +174,18 @@ type MatchOutcome = Option<(Vec<Match>, [f32; 9])>;
 /// `docs/design/m9-1-visual-database.md`).
 pub struct VisualDatabase {
     /// Reference keyframes, keyed by user-supplied id.
-    /// Mirrors C++ `mKeyframeMap` (`std::unordered_map<id_t, keyframe_ptr_t>`).
-    pub keyframes: HashMap<usize, Keyframe>,
+    ///
+    /// Mirrors C++ `mKeyframeMap` (`std::unordered_map<id_t, keyframe_ptr_t>`),
+    /// but we deliberately use `BTreeMap` here for **intra-Rust
+    /// determinism**: [`query`] iterates the keyframes and breaks ties on
+    /// inlier-count with a strict `>` (first match wins). With a hashed
+    /// iteration order, the winning keyframe on borderline ties would
+    /// depend on Rust's per-process `RandomState`, producing run-to-run
+    /// `matched_id` variance — see issue #170. `BTreeMap`'s ascending-key
+    /// order makes the tie-breaking deterministic. Note this doesn't
+    /// achieve cross-language parity with C++ (C++ `unordered_map` still
+    /// has implementation-defined order); see #170 for that broader fix.
+    pub keyframes: BTreeMap<usize, Keyframe>,
 
     // Pipeline components (private state)
     matcher: FeatureMatcher,
@@ -231,7 +241,7 @@ impl VisualDatabase {
             HOMOGRAPHY_DEFAULT_CHUNK_SIZE,
         );
         Ok(Self {
-            keyframes: HashMap::new(),
+            keyframes: BTreeMap::new(),
             matcher: FeatureMatcher::new(),
             homography,
             detector,
