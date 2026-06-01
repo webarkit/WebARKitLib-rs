@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "regenerated_with": "regenerated 2026-06-01T14:26:33Z from CI run 26760982015 (ubuntu-latest); CI is the canonical source pending #170",
+  "regenerated_with": "regenerated 2026-06-01T20:01Z from CI run 26778547083 (ubuntu-latest, post-webarkit/WebARKitLib#39 C++ std::map fix); CI is the canonical source",
   "per_frame": {
     "pinball-seq1.jpg": {
       "cpp_max_err_px": 3.439,
@@ -13,7 +13,7 @@
       "tier1_diverged": false
     },
     "pinball-seq4.jpg": {
-      "cpp_max_err_px": 4.8005,
+      "cpp_max_err_px": 7.5242,
       "rust_max_err_px": 4.1453,
       "matched_id": 0,
       "ref_dims": [
