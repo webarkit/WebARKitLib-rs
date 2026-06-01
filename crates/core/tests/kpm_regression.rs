@@ -354,6 +354,28 @@ fn test_full_pipeline_pose() {
 
     assert_eq!(page_no, 0, "matched page should be 0");
 
+    // TEMP: capture block for regenerating EXPECTED_FULL_POSE +
+    // EXPECTED_FULL_ERROR after the webarkit/WebARKitLib#39 C++ fix
+    // converges Linux matched_id with the canonical Windows value.
+    // Remove this block once the constants below are updated.
+    // (Uses println! intentionally so cargo test --nocapture surfaces
+    //  the values without needing a logger.)
+    println!("REGEN_BEGIN");
+    println!("EXPECTED_FULL_POSE = [");
+    for row in pose.iter() {
+        print!("    [");
+        for (i, v) in row.iter().enumerate() {
+            if i > 0 {
+                print!(", ");
+            }
+            print!("{v:e}");
+        }
+        println!("],");
+    }
+    println!("];");
+    println!("EXPECTED_FULL_ERROR = {error:e};");
+    println!("REGEN_END");
+
     // Compare pose to C++ baseline (tolerance: 1e-2 for full pipeline).
     // See `EXPECTED_FULL_POSE` doc comment for the regeneration recipe.
     assert_pose_near("full_pipeline", pose, &EXPECTED_FULL_POSE, 1e-2);
