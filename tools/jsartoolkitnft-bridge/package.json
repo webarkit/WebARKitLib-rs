@@ -1,6 +1,5 @@
 {
-  "private": true,
-  "name": "webarkitlib-rs-jsartoolkitnft-bridge",
+  "name": "@webarkit/webarkitlib-rs-jsartoolkitnft-bridge",
   "version": "0.1.0",
   "description": "Cross-stack parity bridge: runs jsartoolkitNFT-Node on the same fixtures as the Rust corner-error gate and dumps the resulting marker IDs + transformation matrices to expected-js.json for cross-stack comparison.",
   "private": true,
@@ -9,7 +8,7 @@
     "regen": "node run.js"
   },
   "dependencies": {
-    "@webarkit/jsartoolkit-nft": "^1.9.0",
-    "sharp": "^0.33.0"
+    "@webarkit/jsartoolkit-nft": "^1.10.0",
+    "sharp": "0.34.5"
   }
 }

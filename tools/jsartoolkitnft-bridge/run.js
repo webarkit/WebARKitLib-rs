@@ -145,10 +145,14 @@ async function main() {
         generated_at: nowIso(),
         notes:
             'JS-stack reference output for the cross-stack parity ' +
-            'gate. Pre-rebuild WebARKitLib#39 status: the npm-published ' +
-            'dist still uses the pre-fix C++ matcher, so these numbers ' +
-            'reflect that. Regenerate after jsartoolkitNFT republishes ' +
-            'post-#39 to update the comparison reference.',
+            'gate. As of jsartoolkitNFT@1.10.0 the WASM ships the ' +
+            'post-WebARKitLib#39 (std::map) matcher: tier-1 (matched_id) ' +
+            'agrees across JS / native-C++ / Rust, but residual ' +
+            'Emscripten-vs-native arithmetic drift (Eigen SIMD codegen, ' +
+            'libc++ vs libstdc++/MSVC math functions) produces ~0.06 ' +
+            'rotation-element drift in the 3x4 pose. Regenerate this ' +
+            'sidecar whenever the @webarkit/jsartoolkit-nft dependency ' +
+            'in package.json is bumped.',
         per_frame: results,
     };
 
