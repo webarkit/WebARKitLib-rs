@@ -59,6 +59,11 @@ cc = "1"
 bindgen = "0.72.1"
 
 [features]
+# Default features intentionally empty (M9-3, #142): a plain `cargo build`
+# uses the pure-Rust FreakMatcher and requires no C++ compiler. The C++
+# FFI backend is opt-in via `--features ffi-backend` for validation /
+# regression testing.
+default = []
 simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41", "simd-x86-avx2"]
 simd-image = []
 simd-pattern = []
@@ -107,7 +112,11 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "nft_marker_gen"
-required-features = ["log-helpers"]
+# M9-3 #142: this example uses `CppFreakMatcher` directly, so it requires
+# `ffi-backend` in addition to `log-helpers`. (Pre-M9-3 it built only
+# because the FFI backend was always available; with the pure-Rust default,
+# it must explicitly opt in.)
+required-features = ["log-helpers", "ffi-backend"]
 
 [[example]]
 name = "barcode"

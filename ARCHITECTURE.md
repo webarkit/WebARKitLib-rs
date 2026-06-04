@@ -30,7 +30,8 @@ The unified core library containing all AR functionality:
 -   **KPM module** (`kpm`): Keypoint Matching subsystem (FREAK descriptor-based tracking):
     -   `kpm::handle` — high-level KPM handle and matching orchestration.
     -   `kpm::backend` — pluggable feature-extraction backend trait and error types.
-    -   `kpm::cpp_backend` — C++ FreakMatcher FFI backend (feature-gated: `ffi-backend`).
+    -   `kpm::rust_backend` — **default** pure-Rust `FreakMatcher` backend (M9-2, #141). Used by `cargo build` out of the box; no C++ compiler required.
+    -   `kpm::cpp_backend` — opt-in C++ FreakMatcher FFI backend (feature-gated: `--features ffi-backend`). Available for validation, regression testing, and `DualFreakMatcher` cross-checks.
     -   `kpm::matching` — per-frame matching and ICP-based pose estimation.
     -   `kpm::ref_data_set` — `.fset3` reference data I/O and compression modes.
     -   `kpm::types` — KPM data structures and constants.
@@ -53,11 +54,12 @@ Depends only on `webarkitlib-rs` (the core crate).
 
 | Feature        | Description |
 |----------------|-------------|
+| **(default)**  | **Empty** — the pure-Rust `FreakMatcher` is the default backend (M9-3, #142). No C++ compiler required. |
 | `simd`         | Umbrella: enables all SIMD sub-features |
 | `simd-wasm32`  | WASM SIMD128 intrinsics |
 | `simd-x86-sse41` | x86 SSE4.1 intrinsics |
 | `log-helpers`  | Enable logging infrastructure (installs `env_logger` for desktop/tests, `console_log` for WASM) |
-| `ffi-backend`  | Compile the C++ FreakMatcher library and generate FFI bindings |
+| `ffi-backend`  | **Opt-in** — compile the C++ FreakMatcher library and generate FFI bindings. Used for cross-validation and the regression-test suite; not required for production tracking. |
 | `dual-mode`    | Enables FFI-based parity tests that validate pure-Rust ports against the live C++ baseline (M6 math/solvers/homography, M7 BHC/matcher, PRNG). Transitively enables `ffi-backend`. Run in CI on Linux/macOS/Windows. |
 
 ## SIMD Strategy
@@ -75,13 +77,29 @@ Performance-critical functions are optimized using SIMD. The strategy involves:
 
 ## Building and Testing
 
-### Native
+### Pure Rust tracking (default — no C++ compiler needed)
+
+Since **M9-3 (#142)**, a plain `cargo build` uses the pure-Rust
+`FreakMatcher` and requires no C++ toolchain. The `ffi-backend`
+compilation is fully gated behind the opt-in `--features ffi-backend`
+flag in `crates/core/build.rs`.
+
 ```bash
+# No clang / libclang / cc required — pure Rust end-to-end.
+cargo build -p webarkitlib-rs
+cargo test  -p webarkitlib-rs
+
+# Production tracking with SIMD acceleration:
 cargo build --release --features simd
 cargo test --workspace --features simd
 ```
 
-### With C++ FFI backend
+The C++ FreakMatcher (`CppFreakMatcher`) is now an opt-in development
+tool used for validation, regression testing, and cross-stack parity
+gates — not a runtime dependency for production NFT tracking.
+
+### Opt-in: C++ FFI backend (validation / regression suite)
+
 ```bash
 # Bootstrap C++ sources first (one-time setup)
 cd benchmarks/c_benchmark && python ../bootstrap.py --bootstrap-file libraries.json && cd ../..
