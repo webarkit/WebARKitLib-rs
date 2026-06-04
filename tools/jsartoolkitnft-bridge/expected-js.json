@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "generated_with": "@webarkit/jsartoolkit-nft@1.9.0 via tools/jsartoolkitnft-bridge/run.js",
-  "generated_at": "2026-06-01T21:57:58.358Z",
-  "notes": "JS-stack reference output for the cross-stack parity gate. Pre-rebuild WebARKitLib#39 status: the npm-published dist still uses the pre-fix C++ matcher, so these numbers reflect that. Regenerate after jsartoolkitNFT republishes post-#39 to update the comparison reference.",
+  "generated_with": "@webarkit/jsartoolkit-nft@1.10.0 via tools/jsartoolkitnft-bridge/run.js",
+  "generated_at": "2026-06-04T20:04:52.916Z",
+  "notes": "JS-stack reference output for the cross-stack parity gate. As of jsartoolkitNFT@1.10.0 the WASM ships the post-WebARKitLib#39 (std::map) matcher: tier-1 (matched_id) agrees across JS / native-C++ / Rust, but residual Emscripten-vs-native arithmetic drift (Eigen SIMD codegen, libc++ vs libstdc++/MSVC math functions) produces ~0.06 rotation-element drift in the 3x4 pose. Regenerate this sidecar whenever the @webarkit/jsartoolkit-nft dependency in package.json is bumped.",
   "per_frame": {
     "pinball-demo.jpg": {
       "loaded_marker_id": 0,
@@ -32,21 +32,21 @@
       ],
       "first_match": {
         "id": 0,
-        "error": 0.9179872274398804,
+        "error": 0.7386705279350281,
         "found": 1,
         "pose": [
-          0.9867026805877686,
-          0.16252774000167847,
-          0.0015941221499815583,
-          -182.5176239013672,
-          0.15249000489711761,
-          -0.9222801327705383,
-          -0.35517066717147827,
-          64.27685546875,
-          -0.05625486373901367,
-          0.35069096088409424,
-          -0.9348000884056091,
-          584.3177490234375
+          0.986603319644928,
+          0.16312481462955475,
+          0.0020335924345999956,
+          -182.7330322265625,
+          0.15380123257637024,
+          -0.9259117841720581,
+          -0.3450109660625458,
+          65.03147888183594,
+          -0.05439692735671997,
+          0.34070175886154175,
+          -0.9385964870452881,
+          584.0712280273438
         ]
       }
     }

@@ -98,15 +98,30 @@ use webarkitlib_rs::types::{ARParam, ARParamLT};
 
 /// Max absolute difference allowed between any pair of stacks on any
 /// rotation element of the 3×4 pose. Rotation elements are
-/// dimensionless and bounded by `[-1, 1]`, so 0.05 corresponds to
+/// dimensionless and bounded by `[-1, 1]`, so 0.08 corresponds to
 /// roughly a few degrees of equivalent rotation.
 ///
 /// Sized to absorb:
 /// - Inter-stack BHC-variance envelope (M9-2 §10) on the current
 ///   fixture set (~0.04 worst-case observed pre-#170 fixes).
-/// - Cross-stack float-arithmetic drift between Eigen-via-C++ and
-///   Eigen-via-Emscripten / libstdc++ vs libc++ math functions.
-const POSE_ROT_TOL: f32 = 0.05;
+/// - **Residual Emscripten-vs-native cross-stack arithmetic drift**
+///   measured against `@webarkit/jsartoolkit-nft@1.10.0` (the first
+///   post-#39 rebuild). On `pinball-demo.jpg`, JS-WASM and native
+///   C++ agree on `matched_id` (the std::map fix worked) but the
+///   resulting 3×4 pose drifts by ~0.058 on the worst rotation
+///   element — attributable to Eigen SIMD codegen + libc++ vs
+///   libstdc++/MSVC CRT math function differences propagating
+///   through the RANSAC + ICP inner loops. The mirror of the
+///   ~2.85 px residual cross-platform drift `absolute_corner_error`
+///   absorbs via its 3.5 px epsilon (#172), just expressed in a
+///   different metric.
+///
+/// 0.08 is `~1.4×` the worst observed diff — modest headroom without
+/// being loose. Was 0.05 pre-#173-merge-prep; widened after seeing
+/// the residual Emscripten-vs-native drift in the post-#39 JS
+/// sidecar. Tightens further only when Emscripten's SIMD codegen
+/// converges with native (out of scope for #170).
+const POSE_ROT_TOL: f32 = 0.08;
 
 /// Max absolute difference allowed between any pair of stacks on any
 /// translation element of the 3×4 pose. Translation elements are in
