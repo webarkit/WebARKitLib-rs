@@ -41,7 +41,43 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 webarkitlib-rs = "0.6"
 ```
 
-To enable the C++ FFI backend for KPM (Natural Feature Tracking):
+### Pure Rust tracking (no C++ compiler required)
+
+Since **M9-3 (#142)**, the default backend is the pure-Rust
+`FreakMatcher`. A plain `cargo add webarkitlib-rs` (or the snippet
+above) gives you a fully functional NFT/KPM tracker with **no C++
+toolchain, libclang, or `cc` required at build time**:
+
+```bash
+cargo build         # works on machines without clang/libclang/cc
+cargo test
+```
+
+The whole `crates/core/build.rs` `FreakMatcher` C++ compilation path
+is gated behind `cfg!(feature = "ffi-backend")` — opt-in only.
+
+### Building without C++
+
+If you are integrating WebARKitLib-rs from a containerized environment
+or any host that doesn't have a C++ toolchain installed, you don't
+need to do anything special:
+
+```toml
+[dependencies]
+webarkitlib-rs = "0.6"  # default backend is pure Rust
+```
+
+```bash
+cargo build  # succeeds without a C++ compiler installed
+```
+
+### Opt-in: C++ FFI backend (for validation only)
+
+The C++ `FreakMatcher` is still available as an opt-in backend, used
+internally for cross-validation (`--features dual-mode`), regression
+testing (`kpm_regression`), and the cross-stack parity gate
+(`cross_stack_parity`). It is **no longer required for production
+NFT tracking**:
 
 ```toml
 [dependencies]
@@ -85,7 +121,11 @@ This example loads a camera parameter file, a marker (pattern or barcode), and a
 Generate NFT (Natural Feature Tracking) marker files compatible with ARnft and NFT-Marker-Creator-App:
 
 ```bash
-# Basic usage (requires C++ FREAK backend for .fset3):
+# nft_marker_gen still requires --features ffi-backend (M9-3 #142):
+# it uses CppFreakMatcher to generate .fset3 files, which is the
+# legacy C++ NFT-marker-creator behaviour. Runtime tracking with
+# pre-built .fset3 files works on the pure-Rust default — only
+# marker generation needs the C++ FREAK extractor here.
 cargo run --release --features ffi-backend --example nft_marker_gen -- \
   --input path/to/image.jpg \
   --output path/to/output_name \
@@ -120,7 +160,7 @@ This produces three files:
 
 | Feature flag | What it enables |
 |---|---|
-| `ffi-backend` | C++ FREAK backend for `.fset3` generation (required for full NFT markers) |
+| `ffi-backend` | C++ FREAK backend (opt-in since M9-3 #142). Required only for legacy `.fset3` generation in `nft_marker_gen` and for development cross-validation. Runtime NFT tracking with existing `.fset3` files works on the pure-Rust default. |
 | `simd-x86-sse41` | SSE4.1 SIMD acceleration for feature map correlation (`get_similarity`) |
 | `simd-x86-avx2` | AVX2+FMA SIMD acceleration for feature map correlation (faster than SSE4.1) |
 | `simd` | Umbrella flag — enables all SIMD optimizations (SSE4.1, AVX2, WASM SIMD, image, pattern) |

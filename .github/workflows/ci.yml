@@ -38,6 +38,43 @@ jobs:
     - name: Run cargo test with SIMD
       run: cargo test --workspace --features simd
 
+  # M9-3 (#142): proves the pure-Rust default builds and tests cleanly
+  # WITHOUT a C++ toolchain installed. Pinned to ubuntu-latest because the
+  # invariant we're testing is build-system gating (build.rs only runs the
+  # FreakMatcher C++ compilation when `--features ffi-backend` is set), not
+  # platform-specific compilation. Critically, this job does NOT install
+  # libclang-dev — if any unconditional bindgen/cc dependency ever leaks
+  # into the no-features build path, this job fails.
+  pure-rust-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      # Submodules deliberately NOT recursive — the pure-Rust path must
+      # never touch the WebARKitLib C++ source tree.
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run cargo fmt check (pure-Rust)
+      run: cargo fmt --all -- --check
+
+    - name: Run cargo check (no features)
+      run: cargo check -p webarkitlib-rs
+
+    - name: Run cargo clippy (no features)
+      run: cargo clippy -p webarkitlib-rs -- -D warnings
+
+    - name: Run cargo build (no features)
+      run: cargo build -p webarkitlib-rs
+
+    - name: Run cargo test (no features)
+      run: cargo test -p webarkitlib-rs
+
   kpm-build:
     strategy:
       fail-fast: false
