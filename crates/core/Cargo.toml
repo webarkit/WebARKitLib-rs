@@ -113,11 +113,11 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "nft_marker_gen"
-# M9-3 #142: this example uses `CppFreakMatcher` directly, so it requires
-# `ffi-backend` in addition to `log-helpers`. (Pre-M9-3 it built only
-# because the FFI backend was always available; with the pure-Rust default,
-# it must explicitly opt in.)
-required-features = ["log-helpers", "ffi-backend"]
+# M9-3 #142: builds on the pure-Rust default and produces `.iset` + `.fset`.
+# `ffi-backend` is optional and unlocks the `.fset3` (FREAK descriptors)
+# step, which still calls `CppFreakMatcher` directly. Wiring `.fset3`
+# generation to `RustFreakMatcher` is a planned follow-up.
+required-features = ["log-helpers"]
 
 [[example]]
 name = "barcode"

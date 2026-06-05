@@ -122,11 +122,20 @@ This example loads a camera parameter file, a marker (pattern or barcode), and a
 Generate NFT (Natural Feature Tracking) marker files compatible with ARnft and NFT-Marker-Creator-App:
 
 ```bash
-# nft_marker_gen still requires --features ffi-backend (M9-3 #142):
-# it uses CppFreakMatcher to generate .fset3 files, which is the
-# legacy C++ NFT-marker-creator behaviour. Runtime tracking with
-# pre-built .fset3 files works on the pure-Rust default — only
-# marker generation needs the C++ FREAK extractor here.
+# Pure-Rust default (no C++ toolchain required) — produces .iset + .fset.
+# Pass --yes to skip the interactive "no .fset3" confirmation prompt
+# (recommended for scripted / CI use):
+cargo run --release --example nft_marker_gen -- \
+  --input path/to/image.jpg \
+  --output path/to/output_name \
+  --dpi 220 \
+  --yes
+
+# Full output including .fset3 (FREAK descriptors) — opt-in C++ backend:
+# .fset3 generation still uses CppFreakMatcher today; the runtime KPM
+# tracker reads .fset3 files in pure Rust, only the marker-creation step
+# needs the C++ FREAK extractor. Wiring nft_marker_gen to RustFreakMatcher
+# for .fset3 is a follow-up task.
 cargo run --release --features ffi-backend --example nft_marker_gen -- \
   --input path/to/image.jpg \
   --output path/to/output_name \
@@ -142,10 +151,13 @@ cargo run --release --features "ffi-backend,simd-x86-sse41,simd-x86-avx2" \
 
 > **Important:** Always use the `--release` flag. Debug builds are 5–10× slower due to missing compiler optimizations.
 
-This produces three files:
-- **`output_name.iset`** — JPEG-compressed image pyramid (~300 KB, matches C++ `ar2WriteImageSet()` format)
-- **`output_name.fset`** — Feature map with one entry per pyramid level
-- **`output_name.fset3`** — FREAK descriptors for KPM-based recognition
+Output files (depends on whether `ffi-backend` is enabled):
+
+| File | Default (pure Rust) | With `ffi-backend` | Description |
+|---|:---:|:---:|---|
+| `<output>.iset` | ✅ | ✅ | JPEG-compressed image pyramid (~300 KB, matches C++ `ar2WriteImageSet()` format) |
+| `<output>.fset` | ✅ | ✅ | Feature map with one entry per pyramid level |
+| `<output>.fset3` | ❌ (skipped, with warning) | ✅ | FREAK descriptors for KPM-based recognition |
 
 **Options:**
 
@@ -156,12 +168,13 @@ This produces three files:
 | `-d` | `--dpi` | Source image resolution in DPI | required |
 | `-l` | `--level` | Tracking extraction level (0–4) | `2` |
 | `-n` | `--search-feature-num` | Max features per pyramid level | `250` |
+| `-y` | `--yes` | Skip the "no .fset3" confirmation prompt (for scripted / CI use; only relevant when built without `ffi-backend`) | (interactive) |
 
 **Performance feature flags:**
 
 | Feature flag | What it enables |
 |---|---|
-| `ffi-backend` | C++ FREAK backend (opt-in since M9-3 #142). Required only for legacy `.fset3` generation in `nft_marker_gen` and for development cross-validation. Runtime NFT tracking with existing `.fset3` files works on the pure-Rust default. |
+| `ffi-backend` | C++ FREAK backend (opt-in since M9-3 #142). Enables `.fset3` generation in `nft_marker_gen` (the `.iset`/`.fset` outputs work on the pure-Rust default) and powers development cross-validation (`dual-mode`, `cross_stack_parity`). Runtime NFT tracking with existing `.fset3` files works on the pure-Rust default. |
 | `simd-x86-sse41` | SSE4.1 SIMD acceleration for feature map correlation (`get_similarity`) |
 | `simd-x86-avx2` | AVX2+FMA SIMD acceleration for feature map correlation (faster than SSE4.1) |
 | `simd` | Umbrella flag — enables all SIMD optimizations (SSE4.1, AVX2, WASM SIMD, image, pattern) |
@@ -380,9 +393,12 @@ The workspace contains two crates:
 
 - **`crates/core`** (`webarkitlib-rs`): The unified core AR engine (pure Rust), including:
   - `ar2` module: NFT marker generation pipeline — image pyramid (`ar2_gen_image_set`), feature map (`ar2_gen_feature_map`), JPEG-compressed `.iset` save, `.fset` / `.fset3` I/O.
-  - `kpm` module: Keypoint Matching with pluggable backends (Rust + C++ FFI), FREAK descriptor extraction.
+  - `kpm` module: Keypoint Matching with a pluggable `FreakMatcherBackend` trait (M9-2). Since M9-3 (#142), the **default backend is pure Rust** — `cargo build` requires no C++ toolchain. The C++ FFI backend is opt-in via `--features ffi-backend`.
+    - `kpm::rust_backend`: Default `RustFreakMatcher` + `DualFreakMatcher` (parity-asserting wrapper used by regression tests) (M9-2).
+    - `kpm::cpp_backend`: Opt-in C++ `CppFreakMatcher` FFI shim, gated behind `cfg(feature = "ffi-backend")` (M9-3).
+    - `kpm::freak::visual_database`: Pure-Rust `VisualDatabase` — descriptor storage, BHC index, `queryByFeatures`, homography-guided refinement (M9-1).
     - `kpm::freak::math` / `kpm::freak::homography`: pure-Rust math & homography pipeline (M6).
-    - `kpm::freak::hough`: Hough similarity voting — 4D-binned voting scheme for finding the consistent similarity transformation across matched feature pairs (M7).
+    - `kpm::freak::hough`: Hough similarity voting — 4D-binned voting scheme for finding the consistent similarity transformation across matched feature pairs (M7). Uses `BTreeMap` for deterministic bin iteration across platforms (M9 #171).
     - `kpm::freak::clustering`: K-Medoids + Binary Hierarchical Clustering (BHC) vocabulary tree for fast approximate-NN search on 96-byte FREAK descriptors. Byte-identical PRNG (`FastRandom` / `ArrayShuffle`) for C++ parity (M7).
     - `kpm::freak::matcher`: `FeatureStore` + `FeatureMatcher` with three match variants (brute, BHC-indexed, homography-guided), each gated by C++-faithful ratio test and `maxima` filtering (M7).
   - Core modules: image processing, pattern matching, labeling, ICP, pose estimation.
@@ -415,10 +431,20 @@ The workspace contains two crates:
   - **Step 3**: `DoG detector` + `OrientationAssignment` — difference-of-Gaussians keypoint detection and dominant orientation estimation
   - **Step 4**: `FREAK descriptor` + `Keyframe` — native Rust FREAK descriptor computation and keyframe pipeline
   - Completes the KPM feature extraction and image pyramid components in pure Rust
+- **M9 -- End-to-end pure-Rust KPM/NFT pipeline** ([#139](https://github.com/webarkit/WebARKitLib-rs/issues/139), delivered by [PR #176](https://github.com/webarkit/WebARKitLib-rs/pull/176)) — 3 sub-milestones, 16 sub-PRs, +9k LOC:
+  - **M9-1** ([#140](https://github.com/webarkit/WebARKitLib-rs/issues/140)): Pure-Rust `VisualDatabase` port — FREAK descriptor storage, BHC vocabulary tree, Hough voting, homography-guided matching, byte-identical `FastRandom`/`ArrayShuffle` PRNG vs C++.
+  - **M9-2** ([#141](https://github.com/webarkit/WebARKitLib-rs/issues/141)): Pluggable `FreakMatcherBackend` trait — `RustFreakMatcher` (default), `CppFreakMatcher` (FFI), and `DualFreakMatcher` (parity-asserting). New `simple_nft_dual` diagnostic example.
+  - **M9-3** ([#142](https://github.com/webarkit/WebARKitLib-rs/issues/142)): **Pure Rust is now the default backend.** `cargo build` works on machines with **no C++ toolchain (no clang / libclang / cc)**. The C++ FFI is opt-in via `--features ffi-backend` for cross-validation and `nft_marker_gen` only. A dedicated `pure-rust-build` CI job guards the invariant.
+  - **Cross-cutting wins**:
+    - Cross-platform / cross-stack matcher determinism — Rust `HashMap` → `BTreeMap` and upstream C++ `unordered_map` → `std::map` ([WebARKitLib#39](https://github.com/webarkit/WebARKitLib/pull/39)).
+    - Hand-annotated absolute corner-error regression gate (browser-based annotation tool + 5 fixtures + Linux CI gate). Finding: pure-Rust backend is more accurate than C++ on `pinball-demo` (5.27 px vs 18.79 px max corner error).
+    - Cross-stack parity gate against `@webarkit/jsartoolkit-nft@1.10.0` ([jsartoolkitNFT#584](https://github.com/webarkit/jsartoolkitNFT/pull/584)) — guarantees native Rust pose matches what production WASM consumers see.
 
 ### 🎯 Short-term Goals (toward v1.0.0)
-- **M9 -- Integrate pure-Rust KPM pipeline**: Wire M8 image pyramid and feature extraction components with M7 matching for end-to-end native Rust NFT support.
-- **Complete KPM in idiomatic Rust**: Port the remaining KPM feature extraction and matching logic to pure Rust, removing the C++ FFI dependency, and ship a working end-to-end NFT example.
+- **KPM-specific benchmark** ([deferred from #142](https://github.com/webarkit/WebARKitLib-rs/issues/142)): Add a dedicated `kpm_bench.rs` Criterion bench so we can verify the pure-Rust backend stays within 20% of C++ on `pinball-demo`. The existing `marker_bench` only measures barcode marker detection.
+- **WASM browser examples for KPM/NFT** ([#161](https://github.com/webarkit/WebARKitLib-rs/issues/161)): End-to-end runnable browser demo of the pure-Rust NFT pipeline.
+- **Raise M9 patch coverage** ([#177](https://github.com/webarkit/WebARKitLib-rs/issues/177)): Lift M9 modules from 84.76% → ≥90% patch coverage with no file under 85%.
+- **Dependency upgrades**: Criterion 0.5 → 0.8 ([#174](https://github.com/webarkit/WebARKitLib-rs/issues/174)).
 - **Enhanced Documentation**: Expand API reference with complete module-level docs, integration walkthroughs for JS/TS, and detailed usage examples.
 - **WASM Memory Management**: Improve resource cleanup when switching engines or markers in long-running browser sessions.
 
