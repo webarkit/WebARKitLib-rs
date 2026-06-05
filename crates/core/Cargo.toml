@@ -59,6 +59,11 @@ cc = "1"
 bindgen = "0.72.1"
 
 [features]
+# Default features intentionally empty (M9-3, #142): a plain `cargo build`
+# uses the pure-Rust FreakMatcher and requires no C++ compiler. The C++
+# FFI backend is opt-in via `--features ffi-backend` for validation /
+# regression testing.
+default = []
 simd = ["simd-image", "simd-pattern", "simd-wasm32", "simd-x86-sse41", "simd-x86-avx2"]
 simd-image = []
 simd-pattern = []
@@ -78,6 +83,10 @@ env_logger = "0.11"
 criterion = "0.5.1"
 clap = { version = "4.5", features = ["derive"] }
 tempfile = "3"
+# Used by the absolute corner-error integration test (#166) to parse
+# annotation JSONs and read/write the regression baseline.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [[example]]
 name = "simple"
@@ -85,7 +94,18 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "simple_nft"
-required-features = ["ffi-backend"]
+required-features = ["log-helpers"]
+# M9-2 #141: switched from CppFreakMatcher to RustFreakMatcher. The Rust
+# backend builds on the default feature set, so no `required-features` is
+# needed anymore.
+
+[[example]]
+name = "simple_nft_dual"
+# M9-2 #157: diagnostic sibling of simple_nft, drives DualFreakMatcher to
+# compare C++ vs pure-Rust FREAK backends on the same query.
+# - dual-mode   -> DualFreakMatcher (transitively pulls ffi-backend)
+# - log-helpers -> ar_log_init_default() so arlog_*! macros emit output
+required-features = ["dual-mode", "log-helpers"]
 
 [[example]]
 name = "load_nft"
@@ -93,6 +113,10 @@ required-features = ["log-helpers"]
 
 [[example]]
 name = "nft_marker_gen"
+# M9-3 #142: builds on the pure-Rust default and produces `.iset` + `.fset`.
+# `ffi-backend` is optional and unlocks the `.fset3` (FREAK descriptors)
+# step, which still calls `CppFreakMatcher` directly. Wiring `.fset3`
+# generation to `RustFreakMatcher` is a planned follow-up.
 required-features = ["log-helpers"]
 
 [[example]]

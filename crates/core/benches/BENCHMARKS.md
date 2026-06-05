@@ -1,6 +1,6 @@
 # WebARKitLib.rs Core Benchmarks
 
-**Last Updated**: 2026-03-11 15:37:20 (UTC+1)
+**Last Updated**: 2026-06-04 (M9-3 — #142)
 
 This document tracks the performance of critical image processing and pattern matching functions in the `webarkitlib_rs` core crate.
 
@@ -45,3 +45,36 @@ cargo bench --bench simd_bench
 - **Target OS**: Windows
 - **Target Architecture**: x86_64 (SSE4.1)
 - **Frame Size**: 640x480 (typical AR video resolution)
+
+## KPM / NFT performance (M9-3 status)
+
+Issue #142's acceptance criterion calls for the pure-Rust NFT pipeline
+to run within 20% of the C++ backend on `pinball-demo`. As of M9-3,
+**there is no dedicated benchmark exercising the KPM / FreakMatcher
+path**. The existing `marker_bench` measures `ar_detect_marker`
+(barcode/template marker detection), which doesn't touch the
+FreakMatcher and therefore can't distinguish pure-Rust from the C++
+FFI backend.
+
+### Functional parity evidence (in lieu of wall-clock numbers)
+
+The Rust and C++ backends agree on the meaningful outputs across
+several test suites:
+
+| Test | What it asserts | Status post-#170 |
+|------|------------------|------------------|
+| `test_dual_mode_no_divergence_on_pinball` | M9 #152 tier-2: `max_corner_displacement < 2.0 px` between C++ and Rust homographies on `found.jpg/img.jpg` | ✅ zero divergences |
+| `absolute_corner_error` (#166 Track A) | Each backend's max corner-error against hand-annotated ground truth stays within baseline + 3.5 px epsilon | ✅ green; **Rust is more accurate than C++** on `pinball-demo` (Rust 5.27 px vs C++ 18.79 px) |
+| `cross_stack_parity` (jsartoolkitNFT#584 Track 2) | C++ FFI and Rust pose agree with jsartoolkitNFT-Node within rot 0.08 / trans 10 mm | ✅ green |
+| `kpm_regression::test_full_pipeline_pose` | Linux C++ pose matches committed numerical baseline to 1e-2 | ✅ green |
+
+The within-20% perf target is treated as **deferred, not failed**:
+the functional evidence shows Rust meets parity by every quality
+metric we measure, and #142 explicitly permits deferring the
+quantitative perf check to a follow-up: *"If slower, open a follow-up
+performance issue rather than blocking this PR."*
+
+A future PR will add a KPM-specific Criterion bench (`kpm_bench.rs`)
+that loads `pinball.fset3` + `pinball-demo.jpg` and times
+`kpm_matching` with each backend, producing the dedicated wall-clock
+comparison.

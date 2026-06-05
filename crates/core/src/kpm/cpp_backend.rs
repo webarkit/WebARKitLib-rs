@@ -89,6 +89,16 @@ pub struct CppFreakMatcher {
     cached_3d_points: UnsafeCell<Vec<Point3d>>,
     /// The image_id for which `cached_3d_points` was last populated.
     cached_3d_image_id: UnsafeCell<Option<usize>>,
+    /// 3x3 row-major homography from the most recent successful query.
+    /// `None` if the last query produced no match.
+    ///
+    /// Populated from `kpm_query`'s `pose_out[0..9]` (see
+    /// `kpm_c_api.cpp:156-166` — that field carries the matched geometry
+    /// as a 3x3 homography in the first 9 slots, with the trailing 3
+    /// slots zero-padded for FFI convenience). Used by
+    /// [`DualFreakMatcher`](crate::kpm::DualFreakMatcher) for the tier-2
+    /// corner-reprojection divergence check (M9-2 #141, D16).
+    cached_homography: Option<[f32; 9]>,
 }
 
 impl Drop for CppFreakMatcher {
@@ -133,7 +143,24 @@ impl CppFreakMatcher {
             cached_query_points: Vec::new(),
             cached_3d_points: UnsafeCell::new(Vec::new()),
             cached_3d_image_id: UnsafeCell::new(None),
+            cached_homography: None,
         })
+    }
+
+    /// Borrow the 3x3 row-major homography from the most recent successful
+    /// query. Returns `None` if the last query produced no match (or no
+    /// query has been run yet).
+    ///
+    /// Same data the C++ `vision::VisualDatabase::matchedGeometry()`
+    /// returns; cached on the Rust side after each
+    /// [`FreakMatcherBackend::query`] call from `pose_out[0..9]`.
+    ///
+    /// Used by [`DualFreakMatcher`](crate::kpm::DualFreakMatcher) for the
+    /// tier-2 corner-reprojection divergence check (M9-2 #141, D16). Not
+    /// part of the [`FreakMatcherBackend`] trait — concrete-impl-only
+    /// accessor.
+    pub fn matched_geometry(&self) -> Option<&[f32; 9]> {
+        self.cached_homography.as_ref()
     }
 
     /// Returns an error if the internal pointer is null (use-after-free guard).
@@ -303,11 +330,27 @@ impl FreakMatcherBackend for CppFreakMatcher {
         if rc < 0 {
             self.cached_inliers.clear();
             self.cached_query_points.clear();
+            self.cached_homography = None;
             return Ok(QueryResult {
                 matched_id: -1,
                 inlier_count: 0,
             });
         }
+
+        // Cache the 3x3 homography from `pose_out[0..9]` (M9-2 #141, D16).
+        // The trailing `pose_out[9..12]` slots are FFI zero-padding per
+        // `kpm_c_api.cpp:156-166`.
+        self.cached_homography = Some([
+            pose_out[0],
+            pose_out[1],
+            pose_out[2],
+            pose_out[3],
+            pose_out[4],
+            pose_out[5],
+            pose_out[6],
+            pose_out[7],
+            pose_out[8],
+        ]);
 
         // Populate inlier cache.
         // SAFETY: `self.ptr` is valid. The C function writes at most `count` pairs.

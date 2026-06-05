@@ -53,8 +53,14 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run -p webarkitlib-rs --features ffi-backend --example simple_nft
+//! cargo run -p webarkitlib-rs --example simple_nft
 //! ```
+//!
+//! Uses [`RustFreakMatcher`] (M9-2, #141) — the pure-Rust FreakMatcher
+//! backend over the assembled M6–M8 + M9-1 pipeline. This example is the
+//! end-to-end integration signal for the Rust backend: if `cargo run
+//! --example simple_nft` produces a sane pose, the pure-Rust pipeline
+//! composes correctly with the AR2 tracker.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -65,29 +71,35 @@ use webarkitlib_rs::ar2::{
 };
 use webarkitlib_rs::icp::icp_create_handle;
 use webarkitlib_rs::kpm::types::KpmRefDataSet;
-use webarkitlib_rs::kpm::{CppFreakMatcher, KpmHandle};
+use webarkitlib_rs::kpm::{KpmHandle, RustFreakMatcher};
 use webarkitlib_rs::types::{ARParam, ARParamLT, ARPixelFormat};
+use webarkitlib_rs::{arlog_i, arlog_rel, arlog_w};
 
 fn main() {
+    webarkitlib_rs::arlog::ar_log_init_default();
+
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
         .join("Data");
 
-    println!("========================================");
-    println!("  WebARKitLib-rs — Simple NFT Example");
-    println!("========================================\n");
+    arlog_rel!("========================================");
+    arlog_rel!("  WebARKitLib-rs — Simple NFT Example");
+    arlog_rel!("========================================");
+    arlog_rel!("");
 
     // ---------------------------------------------------------------
     // Step 1: Load camera parameters
     // ---------------------------------------------------------------
     let param_path = data_dir.join("camera_para.dat");
-    println!("Step 1: Loading camera parameters...");
+    arlog_i!("Step 1: Loading camera parameters...");
     let param_bytes = std::fs::read(&param_path).expect("failed to read camera_para.dat");
     let mut param =
         ARParam::load(Cursor::new(&param_bytes)).expect("failed to parse camera params");
-    println!(
+    arlog_i!(
         "  Camera (original): {}x{}, mat[0][0]={:.2}",
-        param.xsize, param.ysize, param.mat[0][0]
+        param.xsize,
+        param.ysize,
+        param.mat[0][0]
     );
 
     // ---------------------------------------------------------------
@@ -97,21 +109,22 @@ fn main() {
     // then scale the camera parameters to match the image size.
     // ---------------------------------------------------------------
     let img_path = data_dir.join("pinball-demo.jpg");
-    println!("\nStep 2: Loading test image...");
+    arlog_rel!("");
+    arlog_i!("Step 2: Loading test image...");
     let jpeg_bytes = std::fs::read(&img_path).expect("failed to read pinball-demo.jpg");
     let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(&jpeg_bytes));
     let pixels = decoder.decode().expect("JPEG decode failed");
     let info = decoder.info().expect("no JPEG info");
     let width = info.width as i32;
     let height = info.height as i32;
-    println!("  Image: {}x{}", width, height);
+    arlog_i!("  Image: {}x{}", width, height);
 
     // Convert RGB → luma using BT.601 integer formula.
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)
         .collect();
-    println!("  Luma: {} bytes", luma.len());
+    arlog_i!("  Luma: {} bytes", luma.len());
 
     // Scale camera parameters to match image dimensions
     // (equivalent to arParamChangeSize in the C++ code).
@@ -123,9 +136,11 @@ fn main() {
     }
     param.xsize = width;
     param.ysize = height;
-    println!(
+    arlog_i!(
         "  Camera (scaled):   {}x{}, mat[0][0]={:.2}",
-        param.xsize, param.ysize, param.mat[0][0]
+        param.xsize,
+        param.ysize,
+        param.mat[0][0]
     );
 
     // ---------------------------------------------------------------
@@ -140,7 +155,8 @@ fn main() {
     // ---------------------------------------------------------------
     let marker_name = "pinball";
     let marker_base = data_dir.join(marker_name);
-    println!("\nStep 3: Loading NFT marker '{}'...", marker_name);
+    arlog_rel!("");
+    arlog_i!("Step 3: Loading NFT marker '{}'...", marker_name);
 
     // 3a: .fset3 (KPM reference data)
     let fset3_path = data_dir.join(format!("{}.fset3", marker_name));
@@ -150,9 +166,10 @@ fn main() {
         webarkitlib_rs::kpm::ref_data_set::KPM_CHANGE_PAGE_NO_ALL_PAGES,
         0,
     );
-    println!(
+    arlog_i!(
         "  .fset3: {} features, {} pages",
-        ref_data.num, ref_data.page_num
+        ref_data.num,
+        ref_data.page_num
     );
 
     // 3b: Load surface set (reads both .iset and .fset internally).
@@ -160,7 +177,7 @@ fn main() {
     let mut surface_set =
         ar2_read_surface_set(&marker_base).expect("failed to load surface set (.iset + .fset)");
     if let Some((w, h, dpi)) = ar2_surface_set_marker_info(&surface_set) {
-        println!("  Surface set: marker {}x{} @ {:.0} DPI", w, h, dpi);
+        arlog_i!("  Surface set: marker {}x{} @ {:.0} DPI", w, h, dpi);
     }
     let total_features: usize = surface_set
         .surface
@@ -175,40 +192,45 @@ fn main() {
         .and_then(|s| s.image_set.as_ref())
         .map(|is| is.scale.len())
         .unwrap_or(0);
-    println!(
+    arlog_i!(
         "  Surface set: {} image scales, {} total features",
-        num_scales, total_features
+        num_scales,
+        total_features
     );
 
     // ---------------------------------------------------------------
     // Step 4: KPM Detection — find the marker in the image
     // ---------------------------------------------------------------
-    println!("\nStep 4: Running KPM detection...");
+    arlog_rel!("");
+    arlog_i!("Step 4: Running KPM detection...");
 
     let param_lt = ARParamLT::new_basic(param.clone());
     let param_lt_arc = Arc::new(param_lt);
 
     let backend =
-        CppFreakMatcher::new(width, height).expect("failed to create CppFreakMatcher backend");
+        RustFreakMatcher::new(width, height).expect("failed to create RustFreakMatcher backend");
     let mut kpm_handle =
         KpmHandle::new(width, height, Some(param_lt_arc.clone()), Box::new(backend));
 
     kpm_handle
         .set_ref_data_set(ref_data)
         .expect("failed to set ref data set");
-    println!("  Reference data loaded into KPM backend.");
+    arlog_i!("  Reference data loaded into KPM backend.");
 
     kpm_handle.kpm_matching(&luma).expect("kpm_matching failed");
 
     let pose = kpm_handle.get_pose();
     match pose {
         Some((cam_pose, page_no, error)) => {
-            println!("  ✓ KPM match found! Page={}, error={:.4}", page_no, error);
-            println!("  Initial 3×4 pose matrix:");
+            arlog_i!("  ✓ KPM match found! Page={}, error={:.4}", page_no, error);
+            arlog_i!("  Initial 3×4 pose matrix:");
             for r in 0..3 {
-                println!(
+                arlog_i!(
                     "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
-                    cam_pose[r][0], cam_pose[r][1], cam_pose[r][2], cam_pose[r][3]
+                    cam_pose[r][0],
+                    cam_pose[r][1],
+                    cam_pose[r][2],
+                    cam_pose[r][3]
                 );
             }
 
@@ -218,7 +240,8 @@ fn main() {
             //   C++: ar2SetInitTrans(surfaceSet, trackingTrans);
             //        ar2Tracking(ar2Handle, surfaceSet, buff, trackingTrans, &err);
             // ---------------------------------------------------------------
-            println!("\nStep 5: Running AR2 tracking (pose refinement)...");
+            arlog_rel!("");
+            arlog_i!("Step 5: Running AR2 tracking (pose refinement)...");
 
             // Set initial pose from KPM detection.
             //   C++: ar2SetInitTrans(surfaceSet[detectedPage], trackingTrans);
@@ -248,10 +271,10 @@ fn main() {
                 &mut tracking_err,
             ) {
                 Ok(()) => {
-                    println!("  ✓ AR2 tracking succeeded! Error={:.4}", tracking_err);
-                    println!("  Refined 3×4 pose matrix:");
+                    arlog_i!("  ✓ AR2 tracking succeeded! Error={:.4}", tracking_err);
+                    arlog_i!("  Refined 3×4 pose matrix:");
                     for r in 0..3 {
-                        println!(
+                        arlog_i!(
                             "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
                             refined_pose[r][0],
                             refined_pose[r][1],
@@ -261,10 +284,10 @@ fn main() {
                     }
                 }
                 Err(code) => {
-                    println!("  ✗ AR2 tracking returned error code: {}", code);
-                    println!("    (This is expected for a single static frame —");
-                    println!("     AR2 tracking typically needs multi-frame continuity.)");
-                    println!("  The KPM initial pose above is still valid and usable.");
+                    arlog_w!("  ✗ AR2 tracking returned error code: {}", code);
+                    arlog_i!("    (This is expected for a single static frame —");
+                    arlog_i!("     AR2 tracking typically needs multi-frame continuity.)");
+                    arlog_i!("  The KPM initial pose above is still valid and usable.");
                 }
             }
 
@@ -281,13 +304,14 @@ fn main() {
             }
         }
         None => {
-            println!("  ✗ No KPM match found.");
-            println!("    The marker may not be visible in the test image,");
-            println!("    or the reference data may not match this image.");
+            arlog_w!("  ✗ No KPM match found.");
+            arlog_i!("    The marker may not be visible in the test image,");
+            arlog_i!("    or the reference data may not match this image.");
         }
     }
 
-    println!("\n========================================");
-    println!("  Simple NFT example complete.");
-    println!("========================================");
+    arlog_rel!("");
+    arlog_rel!("========================================");
+    arlog_rel!("  Simple NFT example complete.");
+    arlog_rel!("========================================");
 }

@@ -50,6 +50,7 @@ use crate::kpm::backend::KpmError;
 use crate::{arlog_d, arlog_e};
 
 use super::clustering::{hamming_distance_96, BinaryHierarchicalClustering};
+use super::homography::matrix_inverse_3x3;
 use super::hough::{FeaturePoint, Match};
 
 /// Default ratio test threshold (matches C++ `BinaryFeatureMatcher::mThreshold`).
@@ -181,6 +182,15 @@ impl FeatureMatcher {
     /// Builds the BHC index from a reference feature store.
     ///
     /// Required before calling [`Self::match_indexed`].
+    ///
+    /// **Deprecated since M9 #146**: the BHC index now lives on
+    /// [`Keyframe`](super::keyframe::Keyframe). Prefer
+    /// [`Self::match_with_index`] with a [`Keyframe`](super::keyframe::Keyframe)-owned
+    /// index built once at insertion time.
+    #[deprecated(
+        note = "Build the BHC index on Keyframe (via Keyframe::build_index) and call \
+                match_with_index instead. See docs/design/m9-keyframe-bhc-index.md."
+    )]
     pub fn build(&mut self, store: &FeatureStore) -> Result<(), KpmError> {
         if store.bytes_per_feature() != FEATURE_SIZE {
             arlog_e!(
@@ -271,6 +281,13 @@ impl FeatureMatcher {
     ///
     /// [`Self::build`] must have been called before this method.
     /// C equivalent: `match(features1, features2, index2)`
+    ///
+    /// **Deprecated since M9 #146**: prefer [`Self::match_with_index`] with a
+    /// [`Keyframe`](super::keyframe::Keyframe)-owned index. Keeping this
+    /// method live so external callers that already built the index on
+    /// `FeatureMatcher` keep working.
+    #[deprecated(note = "Use match_with_index with a Keyframe-owned BHC. \
+                See docs/design/m9-keyframe-bhc-index.md.")]
     #[inline(never)]
     pub fn match_indexed(
         &mut self,
@@ -326,6 +343,68 @@ impl FeatureMatcher {
         Ok(self.matches.len())
     }
 
+    /// BHC-indexed match using a caller-supplied index.
+    ///
+    /// Mirrors C++ `BinaryFeatureMatcher::match(features1, features2, index2)`
+    /// where `index2` is typically `keyframe.index()` (`Keyframe<>::mIndex` in
+    /// C++). Use this when the index is owned by a [`Keyframe`](super::keyframe::Keyframe)
+    /// (built once at insertion time via
+    /// [`Keyframe::build_index`](super::keyframe::Keyframe::build_index))
+    /// rather than by the matcher itself.
+    ///
+    /// `self.index` is intentionally ignored by this method. Callers that
+    /// previously used [`Self::build`] + [`Self::match_indexed`] should switch
+    /// to this method paired with a `Keyframe`-owned index.
+    #[inline(never)]
+    pub fn match_with_index(
+        &mut self,
+        query: &FeatureStore,
+        reference: &FeatureStore,
+        index: &BinaryHierarchicalClustering,
+    ) -> Result<usize, KpmError> {
+        self.matches.clear();
+        if query.num_features() == 0 || reference.num_features() == 0 {
+            return Ok(0);
+        }
+        Self::ensure_feature_size(query, reference)?;
+
+        self.matches.reserve(query.num_features());
+
+        for i in 0..query.num_features() {
+            let mut first_best = u32::MAX;
+            let mut second_best = u32::MAX;
+            let mut best_index: i32 = -1;
+            let f1 = descriptor_96(query, i);
+            let p1 = query.point(i);
+
+            let candidates = index.query(f1)?;
+
+            for &j in candidates.iter() {
+                if p1.maxima != reference.point(j).maxima {
+                    continue;
+                }
+                let f2 = descriptor_96(reference, j);
+                let d = hamming_distance_96(f1, f2);
+                if d < first_best {
+                    second_best = first_best;
+                    first_best = d;
+                    best_index = j as i32;
+                } else if d < second_best {
+                    second_best = d;
+                }
+            }
+
+            self.apply_ratio_test(i, best_index, first_best, second_best);
+        }
+
+        arlog_d!(
+            "FeatureMatcher::match_with_index: {} matches from {} queries",
+            self.matches.len(),
+            query.num_features()
+        );
+        Ok(self.matches.len())
+    }
+
     /// Homography-guided match: restricts candidates to those near the warped query position.
     ///
     /// `h` is the 3x3 homography from query to reference (row-major).
@@ -345,7 +424,8 @@ impl FeatureMatcher {
         }
         Self::ensure_feature_size(query, reference)?;
 
-        let h_inv = matrix_inverse_3x3(h)?;
+        // 1e-20 preserves the historic match_guided behavior (almost never reject).
+        let h_inv = matrix_inverse_3x3(h, 1e-20)?;
         let tr_sqr = tr * tr;
 
         self.matches.reserve(query.num_features());
@@ -442,40 +522,8 @@ fn descriptor_96(store: &FeatureStore, i: usize) -> &[u8; 96] {
     <&[u8; 96]>::try_from(store.descriptor(i)).expect("bytes_per_feature == 96")
 }
 
-/// Inverts a 3x3 row-major matrix.
-///
-/// C equivalent: `MatrixInverse3x3`
-fn matrix_inverse_3x3(m: &[f32; 9]) -> Result<[f32; 9], KpmError> {
-    let a = m[0];
-    let b = m[1];
-    let c = m[2];
-    let d = m[3];
-    let e = m[4];
-    let f = m[5];
-    let g = m[6];
-    let h = m[7];
-    let i = m[8];
-
-    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-
-    if det.abs() < 1e-20 {
-        arlog_e!("matrix_inverse_3x3: singular matrix (det={})", det);
-        return Err(KpmError::InvalidInput("Singular homography matrix".into()));
-    }
-
-    let inv_det = 1.0 / det;
-    Ok([
-        (e * i - f * h) * inv_det,
-        (c * h - b * i) * inv_det,
-        (b * f - c * e) * inv_det,
-        (f * g - d * i) * inv_det,
-        (a * i - c * g) * inv_det,
-        (c * d - a * f) * inv_det,
-        (d * h - e * g) * inv_det,
-        (b * g - a * h) * inv_det,
-        (a * e - b * d) * inv_det,
-    ])
-}
+// `matrix_inverse_3x3` was promoted to `pub fn` in `homography.rs` in M9-1
+// (issue #140) so `visual_database::check_homography_heuristics` can reuse it.
 
 /// Applies a 3x3 row-major homography to a 2D point (inhomogeneous output).
 ///
@@ -564,7 +612,14 @@ mod tests {
         assert_eq!(m.threshold(), 0.5);
     }
 
+    // The four tests below intentionally exercise the deprecated
+    // FeatureMatcher::build + match_indexed path (kept live for back-compat
+    // by M9 #146). The new keyframe-owned-index path is covered by
+    // test_match_with_index_finds_identical (below) and by the dedicated
+    // dual-mode BHC test bhc_with_keyframe_settings_matches_cpp in
+    // clustering.rs.
     #[test]
+    #[allow(deprecated)]
     fn test_matcher_build_empty_store() {
         let mut m = FeatureMatcher::new();
         let s = FeatureStore::new(96).unwrap();
@@ -572,6 +627,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_matcher_build_wrong_byte_size() {
         let mut m = FeatureMatcher::new();
         let mut s = FeatureStore::new(64).unwrap();
@@ -580,6 +636,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_match_indexed_before_build() {
         let mut m = FeatureMatcher::new();
         let mut q = FeatureStore::new(96).unwrap();
@@ -650,6 +707,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_match_indexed_finds_identical() {
         // Use enough features so BHC builds a real tree (>16 leaf threshold).
         let (q, r) = build_stores_with_identical_descriptors(20);
@@ -659,6 +717,23 @@ mod tests {
         // BHC may not retrieve every identical descriptor due to tree pruning,
         // but should find a substantial portion.
         assert!(n > 0, "match_indexed should find at least some matches");
+    }
+
+    #[test]
+    fn test_match_with_index_finds_identical() {
+        // Mirror of test_match_indexed_finds_identical but using the new
+        // match_with_index path with an externally-built BHC. M9 #146.
+        let (q, r) = build_stores_with_identical_descriptors(20);
+
+        let descriptors: Vec<&[u8; 96]> = (0..r.num_features())
+            .map(|i| <&[u8; 96]>::try_from(r.descriptor(i)).unwrap())
+            .collect();
+        let mut bhc = BinaryHierarchicalClustering::new().unwrap();
+        bhc.build(&descriptors).unwrap();
+
+        let mut m = FeatureMatcher::new();
+        let n = m.match_with_index(&q, &r, &bhc).unwrap();
+        assert!(n > 0, "match_with_index should find at least some matches");
     }
 
     #[test]
@@ -706,21 +781,9 @@ mod tests {
     }
 
     // ----- Helper tests -----
-
-    #[test]
-    fn test_matrix_inverse_3x3_identity() {
-        let id: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
-        let inv = matrix_inverse_3x3(&id).unwrap();
-        for (a, b) in inv.iter().zip(id.iter()) {
-            assert!((a - b).abs() < 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_matrix_inverse_3x3_singular() {
-        let zero: [f32; 9] = [0.0; 9];
-        assert!(matrix_inverse_3x3(&zero).is_err());
-    }
+    //
+    // Tests for matrix_inverse_3x3 live in `homography.rs` after the function
+    // moved there in M9-1 (issue #140).
 
     #[test]
     fn test_homography_point_identity() {
@@ -1047,7 +1110,12 @@ mod dual_mode_tests {
         }
     }
 
+    /// Intentionally exercises the deprecated `FeatureMatcher::build` +
+    /// `match_indexed` path (kept live for back-compat by M9 #146).
+    /// The new keyframe-owned-index path is covered against C++ by
+    /// `bhc_with_keyframe_settings_matches_cpp` in `clustering.rs`.
     #[test]
+    #[allow(deprecated)]
     fn dual_mode_match_indexed_within_tolerance() {
         let (q, r, q_flat, r_flat) = make_dual_inputs(50, 100);
         let mut matcher = FeatureMatcher::new();

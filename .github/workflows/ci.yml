@@ -38,6 +38,43 @@ jobs:
     - name: Run cargo test with SIMD
       run: cargo test --workspace --features simd
 
+  # M9-3 (#142): proves the pure-Rust default builds and tests cleanly
+  # WITHOUT a C++ toolchain installed. Pinned to ubuntu-latest because the
+  # invariant we're testing is build-system gating (build.rs only runs the
+  # FreakMatcher C++ compilation when `--features ffi-backend` is set), not
+  # platform-specific compilation. Critically, this job does NOT install
+  # libclang-dev — if any unconditional bindgen/cc dependency ever leaks
+  # into the no-features build path, this job fails.
+  pure-rust-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+      # Submodules deliberately NOT recursive — the pure-Rust path must
+      # never touch the WebARKitLib C++ source tree.
+
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Run cargo fmt check (pure-Rust)
+      run: cargo fmt --all -- --check
+
+    - name: Run cargo check (no features)
+      run: cargo check -p webarkitlib-rs
+
+    - name: Run cargo clippy (no features)
+      run: cargo clippy -p webarkitlib-rs -- -D warnings
+
+    - name: Run cargo build (no features)
+      run: cargo build -p webarkitlib-rs
+
+    - name: Run cargo test (no features)
+      run: cargo test -p webarkitlib-rs
+
   kpm-build:
     strategy:
       fail-fast: false
@@ -72,6 +109,49 @@ jobs:
     # are out of scope for this CI step.
     - name: Run dual-mode tests
       run: cargo test -p webarkitlib-rs --lib --features dual-mode
+
+    # Integration tests under tests/ that exercise the C++-backed KPM
+    # pipeline (CppFreakMatcher + KPM/AR2 wiring). Until issue #155 these
+    # were silently skipped on CI because no job ran integration tests
+    # with --features ffi-backend, which let a stale numerical baseline
+    # in test_full_pipeline_pose slip through every M9 PR.
+    #
+    # Ubuntu-only: matches the toolchain the baseline was regenerated on
+    # and avoids the unrelated cross-platform issues noted above.
+    - name: Run ffi-backend integration tests
+      if: runner.os == 'Linux'
+      run: |
+        cargo test -p webarkitlib-rs \
+          --test kpm_regression \
+          --test nft_pipeline \
+          --test ar2_pinball_io \
+          --test cross_stack_parity \
+          --features ffi-backend
+
+    # Absolute corner-error gate (#166 Track A). Reprojects each backend's
+    # matched-scale reference corners through its homography and asserts
+    # that the resulting per-corner error against hand-annotated ground
+    # truth doesn't regress beyond the 0.5 px epsilon baselined in
+    # crates/core/tests/fixtures/annotated_frames/baseline.json. Unlike
+    # the symmetric M9 #152 tier-2 gate, this measures each backend's
+    # accuracy independently — catching "Rust got better" and "Rust got
+    # worse" as distinct signals.
+    #
+    # Ubuntu-only for the same reason as the step above: float-noise
+    # envelope is per-platform, baseline is captured against one
+    # toolchain. If this step fails on CI, options are:
+    #   1. Regen the baseline on Linux from the failing run's --nocapture
+    #      output (the printed table) and commit it.
+    #   2. Widen REGRESSION_EPSILON_PX in absolute_corner_error.rs.
+    #
+    # See #170 for the known Rust-side run-to-run nondeterminism that
+    # constrained today's fixture set to three deterministic frames.
+    - name: Run absolute corner-error gate
+      if: runner.os == 'Linux'
+      run: |
+        cargo test -p webarkitlib-rs \
+          --test absolute_corner_error \
+          --features dual-mode -- --nocapture
 
   submodule-drift-check:
     runs-on: ubuntu-latest
