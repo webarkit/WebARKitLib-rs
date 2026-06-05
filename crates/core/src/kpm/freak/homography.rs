@@ -89,6 +89,7 @@
 use std::ops::{Add, Mul};
 
 use crate::arlog_e;
+use crate::kpm::backend::KpmError;
 
 use super::math::{copy_vector_9, max2, min2, solve_null_vector_8x9_destructive, sqr};
 
@@ -264,9 +265,9 @@ pub fn multiply_point_homography_inhomogenous_scalar(h: &[f32; 9], x: f32, y: f3
 /// for one side, negative for the other, zero for collinear.
 ///
 /// C++ equivalent: `vision::LinePointSide<T>` from `math/geometry.h:50`.
-/// Private helper used by the geometric-consistency checks.
+/// Used by [`quadrilateral_convex`] and the geometric-consistency checks.
 #[inline(always)]
-fn line_point_side(a: &[f32; 2], b: &[f32; 2], c: &[f32; 2]) -> f32 {
+pub fn line_point_side(a: &[f32; 2], b: &[f32; 2], c: &[f32; 2]) -> f32 {
     (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 }
 
@@ -414,6 +415,118 @@ pub fn homography_points_geometrically_consistent(h: &[f32; 9], pts: &[f32], n: 
     }
 
     true
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Geometry primitives from C++ `math/geometry.h` — used by
+// `CheckHomographyHeuristics` (visual_database.h:244).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// Compute the area of a 2D triangle defined by two edge vectors emanating
+/// from the same vertex.
+///
+/// `u` and `v` are the two edge vectors (as 2D vectors, not absolute points).
+/// Returns `0.5 * |u × v|`.
+///
+/// C++ equivalent: `vision::AreaOfTriangle<T>` from `math/geometry.h:103`.
+#[inline(always)]
+pub fn area_of_triangle(u: &[f32; 2], v: &[f32; 2]) -> f32 {
+    (u[0] * v[1] - u[1] * v[0]).abs() * 0.5
+}
+
+/// Check whether four 2D points form a convex quadrilateral.
+///
+/// Sums `±1` per edge based on which side of the edge the next vertex lies
+/// on (via [`line_point_side`]). The quad is convex iff all four contribute
+/// the same sign, i.e. the absolute sum is exactly 4.
+///
+/// C++ equivalent: `vision::QuadrilateralConvex<T>` from `math/geometry.h:88`.
+pub fn quadrilateral_convex(x1: &[f32; 2], x2: &[f32; 2], x3: &[f32; 2], x4: &[f32; 2]) -> bool {
+    let s: i32 = (if line_point_side(x1, x2, x3) > 0.0 {
+        1
+    } else {
+        -1
+    }) + (if line_point_side(x2, x3, x4) > 0.0 {
+        1
+    } else {
+        -1
+    }) + (if line_point_side(x3, x4, x1) > 0.0 {
+        1
+    } else {
+        -1
+    }) + (if line_point_side(x4, x1, x2) > 0.0 {
+        1
+    } else {
+        -1
+    });
+    s.abs() == 4
+}
+
+/// Find the smallest area among the four triangles formed by picking three
+/// of four 2D points.
+///
+/// Mirrors the C++ implementation: builds the same five edge vectors and
+/// evaluates the same four `AreaOfTriangle` calls in the same order so the
+/// result matches bit-for-bit.
+///
+/// C++ equivalent: `vision::SmallestTriangleArea<T>` from `math/geometry.h:112`.
+pub fn smallest_triangle_area(x1: &[f32; 2], x2: &[f32; 2], x3: &[f32; 2], x4: &[f32; 2]) -> f32 {
+    let v12 = [x2[0] - x1[0], x2[1] - x1[1]];
+    let v13 = [x3[0] - x1[0], x3[1] - x1[1]];
+    let v14 = [x4[0] - x1[0], x4[1] - x1[1]];
+    let v32 = [x2[0] - x3[0], x2[1] - x3[1]];
+    let v34 = [x4[0] - x3[0], x4[1] - x3[1]];
+
+    let a1 = area_of_triangle(&v12, &v13);
+    let a2 = area_of_triangle(&v13, &v14);
+    let a3 = area_of_triangle(&v12, &v14);
+    let a4 = area_of_triangle(&v32, &v34);
+
+    a1.min(a2).min(a3).min(a4)
+}
+
+/// Invert a 3x3 row-major matrix.
+///
+/// Returns `Err(KpmError::InvalidInput)` if `|det| < threshold` (matrix is
+/// singular at that tolerance). The C++ caller in `visual_database.h:251`
+/// uses `threshold = 1e-5`; lower-level guided matching (`matcher.rs`) uses
+/// `1e-20` to almost never reject.
+///
+/// C++ equivalent: `vision::MatrixInverse3x3<T>` from `math/linear_algebra.h:157`.
+pub fn matrix_inverse_3x3(m: &[f32; 9], threshold: f32) -> Result<[f32; 9], KpmError> {
+    let a = m[0];
+    let b = m[1];
+    let c = m[2];
+    let d = m[3];
+    let e = m[4];
+    let f = m[5];
+    let g = m[6];
+    let h = m[7];
+    let i = m[8];
+
+    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+
+    if det.abs() < threshold {
+        arlog_e!(
+            "matrix_inverse_3x3: singular matrix (|det|={} < threshold={})",
+            det.abs(),
+            threshold
+        );
+        return Err(KpmError::InvalidInput("Singular homography matrix".into()));
+    }
+
+    let inv_det = 1.0 / det;
+    Ok([
+        (e * i - f * h) * inv_det,
+        (c * h - b * i) * inv_det,
+        (b * f - c * e) * inv_det,
+        (f * g - d * i) * inv_det,
+        (a * i - c * g) * inv_det,
+        (c * d - a * f) * inv_det,
+        (d * h - e * g) * inv_det,
+        (b * g - a * h) * inv_det,
+        (a * e - b * d) * inv_det,
+    ])
 }
 
 /// Normalize a homography in place so that `H[8] == 1.0`.
@@ -2573,6 +2686,114 @@ mod tests {
         // h_est is normalised so h_est[8]=1, so it should equal h_true (which
         // also has h_true[8]=1).
         assert_array_close(&h_est, &h_true, 1e-2, "recovered homography");
+    }
+
+    // ------------------------------------------------------------------
+    // math/geometry.h primitives (ported in M9-1, issue #140)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_area_of_triangle_unit() {
+        // Triangle with edge vectors (1,0) and (0,1) → area = 0.5
+        let area = area_of_triangle(&[1.0, 0.0], &[0.0, 1.0]);
+        assert!(approx_eq(area, 0.5, 1e-6));
+    }
+
+    #[test]
+    fn test_area_of_triangle_sign_invariant() {
+        // Swapping edge order flips cross-product sign but area uses abs().
+        let a = area_of_triangle(&[2.0, 3.0], &[5.0, 7.0]);
+        let b = area_of_triangle(&[5.0, 7.0], &[2.0, 3.0]);
+        assert!(approx_eq(a, b, 1e-6));
+    }
+
+    #[test]
+    fn test_quadrilateral_convex_unit_square() {
+        let p1 = [0.0, 0.0];
+        let p2 = [1.0, 0.0];
+        let p3 = [1.0, 1.0];
+        let p4 = [0.0, 1.0];
+        assert!(quadrilateral_convex(&p1, &p2, &p3, &p4));
+    }
+
+    #[test]
+    fn test_quadrilateral_convex_self_intersecting() {
+        // Bow-tie (crossed) quad: not convex.
+        let p1 = [0.0, 0.0];
+        let p2 = [1.0, 1.0];
+        let p3 = [1.0, 0.0];
+        let p4 = [0.0, 1.0];
+        assert!(!quadrilateral_convex(&p1, &p2, &p3, &p4));
+    }
+
+    #[test]
+    fn test_quadrilateral_convex_concave() {
+        // Arrowhead-like concave quad.
+        let p1 = [0.0, 0.0];
+        let p2 = [2.0, 0.0];
+        let p3 = [1.0, 0.5]; // pushed inward
+        let p4 = [1.0, 2.0];
+        assert!(!quadrilateral_convex(&p1, &p2, &p3, &p4));
+    }
+
+    #[test]
+    fn test_smallest_triangle_area_unit_square() {
+        // For a unit square, every 3-of-4 triangle has area 0.5;
+        // smallest is therefore 0.5.
+        let p1 = [0.0, 0.0];
+        let p2 = [1.0, 0.0];
+        let p3 = [1.0, 1.0];
+        let p4 = [0.0, 1.0];
+        let a = smallest_triangle_area(&p1, &p2, &p3, &p4);
+        assert!(approx_eq(a, 0.5, 1e-6), "got {}", a);
+    }
+
+    #[test]
+    fn test_smallest_triangle_area_thin_quad() {
+        // Very thin quad: p3 is nearly collinear with p1-p2, so at least one
+        // triangle has near-zero area.
+        let p1 = [0.0, 0.0];
+        let p2 = [10.0, 0.0];
+        let p3 = [10.0, 0.001];
+        let p4 = [0.0, 0.001];
+        let a = smallest_triangle_area(&p1, &p2, &p3, &p4);
+        assert!(a < 0.01, "expected near-zero area, got {}", a);
+    }
+
+    // ------------------------------------------------------------------
+    // matrix_inverse_3x3 (ported from math/linear_algebra.h in M9-1)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_matrix_inverse_3x3_identity() {
+        let id = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let inv = matrix_inverse_3x3(&id, 1e-5).unwrap();
+        assert_array_close(&inv, &id, 1e-6, "identity inverse");
+    }
+
+    #[test]
+    fn test_matrix_inverse_3x3_round_trip() {
+        // Arbitrary invertible matrix; inv(inv(M)) ≈ M.
+        let m = [1.0, 2.0, 3.0, 0.0, 1.0, 4.0, 5.0, 6.0, 0.0];
+        let inv = matrix_inverse_3x3(&m, 1e-5).unwrap();
+        let back = matrix_inverse_3x3(&inv, 1e-5).unwrap();
+        assert_array_close(&back, &m, 1e-4, "round-trip inverse");
+    }
+
+    #[test]
+    fn test_matrix_inverse_3x3_singular() {
+        let zero = [0.0; 9];
+        assert!(matrix_inverse_3x3(&zero, 1e-5).is_err());
+    }
+
+    #[test]
+    fn test_matrix_inverse_3x3_threshold_sensitivity() {
+        // Tiny-determinant matrix: rejected at threshold=1e-5, accepted at 1e-20.
+        let m = [
+            1e-3, 0.0, 0.0, 0.0, 1e-3, 0.0, 0.0, 0.0, 1e-3, // det = 1e-9
+        ];
+        assert!(matrix_inverse_3x3(&m, 1e-5).is_err());
+        assert!(matrix_inverse_3x3(&m, 1e-20).is_ok());
     }
 }
 

@@ -53,8 +53,14 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run -p webarkitlib-rs --features ffi-backend --example simple_nft
+//! cargo run -p webarkitlib-rs --example simple_nft
 //! ```
+//!
+//! Uses [`RustFreakMatcher`] (M9-2, #141) — the pure-Rust FreakMatcher
+//! backend over the assembled M6–M8 + M9-1 pipeline. This example is the
+//! end-to-end integration signal for the Rust backend: if `cargo run
+//! --example simple_nft` produces a sane pose, the pure-Rust pipeline
+//! composes correctly with the AR2 tracker.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -65,7 +71,7 @@ use webarkitlib_rs::ar2::{
 };
 use webarkitlib_rs::icp::icp_create_handle;
 use webarkitlib_rs::kpm::types::KpmRefDataSet;
-use webarkitlib_rs::kpm::{CppFreakMatcher, KpmHandle};
+use webarkitlib_rs::kpm::{KpmHandle, RustFreakMatcher};
 use webarkitlib_rs::types::{ARParam, ARParamLT, ARPixelFormat};
 use webarkitlib_rs::{arlog_i, arlog_rel, arlog_w};
 
@@ -202,7 +208,7 @@ fn main() {
     let param_lt_arc = Arc::new(param_lt);
 
     let backend =
-        CppFreakMatcher::new(width, height).expect("failed to create CppFreakMatcher backend");
+        RustFreakMatcher::new(width, height).expect("failed to create RustFreakMatcher backend");
     let mut kpm_handle =
         KpmHandle::new(width, height, Some(param_lt_arc.clone()), Box::new(backend));
 

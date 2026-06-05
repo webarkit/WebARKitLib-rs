@@ -223,6 +223,60 @@ int webarkit_cpp_match_features_guided(
     const float* h, float tr, float threshold,
     int* ins_out, int* ref_out);
 
+/* ---- Dual-mode validation: HoughSimilarityVoting::autoAdjustXYNumBins
+ *      bridges (Milestone 9, #150) ----
+ *
+ * Two diagnostic shims that isolate the auto-adjust parity gate.
+ *
+ * webarkit_cpp_partial_sort_f32:
+ *   Direct wrapper around `vision::PartialSort<float>`. Mutates `values`
+ *   in place (Wirth's k-smallest partition) and returns the partitioned
+ *   value at slot `k - 1` (caller can also re-read `values[k-1]`). `k`
+ *   uses C++ 1-indexed convention: k=1 means "smallest".
+ *   Returns 0 on success, -1 on error.
+ *
+ * webarkit_cpp_auto_adjust_xy_num_bins:
+ *   Reimplements the C++ `HoughSimilarityVoting::autoAdjustXYNumBins`
+ *   formula directly, using public `vision::SafeDivision` and
+ *   `vision::FastMedian` primitives. (We can't call the method on
+ *   `HoughSimilarityVoting` directly because it's private and has no
+ *   public getter for the resulting bin counts.) Tests the same
+ *   arithmetic as the C++ class would execute internally.
+ *
+ *   ins / ref_pts: flat arrays of (x, y, angle, scale) tuples, 4 floats
+ *   per match (`scale` is read from index 3). `size` is the number of
+ *   matches. Writes the computed bin counts to `out_num_x_bins` and
+ *   `out_num_y_bins`. Returns 0 on success, -1 on error. */
+
+int webarkit_cpp_partial_sort_f32(float* values, int n, int k);
+
+int webarkit_cpp_auto_adjust_xy_num_bins(
+    const float* ins, const float* ref_pts, int size,
+    int ref_image_width, int ref_image_height,
+    float min_x, float max_x, float min_y, float max_y,
+    int num_angle_bins, int num_scale_bins,
+    int* out_num_x_bins, int* out_num_y_bins);
+
+/* ---- Dual-mode validation: BHC bridge with Keyframe::buildIndex settings
+ *      (Milestone 9, #146) ----
+ *
+ * Build a vision::BinaryHierarchicalClustering<96> from `features` (a flat
+ * array of `num_features * 96` bytes), configured with the four parameters
+ * mirroring C++ `Keyframe<>::buildIndex` (keyframe.h:116-122). Query it once
+ * with `query_feat` (96 bytes) and write up to `num_features` returned
+ * candidate indices into `out_indices`.
+ *
+ * Returns the number of indices written (>= 0) or -1 on error.
+ *
+ * Used by `bhc_with_keyframe_settings_matches_cpp` in clustering.rs to
+ * isolate BHC parity from the full VisualDatabase pipeline. */
+int webarkit_cpp_bhc_build_and_query_with_settings(
+    const unsigned char* features, int num_features,
+    int num_hypotheses, int num_centers,
+    int max_nodes_to_pop, int min_features_per_node,
+    const unsigned char* query_feat,
+    int* out_indices);
+
 /* ---- Dual-mode validation: PRNG bridges (Milestone 7, #116) ---- */
 
 /* Thin wrappers around vision::FastRandom and vision::ArrayShuffle from

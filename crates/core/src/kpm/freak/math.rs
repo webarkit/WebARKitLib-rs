@@ -510,6 +510,96 @@ pub fn safe_division_f32(x: f32, y: f32) -> f32 {
     }
 }
 
+/// Partial sort (Wirth's k-smallest) over an `&mut [f32]`. Mutates the
+/// slice such that `values[k-1]` (clamped to 0) holds the partition pivot
+/// after the call; elements before it are `<=` it and elements after are
+/// `>=` it. The rest is unspecified.
+///
+/// `k` is interpreted using the C++ 1-indexed convention (k=1 means
+/// "smallest"). Matches the existing private `partial_sort_pairs` in
+/// `homography.rs:1265` and C++ `vision::PartialSort<float>` in
+/// `utils/partial_sort.h:49`.
+///
+/// Used by [`fast_median_f32`]. Kept private because the 1-indexed `k`
+/// convention is surprising; callers should use `fast_median_f32`.
+fn partial_sort_f32(values: &mut [f32], k: usize) {
+    let n = values.len();
+    if n == 0 {
+        return;
+    }
+    // C++ uses 1-indexed k where 1 <= k <= n (kth smallest). We also
+    // accept k = 0 as a saturation case (treated as k = 1). Anything
+    // larger is a caller bug.
+    debug_assert!(
+        k <= n,
+        "partial_sort_f32: k={} out of range for len {}",
+        k,
+        n
+    );
+    let k_minus_1 = if k == 0 { 0 } else { k - 1 };
+
+    let mut l: isize = 0;
+    let mut m: isize = (n as isize) - 1;
+    while l < m {
+        let x = values[k_minus_1];
+        let mut i = l;
+        let mut j = m;
+        loop {
+            while values[i as usize] < x {
+                i += 1;
+            }
+            while x < values[j as usize] {
+                j -= 1;
+            }
+            if i <= j {
+                values.swap(i as usize, j as usize);
+                i += 1;
+                j -= 1;
+            }
+            if i > j {
+                break;
+            }
+        }
+        if j < k_minus_1 as isize {
+            l = i;
+        }
+        if (k_minus_1 as isize) < i {
+            m = j;
+        }
+    }
+}
+
+/// Find the "median" of an array of f32 values in O(n) average time.
+///
+/// **Important — this matches C++ `FastMedian` semantics exactly, which
+/// returns the `(n/2 - 1)`-th smallest element (0-indexed) rather than
+/// the true mathematical median.** For example:
+/// - `[1, 2, 3, 4, 5]` → returns `2.0` (NOT `3.0`).
+/// - `[1, 2, 3, 4]`    → returns `1.0` (NOT `2.0` or `2.5`).
+/// - `[42]`            → returns `42.0`.
+///
+/// This biased estimator has shipped in WebARKit since ARToolKit5; we
+/// preserve the exact behaviour for dual-mode parity. The bias translates
+/// to a constant-factor offset in downstream consumers (e.g. bin sizing
+/// in `HoughSimilarityVoting::autoAdjustXYNumBins`), which the algorithm
+/// tolerates.
+///
+/// Mutates the slice in place via [`partial_sort_f32`].
+///
+/// C++ equivalent: `vision::FastMedian<T>` (single-value overload) from
+/// `utils/partial_sort.h:111`.
+///
+/// # Panics
+/// Panics in debug builds if `values.is_empty()`.
+pub fn fast_median_f32(values: &mut [f32]) -> f32 {
+    debug_assert!(!values.is_empty(), "fast_median_f32: empty slice");
+    let n = values.len();
+    let k = if n & 1 == 1 { n / 2 } else { (n / 2) - 1 };
+    partial_sort_f32(values, k);
+    let k_minus_1 = if k == 0 { 0 } else { k - 1 };
+    values[k_minus_1]
+}
+
 /// Safe division: x/y, returns x if y == 0 (f64 version).
 #[inline(always)]
 pub fn safe_division_f64(x: f64, y: f64) -> f64 {
@@ -1941,6 +2031,69 @@ mod tests {
         let mut x = [1.0_f32, 1.0];
         assert!(!solve_tridiagonal_destructive(&mut x, &a, &b, &mut c));
     }
+
+    // ------------------------------------------------------------------
+    // fast_median_f32 — M9 #150
+    //
+    // These values intentionally encode the C++ FastMedian quirk: the
+    // function returns the (n/2 - 1)-th smallest element (0-indexed), NOT
+    // the true mathematical median. We preserve this for parity. See the
+    // `fast_median_f32` doc comment for the full rationale.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn test_fast_median_f32_n5_returns_2nd_smallest() {
+        // Sorted: [1, 2, 3, 4, 5]. C++ FastMedian returns 2.0 (sorted index 1),
+        // NOT 3.0 (the true median).
+        let mut v = vec![5.0, 1.0, 4.0, 2.0, 3.0];
+        let m = fast_median_f32(&mut v);
+        assert_eq!(m, 2.0, "n=5 returns the 2nd smallest, not the true median");
+    }
+
+    #[test]
+    fn test_fast_median_f32_n4_returns_smallest() {
+        // Sorted: [1, 2, 3, 4]. C++ FastMedian returns 1.0 (sorted index 0).
+        let mut v = vec![4.0, 1.0, 3.0, 2.0];
+        let m = fast_median_f32(&mut v);
+        assert_eq!(m, 1.0, "n=4 returns the smallest, not 2.0 or 2.5");
+    }
+
+    #[test]
+    fn test_fast_median_f32_single_element() {
+        let mut v = vec![42.0];
+        assert_eq!(fast_median_f32(&mut v), 42.0);
+    }
+
+    #[test]
+    fn test_fast_median_f32_already_sorted_n100() {
+        // n=100, k = (100/2) - 1 = 49 → k_minus_1 = 48 → returns sorted_index 48.
+        // For [0.0, 1.0, ..., 99.0], that's 48.0.
+        let mut v: Vec<f32> = (0..100).map(|i| i as f32).collect();
+        let m = fast_median_f32(&mut v);
+        assert_eq!(m, 48.0);
+    }
+
+    #[test]
+    fn test_fast_median_f32_two_elements() {
+        // n=2, k = (2/2) - 1 = 0 → k_minus_1 = 0 → returns the smaller.
+        let mut v = vec![7.0, 3.0];
+        assert_eq!(fast_median_f32(&mut v), 3.0);
+    }
+
+    #[test]
+    fn test_partial_sort_f32_pivot_position() {
+        // Verify the partition pivot lands at k_minus_1 with all earlier
+        // elements <= pivot and all later elements >= pivot.
+        let mut v = vec![5.0, 1.0, 4.0, 2.0, 3.0, 7.0, 6.0];
+        partial_sort_f32(&mut v, 4); // k=4 → k_minus_1=3
+        let pivot = v[3];
+        for (i, &val) in v.iter().enumerate().take(3) {
+            assert!(val <= pivot, "v[{}]={} > pivot={}", i, val, pivot);
+        }
+        for (i, &val) in v.iter().enumerate().skip(4) {
+            assert!(val >= pivot, "v[{}]={} < pivot={}", i, val, pivot);
+        }
+    }
 }
 
 // ============================================================================
@@ -1969,6 +2122,9 @@ extern "C" {
         b: *const f32,
     ) -> i32;
     fn webarkit_cpp_solve_null_vector_8x9_destructive(x: *mut f32, a: *mut f32) -> i32;
+
+    // M9 #150 — utils/partial_sort.h (single-value overload)
+    fn webarkit_cpp_partial_sort_f32(values: *mut f32, n: i32, k: i32) -> i32;
 }
 
 #[cfg(all(test, feature = "dual-mode"))]
@@ -2276,5 +2432,45 @@ mod dual_mode_tests {
             min_dot,
             compared
         );
+    }
+
+    /// Sweep `partial_sort_f32` against C++ `vision::PartialSort<float>`
+    /// over seeded random inputs and assert byte-equivalent k-th order
+    /// statistic. M9 #150 R1 mitigation: catches tie-break divergence at
+    /// the algorithm level (parallel to the auto-adjust isolation test in
+    /// hough.rs).
+    #[test]
+    fn dual_mode_partial_sort_f32_matches_cpp() {
+        use rand::rngs::StdRng;
+        use rand::{Rng, SeedableRng};
+
+        let mut rng = StdRng::seed_from_u64(0xC0FFEEu64);
+        for trial in 0..50 {
+            let n = rng.random_range(2..=200);
+            let k = rng.random_range(1..=n);
+            // Generate values; mix in some duplicates to stress the tie-break.
+            let mut rust_vals: Vec<f32> = (0..n)
+                .map(|_| rng.random_range(-100.0_f32..100.0))
+                .collect();
+            // Inject duplicates with 10% probability per slot.
+            for i in 0..n {
+                if rng.random_bool(0.1) && i > 0 {
+                    rust_vals[i] = rust_vals[i - 1];
+                }
+            }
+            let mut cpp_vals = rust_vals.clone();
+
+            partial_sort_f32(&mut rust_vals, k);
+            let cpp_rc =
+                unsafe { webarkit_cpp_partial_sort_f32(cpp_vals.as_mut_ptr(), n as i32, k as i32) };
+            assert_eq!(cpp_rc, 0, "trial {}: C++ shim returned error", trial);
+
+            let k_minus_1 = if k == 0 { 0 } else { k - 1 };
+            assert_eq!(
+                rust_vals[k_minus_1], cpp_vals[k_minus_1],
+                "trial {} (n={}, k={}): rust[{}]={} vs cpp[{}]={}",
+                trial, n, k, k_minus_1, rust_vals[k_minus_1], k_minus_1, cpp_vals[k_minus_1]
+            );
+        }
     }
 }
