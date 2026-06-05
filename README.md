@@ -39,7 +39,7 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.6"
+webarkitlib-rs = "0.7"
 ```
 
 ### Pure Rust tracking (no C++ compiler required)
@@ -65,7 +65,7 @@ need to do anything special:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.6"  # default backend is pure Rust
+webarkitlib-rs = "0.7"  # default backend is pure Rust
 ```
 
 ```bash
@@ -82,7 +82,7 @@ NFT tracking**:
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.6", features = ["ffi-backend"] }
+webarkitlib-rs = { version = "0.7", features = ["ffi-backend"] }
 ```
 
 > When installing from crates.io, no extra setup is required — the C++
@@ -258,7 +258,7 @@ Enable the `log-helpers` feature and call the bundled initializer once in your b
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.6", features = ["log-helpers"] }
+webarkitlib-rs = { version = "0.7", features = ["log-helpers"] }
 ```
 
 ```rust

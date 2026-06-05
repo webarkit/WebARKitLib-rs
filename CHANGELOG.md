@@ -2,7 +2,60 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.6.1] - 2026-05-24
+## [0.7.0] - 2026-06-05
+
+## Milestone 9 — VisualDatabase & pure Rust backend
+
+### ⚙️ Miscellaneous Tasks
+
+- *(examples)* Dump db_id pyramid in simple_nft_dual to aid #160 triage
+- *(corner-error)* Wire the absolute_corner_error gate into kpm-build (#166)
+- *(submodule)* Bump WebARKitLib for std::map matcher-determinism fix (refs #170)
+- *(submodule)* Retarget WebARKitLib pin to post-#39 merged master SHA (#170)
+- *(bridge)* Bump jsartoolkit-nft to 1.10.0 + sharp to 0.34.5 + regen sidecar + widen POSE_ROT_TOL (#170)
+- *(examples)* Convert simple_nft to arlog macros (PR 4/4 for #90)
+
+### 🐛 Bug Fixes
+
+- *(test)* Regenerate kpm_regression baseline and close CI gap (#155)
+- *(test)* Restore Linux baseline + gate test_full_pipeline_pose to Linux
+- *(tests)* Adapt corner-error gate to cross-platform variance (drop pinball-demo, widen epsilon to 2.0 px) (#166)
+- *(kpm)* Use BTreeMap for Hough vote tally and VisualDatabase keyframes to remove Rust-side matcher nondeterminism (#170)
+
+### 📚 Documentation
+
+- *(kpm)* Add end-to-end pose comparison to M9-2 design doc §10
+- Switch regen capture recipe from arlog_e! to arlog_i! (#155)
+- *(examples)* Clarify simple_nft_dual.rs reports homography-level comparison (#157)
+- *(tests)* Add README for annotated_frames fixtures (#166)
+- *(readme)* Mark M9 (#139) complete, refresh roadmap + nft_marker_gen
+
+### 🚀 Features
+
+- *(kpm)* Port VisualDatabase to Rust (M9-1, #140)
+- *(kpm)* Move BHC feature index from FeatureMatcher onto Keyframe (#146)
+- *(kpm)* Port HoughSimilarityVoting::autoAdjustXYNumBins (#150)
+- *(kpm)* Implement RustFreakMatcher and DualFreakMatcher (M9-2, #141)
+- *(examples)* Add simple_nft_dual.rs with DualFreakMatcher and per-frame divergence reporting (#157)
+- *(tools)* Add annotate_corners HTML tool for absolute corner-error fixtures (#166)
+- *(tools)* Per-corner edit + cursor-centered wheel zoom in annotate_corners (#166)
+- *(examples)* Save C++ and Rust marker-outline PNGs in simple_nft_dual to visualize divergence
+- *(tests)* Add cross-stack parity gate vs jsartoolkitNFT-Node (jsartoolkitNFT#584 Track 2, refs #170, #166 Track B)
+- *(kpm)* Remove C++ FFI as default — pure Rust FreakMatcher complete (#142)
+- *(kpm)* M9 — pure Rust KPM/NFT pipeline complete (#176)
+
+### 🧪 Testing
+
+- *(kpm)* Redefine M9 parity gate as corner reprojection (#152)
+- *(fixtures)* Add annotated corner fixtures for the absolute corner-error gate (#166)
+- *(fixtures)* Set annotator to kalwalt in the 5 annotated corner JSONs (#166)
+- *(kpm)* Add absolute corner-error regression gate against annotated ground truth (#166)
+- *(fixtures)* Replace blurry seq fixtures with screen-captured shots; drop nondeterministic frames (#166)
+- *(kpm)* Add temporary REGEN block to capture post-fix EXPECTED_FULL_POSE on Linux
+- *(kpm)* Regenerate test_full_pipeline_pose baseline against post-fix Linux values; drop REGEN block
+- *(corner-error)* Regen baseline post-fix on Linux + widen epsilon to 3.5 px (residual BHC variance) (#170)
+
+﻿## [0.6.1] - 2026-05-24
 
 ### 🐛 Bug Fixes
 
@@ -14,6 +67,8 @@ All notable changes to this project will be documented in this file.
 - Add Tarpaulin-based code coverage report
 
 ## [0.6.0] - 2026-05-18
+
+## Milestone 8 — FREAK descriptor & DoG detector 
 
 ### ⚙️ Miscellaneous Tasks
 
