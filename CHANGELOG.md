@@ -1,6 +1,47 @@
-# Changelog - webarkit/webarkitlib-rs
+﻿# Changelog - webarkit/webarkitlib-rs
 
 All notable changes to this project will be documented in this file.
+
+## [0.6.1] - 2026-05-24
+
+### 🐛 Bug Fixes
+
+- *(ci)* Remove invalid --ignore-timeouts flag from tarpaulin config
+- *(ci)* Add CODECOV_TOKEN to codecov upload step
+
+### 🚀 Features
+
+- Add Tarpaulin-based code coverage report
+
+## [0.6.0] - 2026-05-18
+
+### ⚙️ Miscellaneous Tasks
+
+- *(core)* Add purecv dependency for milestone 8 refs #125 #126
+
+### 🐛 Bug Fixes
+
+- *(kpm)* Relax dual-mode Gaussian-pyramid test to <= 1 ULP tolerance
+- *(kpm)* Disable FP contraction in C++ build to restore cross-platform parity
+- *(kpm)* Use full 15-digit C++ literals for orientation smoothing kernel
+- *(kpm)* Silence clippy::excessive_precision on SMOOTH_KERNEL
+
+### 📚 Documentation
+
+- Add §3.5 documenting bilinear interpolation formula equivalence
+- Add §3.4 documenting the NONMAX_CHECK macro replacement
+- Update README and ARCHITECTURE with M8 milestone details
+
+### 🚀 Features
+
+- *(kpm)* Port BoxFilterPyramid8u to Rust (M8 step 1)
+- *(kpm)* Port interpolate.h + BinomialPyramid32f to Rust (M8 step 2)
+- *(kpm)* Port DoG detector + OrientationAssignment to Rust (M8 step 3)
+- *(kpm)* Port FREAK descriptor + Keyframe to Rust (M8 step 4)
+
+### 🧪 Testing
+
+- *(kpm)* Add dual-mode test for DoG detector with find_orientation=true
 
 ## [0.5.1] - 2026-05-14
 

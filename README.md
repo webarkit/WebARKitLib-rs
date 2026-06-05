@@ -3,6 +3,7 @@
 ![WebARKitLib-rs](./assets/WebARKitLib-Rust-banner.jpg)
 
 [![CI](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/webarkit/WebARKitLib-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/webarkit/WebARKitLib-rs)
 [![Crates.io](https://img.shields.io/crates/v/webarkitlib-rs.svg)](https://crates.io/crates/webarkitlib-rs)
 [![npm](https://img.shields.io/npm/v/@webarkit/webarkitlib-wasm.svg)](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm)
 [![GitHub stars](https://img.shields.io/github/stars/webarkit/WebARKitLib-rs.svg?style=social)](https://github.com/webarkit/WebARKitLib-rs/stargazers)
@@ -302,6 +303,36 @@ Because it's the `log` crate facade, any compatible backend works:
 - **Structured / OpenTelemetry** — `tracing` + `tracing-log`
 
 No library code change is needed — pick the backend in your application's entry point.
+
+## 📈 Code Coverage
+
+Coverage reports are generated automatically on every push and pull request via the [coverage workflow](.github/workflows/coverage.yml) using [cargo-tarpaulin](https://github.com/xd009642/tarpaulin) and uploaded to [Codecov](https://codecov.io/gh/webarkit/WebARKitLib-rs).
+
+### Generate a Coverage Report Locally
+
+```bash
+# Install tarpaulin (once)
+cargo install cargo-tarpaulin
+
+# Run the helper script — produces coverage/index.html
+./scripts/coverage.sh
+```
+
+Or run tarpaulin directly:
+
+```bash
+cargo tarpaulin --workspace --out Html --output-dir coverage --timeout 300
+```
+
+### Coverage Targets
+
+| Area | Target |
+|------|--------|
+| Minimum overall | 75 % |
+| Desirable overall | 85 %+ |
+| Marker tracking (critical path) | 95 %+ |
+
+---
 
 ## 📊 Benchmarking
 
