@@ -196,6 +196,13 @@ impl ARImageProcInfo {
     }
 
     /// Calculate image histogram, and box filter image
+    // rationale: `bias`, `kernel_size_half`, `image_temp_u16`, `image2` are
+    // used only inside cfg blocks gated on `target_feature = "sse4.1"` /
+    // `not(target_arch = "x86_64")`. On x86_64 without the compile-time
+    // sse4.1 gate, no inner branch matches — the variables are genuinely
+    // unused. The deeper cfg-fallback gap is tracked separately; this
+    // allow keeps PR scope to the strict clippy gate (#180).
+    #[allow(unused_variables)]
     pub fn luma_hist_and_box_filter_with_bias(
         &mut self,
         data: &[u8],
@@ -731,6 +738,6 @@ mod tests {
 
         let thresh = ipi.luma_hist_and_otsu(&img).unwrap();
         // Since peaks are 100 and 200, threshold should be around 100.
-        assert!(thresh >= 100 && thresh < 200);
+        assert!((100..200).contains(&thresh));
     }
 }

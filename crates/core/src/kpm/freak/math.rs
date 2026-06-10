@@ -1651,7 +1651,7 @@ mod tests {
     #[test]
     fn test_fast_atan2_360() {
         let result = fast_atan2_360(0.0, 1.0);
-        assert!(result >= 0.0 && result <= 360.0);
+        assert!((0.0..=360.0).contains(&result));
     }
 
     #[test]

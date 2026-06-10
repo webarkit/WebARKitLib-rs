@@ -484,7 +484,7 @@ pub(crate) mod test_helpers {
             // elements stored as i32 (0 represents zero element).
             let mut m_coeffs: Vec<i32> = vec![1]; // M(x) = 1 in GF(2^7)
             for &i in &coset {
-                let alpha_i = BCH_127_ALPHA_TO[i] as i32;
+                let alpha_i = BCH_127_ALPHA_TO[i];
                 // Multiply m_coeffs by (x + α^i) (subtraction == addition in GF(2)).
                 let mut new_m = vec![0i32; m_coeffs.len() + 1];
                 for (idx, &c) in m_coeffs.iter().enumerate() {
