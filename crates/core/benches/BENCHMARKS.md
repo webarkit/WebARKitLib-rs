@@ -1,6 +1,6 @@
 # WebARKitLib.rs Core Benchmarks
 
-**Last Updated**: 2026-06-04 (M9-3 — #142)
+**Last Updated**: 2026-06-10 (chore: criterion 0.5.1 → 0.8 — #174)
 
 This document tracks the performance of critical image processing and pattern matching functions in the `webarkitlib_rs` core crate.
 
@@ -8,16 +8,16 @@ This document tracks the performance of critical image processing and pattern ma
 
 The following benchmarks were conducted on an x86_64 system with SSE4.1 support enabled via the `simd` feature.
 
-| Function | Implementation | Average Time | Speedup |
+| Function | Implementation | Median Time | Speedup |
 | :--- | :--- | :--- | :--- |
-| `rgba_to_gray` | Scalar | 550.68 µs | - |
-| | SIMD (SSE4.1) | 232.72 µs | **2.37x** |
-| `dot_product` | Scalar | 347.85 ns | - |
-| | SIMD (SSE4.1) | 54.56 ns | **6.44x** |
-| `box_filter_h` | Scalar | 1.731 ms | - |
-| | SIMD (SSE4.1) | 1.734 ms | 1.00x |
-| `box_filter_v` | Scalar | 2.590 ms | - |
-| | SIMD (SSE4.1) | 886.84 µs | **2.92x** |
+| `rgba_to_gray` | Scalar | 629.57 µs | - |
+| | SIMD (SSE4.1) | 238.42 µs | **2.64x** |
+| `dot_product` | Scalar | 326.45 ns | - |
+| | SIMD (SSE4.1) | 60.24 ns | **5.42x** |
+| `box_filter_h` | Scalar | 1.8386 ms | - |
+| | SIMD (SSE4.1) | 1.7245 ms | 1.07x |
+| `box_filter_v` | Scalar | 2.3240 ms | - |
+| | SIMD (SSE4.1) | 765.77 µs | **3.03x** |
 
 ### Analysis
 
@@ -41,10 +41,12 @@ cargo bench --bench simd_bench
 
 ## Setup Details
 
-- **Tooling**: [Criterion.rs](https://github.com/bheisler/criterion.rs)
+- **Tooling**: [Criterion.rs](https://github.com/bheisler/criterion.rs) `0.8`
 - **Target OS**: Windows
 - **Target Architecture**: x86_64 (SSE4.1)
 - **Frame Size**: 640x480 (typical AR video resolution)
+- **Toolchain**: `rustc 1.94.0 (stable)`
+- **SIMD activation**: SSE4.1 intrinsics are gated by `#[cfg(target_feature = "sse4.1")]` — set `RUSTFLAGS="-C target-feature=+sse4.1"` (or `target-cpu=native`) when running `simd_bench` to exercise the SIMD paths.
 
 ## KPM / NFT performance (M9-3 status)
 
