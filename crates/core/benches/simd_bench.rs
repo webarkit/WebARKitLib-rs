@@ -34,7 +34,8 @@
  *
  */
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use webarkitlib_rs::image_proc::{box_filter_h_scalar, box_filter_v_scalar, rgba_to_gray_scalar};
 use webarkitlib_rs::pattern::dot_product_scalar;
 
