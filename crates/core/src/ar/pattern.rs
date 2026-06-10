@@ -1278,4 +1278,37 @@ mod tests {
         // Cleanup
         let _ = fs::remove_file(filename);
     }
+
+    #[test]
+    fn test_dot_product_scalar_known_values() {
+        let a: [i16; 4] = [1, 2, 3, 4];
+        let b: [i16; 4] = [5, 6, 7, 8];
+        // 1*5 + 2*6 + 3*7 + 4*8 = 5 + 12 + 21 + 32 = 70
+        assert_eq!(dot_product_scalar(&a, &b), 70);
+    }
+
+    #[test]
+    fn test_dot_product_scalar_zero_inputs() {
+        let a = vec![0i16; 32];
+        let b = vec![123i16; 32];
+        assert_eq!(dot_product_scalar(&a, &b), 0);
+    }
+
+    #[test]
+    fn test_dot_product_scalar_negative() {
+        let a: [i16; 3] = [-1, -2, -3];
+        let b: [i16; 3] = [4, 5, 6];
+        // -4 + -10 + -18 = -32
+        assert_eq!(dot_product_scalar(&a, &b), -32);
+    }
+
+    #[test]
+    fn test_dot_product_dispatcher_matches_scalar() {
+        // dot_product chooses SIMD when the runtime feature is detected
+        // and the cfg gate matches, else falls back to the scalar path.
+        // Both paths must produce the same integer-exact result.
+        let a: Vec<i16> = (0..23).map(|i| i as i16 - 11).collect();
+        let b: Vec<i16> = (0..23).map(|i| 2 * i as i16 + 1).collect();
+        assert_eq!(dot_product(&a, &b), dot_product_scalar(&a, &b));
+    }
 }
