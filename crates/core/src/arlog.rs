@@ -296,10 +296,8 @@ fn init_env_logger(verbose: bool) {
 /// Call once in your binary's `main()` — never from library code.
 ///
 /// ```no_run
-/// fn main() {
-///     webarkitlib_rs::arlog::ar_log_init_default();
-///     // ... rest of your application
-/// }
+/// webarkitlib_rs::arlog::ar_log_init_default();
+/// // ... rest of your application
 /// ```
 #[cfg(all(feature = "log-helpers", not(target_arch = "wasm32")))]
 pub fn ar_log_init_default() {

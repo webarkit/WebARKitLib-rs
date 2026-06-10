@@ -940,9 +940,9 @@ mod tests {
         // Build a known 120-bit pattern and confirm each rotation of the
         // input grid yields the same `recd[0..120]` (different dir values).
         let mut bits = [0u8; 120];
-        for i in 0..120 {
+        for (i, b) in bits.iter_mut().enumerate() {
             // Pseudo-random pattern: prime-indexed positions are 1.
-            bits[i] = if matches!(
+            *b = if matches!(
                 i,
                 2 | 3
                     | 5

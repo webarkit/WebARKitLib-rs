@@ -1046,127 +1046,6 @@ pub fn ar_patt_get_id(
     pattern_match(patt_handle, patt_detect_mode, data, patt_size)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_pattern_load_and_match() {
-        let mut handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
-
-        let mut mock_patt = String::new();
-        // 4 orientations * size * size * 3 colors
-        for _ in 0..(4 * AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) {
-            mock_patt.push_str("128 ");
-        }
-
-        let patno = ar_patt_load_from_buffer(&mut handle, &mock_patt).unwrap();
-        assert_eq!(patno, 0);
-        assert_eq!(handle.patt_num, 1);
-
-        // Mock extracted pattern with high contrast
-        let mut mock_data = vec![0; (AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) as usize];
-        for i in 0..mock_data.len() {
-            if i % 2 == 0 {
-                mock_data[i] = 10;
-            } else {
-                mock_data[i] = 240;
-            }
-        }
-
-        let result = pattern_match(
-            &handle,
-            AR_TEMPLATE_MATCHING_COLOR,
-            &mock_data,
-            AR_PATT_SIZE1,
-        );
-        assert!(result.is_ok());
-        let ok = result.unwrap();
-        assert!(ok.cf >= 0.0);
-        assert_eq!(ok.error_corrected, 0);
-    }
-
-    #[test]
-    fn test_ar_patt_save_and_load() {
-        use image::ImageReader;
-        use std::fs;
-        let filename = "test_pattern_save.patt";
-        let patt_size_i32: i32 = 16;
-        let patt_size: usize = 16;
-
-        // Load the image from examples/Data relative to this crate (CARGO_MANIFEST_DIR)
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let img_path = std::path::Path::new(manifest_dir)
-            .join("examples")
-            .join("Data")
-            .join("HIRO-test.jpg");
-        let img = ImageReader::open(img_path).unwrap().decode().unwrap();
-        // Use actual image dimensions to avoid out-of-bounds when sampling
-        let xsize_i32 = img.width() as i32;
-        let ysize_i32 = img.height() as i32;
-        let xsize = img.width() as usize;
-        let ysize = img.height() as usize;
-        let image_buf = img.to_rgb8();
-        // consume image buffer to obtain owned Vec<u8> for API which expects &[u8]
-        let image = image_buf.into_raw();
-
-        // Define a simple square quad (in image coordinates)
-        let vertex = [
-            [100.0, 100.0],
-            [200.0, 100.0],
-            [200.0, 200.0],
-            [100.0, 200.0],
-        ];
-
-        // Build a simple ARParamLTf lookup table (identity mapping) to satisfy ar_patt_get_image2
-        let param_ltf = ARParamLTf::new_basic(xsize_i32, ysize_i32);
-
-        // Build a simple marker_info with the quad we defined
-        let mut marker = ARMarkerInfo::default();
-        marker.vertex = vertex;
-
-        // Save using the image-first signature of ar_patt_save
-        let filename_path = std::path::Path::new(filename);
-        let res = ar_patt_save(
-            &image,
-            xsize,
-            ysize,
-            ARPixelFormat::RGB,
-            &param_ltf,
-            AR_IMAGE_PROC_FRAME_IMAGE,
-            &marker,
-            0.5, // patt_ratio
-            patt_size,
-            filename_path,
-        );
-
-        assert!(res.is_ok(), "ar_patt_save failed: {:?}", res.err());
-        assert!(
-            fs::metadata(filename).is_ok(),
-            "Pattern file was not created"
-        );
-
-        // Test loading it back using the buffer version since load_from_file is not available
-        let content = fs::read_to_string(filename).expect("Failed to read saved pattern file");
-        let mut handle = ARPattHandle::new(patt_size_i32, 1);
-        let load_res = ar_patt_load_from_buffer(&mut handle, &content);
-
-        assert!(
-            load_res.is_ok(),
-            "ar_patt_load_from_buffer failed: {:?}",
-            load_res.err()
-        );
-
-        // Compare with crates/core/examples/Data/patt.hiro (left commented for now)
-        let _reference_content = fs::read_to_string("../core/examples/Data/patt.hiro")
-            .expect("Failed to read reference pattern file");
-        // assert_eq!(content, _reference_content, "Saved pattern does not match the reference pattern");
-
-        // Cleanup
-        let _ = fs::remove_file(filename);
-    }
-}
-
 #[inline]
 fn dot_product(a: &[i16], b: &[i16]) -> i64 {
     #[cfg(feature = "simd-pattern")]
@@ -1282,4 +1161,121 @@ pub unsafe fn dot_product_simd_x86(a: &[i16], b: &[i16]) -> i64 {
     }
 
     total
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pattern_load_and_match() {
+        let mut handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
+
+        let mut mock_patt = String::new();
+        // 4 orientations * size * size * 3 colors
+        for _ in 0..(4 * AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) {
+            mock_patt.push_str("128 ");
+        }
+
+        let patno = ar_patt_load_from_buffer(&mut handle, &mock_patt).unwrap();
+        assert_eq!(patno, 0);
+        assert_eq!(handle.patt_num, 1);
+
+        // Mock extracted pattern with high contrast
+        let mut mock_data = vec![0; (AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) as usize];
+        for (i, px) in mock_data.iter_mut().enumerate() {
+            *px = if i % 2 == 0 { 10 } else { 240 };
+        }
+
+        let result = pattern_match(
+            &handle,
+            AR_TEMPLATE_MATCHING_COLOR,
+            &mock_data,
+            AR_PATT_SIZE1,
+        );
+        assert!(result.is_ok());
+        let ok = result.unwrap();
+        assert!(ok.cf >= 0.0);
+        assert_eq!(ok.error_corrected, 0);
+    }
+
+    #[test]
+    fn test_ar_patt_save_and_load() {
+        use image::ImageReader;
+        use std::fs;
+        let filename = "test_pattern_save.patt";
+        let patt_size_i32: i32 = 16;
+        let patt_size: usize = 16;
+
+        // Load the image from examples/Data relative to this crate (CARGO_MANIFEST_DIR)
+        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let img_path = std::path::Path::new(manifest_dir)
+            .join("examples")
+            .join("Data")
+            .join("HIRO-test.jpg");
+        let img = ImageReader::open(img_path).unwrap().decode().unwrap();
+        // Use actual image dimensions to avoid out-of-bounds when sampling
+        let xsize_i32 = img.width() as i32;
+        let ysize_i32 = img.height() as i32;
+        let xsize = img.width() as usize;
+        let ysize = img.height() as usize;
+        let image_buf = img.to_rgb8();
+        // consume image buffer to obtain owned Vec<u8> for API which expects &[u8]
+        let image = image_buf.into_raw();
+
+        // Define a simple square quad (in image coordinates)
+        let vertex = [
+            [100.0, 100.0],
+            [200.0, 100.0],
+            [200.0, 200.0],
+            [100.0, 200.0],
+        ];
+
+        // Build a simple ARParamLTf lookup table (identity mapping) to satisfy ar_patt_get_image2
+        let param_ltf = ARParamLTf::new_basic(xsize_i32, ysize_i32);
+
+        // Build a simple marker_info with the quad we defined
+        let mut marker = ARMarkerInfo::default();
+        marker.vertex = vertex;
+
+        // Save using the image-first signature of ar_patt_save
+        let filename_path = std::path::Path::new(filename);
+        let res = ar_patt_save(
+            &image,
+            xsize,
+            ysize,
+            ARPixelFormat::RGB,
+            &param_ltf,
+            AR_IMAGE_PROC_FRAME_IMAGE,
+            &marker,
+            0.5, // patt_ratio
+            patt_size,
+            filename_path,
+        );
+
+        assert!(res.is_ok(), "ar_patt_save failed: {:?}", res.err());
+        assert!(
+            fs::metadata(filename).is_ok(),
+            "Pattern file was not created"
+        );
+
+        // Test loading it back using the buffer version since load_from_file is not available
+        let content = fs::read_to_string(filename).expect("Failed to read saved pattern file");
+        let mut handle = ARPattHandle::new(patt_size_i32, 1);
+        let load_res = ar_patt_load_from_buffer(&mut handle, &content);
+
+        assert!(
+            load_res.is_ok(),
+            "ar_patt_load_from_buffer failed: {:?}",
+            load_res.err()
+        );
+
+        // Compare with crates/core/examples/Data/patt.hiro (left commented for now)
+        let _reference_content = fs::read_to_string("../core/examples/Data/patt.hiro")
+            .expect("Failed to read reference pattern file");
+        // assert_eq!(content, _reference_content, "Saved pattern does not match the reference pattern");
+
+        // Cleanup
+        let _ = fs::remove_file(filename);
+    }
 }

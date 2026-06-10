@@ -827,6 +827,32 @@ pub fn ar_util_quat_slerp(
     q[3] = qy[3] * k0 + qz2[3] * k1;
 }
 
+/// Multiply a 3x4 double matrix by a 3x4 float matrix, outputting a 3x4 float matrix.
+/// Port of arUtilMatMuldff.
+pub fn mat_mul_dff(a: &[[f64; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
+    for i in 0..3 {
+        for j in 0..3 {
+            dest[i][j] = (a[i][0] * b[0][j] as f64
+                + a[i][1] * b[1][j] as f64
+                + a[i][2] * b[2][j] as f64) as f32;
+        }
+        dest[i][3] = (a[i][0] * b[0][3] as f64
+            + a[i][1] * b[1][3] as f64
+            + a[i][2] * b[2][3] as f64
+            + a[i][3]) as f32;
+    }
+}
+
+/// Multiply two 3x4 float matrices, outputting a 3x4 float matrix.
+pub fn mat_mul_fff(a: &[[f32; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
+    for i in 0..3 {
+        for j in 0..3 {
+            dest[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+        }
+        dest[i][3] = a[i][0] * b[0][3] + a[i][1] * b[1][3] + a[i][2] * b[2][3] + a[i][3];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -976,31 +1002,5 @@ mod tests {
         assert!((qr[1] - half_sqrt2).abs() < 1e-10);
         assert!((qr[2]).abs() < 1e-10);
         assert!((qr[3]).abs() < 1e-10);
-    }
-}
-
-/// Multiply a 3x4 double matrix by a 3x4 float matrix, outputting a 3x4 float matrix.
-/// Port of arUtilMatMuldff.
-pub fn mat_mul_dff(a: &[[f64; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
-    for i in 0..3 {
-        for j in 0..3 {
-            dest[i][j] = (a[i][0] * b[0][j] as f64
-                + a[i][1] * b[1][j] as f64
-                + a[i][2] * b[2][j] as f64) as f32;
-        }
-        dest[i][3] = (a[i][0] * b[0][3] as f64
-            + a[i][1] * b[1][3] as f64
-            + a[i][2] * b[2][3] as f64
-            + a[i][3]) as f32;
-    }
-}
-
-/// Multiply two 3x4 float matrices, outputting a 3x4 float matrix.
-pub fn mat_mul_fff(a: &[[f32; 4]; 3], b: &[[f32; 4]; 3], dest: &mut [[f32; 4]; 3]) {
-    for i in 0..3 {
-        for j in 0..3 {
-            dest[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
-        }
-        dest[i][3] = a[i][0] * b[0][3] + a[i][1] * b[1][3] + a[i][2] * b[2][3] + a[i][3];
     }
 }
