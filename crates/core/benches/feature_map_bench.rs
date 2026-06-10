@@ -43,7 +43,8 @@
 //! would make each iteration multi-minute. We target a realistic-but-bounded
 //! working size that still stresses the scoring loop.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use std::path::PathBuf;
 use webarkitlib_rs::ar2::{ar2_gen_feature_map, ar2_gen_image_set};
 use webarkitlib_rs::arlog_e;
