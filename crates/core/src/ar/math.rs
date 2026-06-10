@@ -1003,4 +1003,88 @@ mod tests {
         assert!((qr[2]).abs() < 1e-10);
         assert!((qr[3]).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_mat_mul_dff_identity() {
+        // I_dbl * B_f32 == B_f32 (columns 0..3); column 3 picks up the
+        // a[i][3] translation term.
+        let a: [[f64; 4]; 3] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
+        let b: [[f32; 4]; 3] = [
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+        ];
+        let mut dest = [[0.0f32; 4]; 3];
+        mat_mul_dff(&a, &b, &mut dest);
+        assert_eq!(dest, b);
+    }
+
+    #[test]
+    fn test_mat_mul_dff_known_values() {
+        // a row 0: [2, 0, 0, 1] picks 2*b[0][j] + a[0][3] for column 3.
+        let a: [[f64; 4]; 3] = [
+            [2.0, 0.0, 0.0, 1.0],
+            [0.0, 3.0, 0.0, -1.0],
+            [0.0, 0.0, 4.0, 0.5],
+        ];
+        let b: [[f32; 4]; 3] = [
+            [1.0, 1.0, 1.0, 10.0],
+            [2.0, 2.0, 2.0, 20.0],
+            [3.0, 3.0, 3.0, 30.0],
+        ];
+        let mut dest = [[0.0f32; 4]; 3];
+        mat_mul_dff(&a, &b, &mut dest);
+        assert!((dest[0][0] - 2.0).abs() < 1e-5);
+        assert!((dest[0][3] - (20.0 + 1.0)).abs() < 1e-5);
+        assert!((dest[1][1] - 6.0).abs() < 1e-5);
+        assert!((dest[1][3] - (60.0 - 1.0)).abs() < 1e-5);
+        assert!((dest[2][2] - 12.0).abs() < 1e-5);
+        assert!((dest[2][3] - (120.0 + 0.5)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_mat_mul_fff_identity() {
+        let a: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ];
+        let b: [[f32; 4]; 3] = [
+            [1.0, 2.0, 3.0, 4.0],
+            [5.0, 6.0, 7.0, 8.0],
+            [9.0, 10.0, 11.0, 12.0],
+        ];
+        let mut dest = [[0.0f32; 4]; 3];
+        mat_mul_fff(&a, &b, &mut dest);
+        assert_eq!(dest, b);
+    }
+
+    #[test]
+    fn test_mat_mul_fff_composes_translation() {
+        // Pure translation composed with pure translation == sum of
+        // translations; rotation block (cols 0..3) stays identity.
+        let a: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 1.0],
+            [0.0, 1.0, 0.0, 2.0],
+            [0.0, 0.0, 1.0, 3.0],
+        ];
+        let b: [[f32; 4]; 3] = [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+        ];
+        let mut dest = [[0.0f32; 4]; 3];
+        mat_mul_fff(&a, &b, &mut dest);
+        assert!((dest[0][3] - 11.0).abs() < 1e-5);
+        assert!((dest[1][3] - 22.0).abs() < 1e-5);
+        assert!((dest[2][3] - 33.0).abs() < 1e-5);
+        // Diagonal stays 1.
+        assert!((dest[0][0] - 1.0).abs() < 1e-5);
+        assert!((dest[1][1] - 1.0).abs() < 1e-5);
+        assert!((dest[2][2] - 1.0).abs() < 1e-5);
+    }
 }
