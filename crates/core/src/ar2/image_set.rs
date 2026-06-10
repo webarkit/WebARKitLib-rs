@@ -967,8 +967,8 @@ mod tests {
 
         // Level 1: 4×4 at 100 DPI — gradient.
         let mut pixels_1 = vec![0u8; 16];
-        for i in 0..16 {
-            pixels_1[i] = (i as u8) * 16;
+        for (i, px) in pixels_1.iter_mut().enumerate() {
+            *px = (i as u8) * 16;
         }
 
         let original = AR2ImageSetT {
@@ -1010,8 +1010,8 @@ mod tests {
     fn test_image_set_save_jpeg_load_roundtrip() {
         // 16×16 gradient at 150 DPI — single scale for simplicity.
         let mut pixels = vec![0u8; 256];
-        for i in 0..256 {
-            pixels[i] = i as u8;
+        for (i, px) in pixels.iter_mut().enumerate() {
+            *px = i as u8;
         }
 
         let original = AR2ImageSetT {

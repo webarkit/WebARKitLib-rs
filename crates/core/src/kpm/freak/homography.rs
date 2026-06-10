@@ -2642,7 +2642,7 @@ mod tests {
         // Verify: each point projects to itself (after dividing by w)
         for pt in &[&p1, &p2, &p3, &p4] {
             let mut out = [0.0_f32; 2];
-            multiply_point_homography_inhomogenous(&mut out, &h, *pt);
+            multiply_point_homography_inhomogenous(&mut out, &h, pt);
             assert!(
                 approx_eq(out[0], pt[0], 1e-3) && approx_eq(out[1], pt[1], 1e-3),
                 "identity DLT failed for pt={:?}, got out={:?}",

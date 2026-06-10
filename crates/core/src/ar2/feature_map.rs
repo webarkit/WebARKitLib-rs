@@ -326,8 +326,8 @@ unsafe fn get_similarity_sse41(
             i += 16;
         }
         // Tail for sx/sxx (scalar)
-        for ii in i..patch_size {
-            let p = img_row[ii] as u64;
+        for &b in &img_row[i..patch_size] {
+            let p = b as u64;
             sx_i += p;
             sxx_i += p * p;
         }
@@ -432,8 +432,8 @@ unsafe fn get_similarity_avx2(
             sxx_i += _mm_cvtsi128_si32(sum1) as u32 as u64;
             i += 16;
         }
-        for ii in i..patch_size {
-            let p = img_row[ii] as u64;
+        for &b in &img_row[i..patch_size] {
+            let p = b as u64;
             sx_i += p;
             sxx_i += p * p;
         }
