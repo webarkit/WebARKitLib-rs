@@ -1475,13 +1475,15 @@ mod tests {
     /// `arGetMarkerInfo.c` lines 92-100.
     #[test]
     fn test_finalize_marker_id_cf_dir_template_color() {
-        let mut m = ARMarkerInfo::default();
-        m.id_patt = 7;
-        m.dir_patt = 2;
-        m.cf_patt = 0.85;
-        m.id_matrix = 99; // should be ignored
-        m.dir_matrix = 3;
-        m.cf_matrix = 0.5;
+        let mut m = ARMarkerInfo {
+            id_patt: 7,
+            dir_patt: 2,
+            cf_patt: 0.85,
+            id_matrix: 99, // should be ignored
+            dir_matrix: 3,
+            cf_matrix: 0.5,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(&mut m, crate::pattern::AR_TEMPLATE_MATCHING_COLOR);
 
@@ -1492,10 +1494,12 @@ mod tests {
 
     #[test]
     fn test_finalize_marker_id_cf_dir_template_mono() {
-        let mut m = ARMarkerInfo::default();
-        m.id_patt = 4;
-        m.dir_patt = 1;
-        m.cf_patt = 0.7;
+        let mut m = ARMarkerInfo {
+            id_patt: 4,
+            dir_patt: 1,
+            cf_patt: 0.7,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(&mut m, crate::pattern::AR_TEMPLATE_MATCHING_MONO);
 
@@ -1506,13 +1510,15 @@ mod tests {
 
     #[test]
     fn test_finalize_marker_id_cf_dir_matrix_only() {
-        let mut m = ARMarkerInfo::default();
-        m.id_patt = 99; // should be ignored
-        m.dir_patt = 2;
-        m.cf_patt = 0.5;
-        m.id_matrix = 12;
-        m.dir_matrix = 0;
-        m.cf_matrix = 0.92;
+        let mut m = ARMarkerInfo {
+            id_patt: 99, // should be ignored
+            dir_patt: 2,
+            cf_patt: 0.5,
+            id_matrix: 12,
+            dir_matrix: 0,
+            cf_matrix: 0.92,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(&mut m, crate::types::AR_MATRIX_CODE_DETECTION);
 
@@ -1523,17 +1529,19 @@ mod tests {
 
     #[test]
     fn test_finalize_marker_id_cf_dir_mixed_color_matrix_leaves_finals_alone() {
-        let mut m = ARMarkerInfo::default();
         // Pre-set finals to sentinel values; verify they're not overwritten.
-        m.id = -42;
-        m.dir = -42;
-        m.cf = -42.0;
-        m.id_patt = 1;
-        m.dir_patt = 1;
-        m.cf_patt = 0.1;
-        m.id_matrix = 2;
-        m.dir_matrix = 2;
-        m.cf_matrix = 0.2;
+        let mut m = ARMarkerInfo {
+            id: -42,
+            dir: -42,
+            cf: -42.0,
+            id_patt: 1,
+            dir_patt: 1,
+            cf_patt: 0.1,
+            id_matrix: 2,
+            dir_matrix: 2,
+            cf_matrix: 0.2,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(
             &mut m,
@@ -1547,10 +1555,12 @@ mod tests {
 
     #[test]
     fn test_finalize_marker_id_cf_dir_mixed_mono_matrix_leaves_finals_alone() {
-        let mut m = ARMarkerInfo::default();
-        m.id = -42;
-        m.dir = -42;
-        m.cf = -42.0;
+        let mut m = ARMarkerInfo {
+            id: -42,
+            dir: -42,
+            cf: -42.0,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(
             &mut m,
@@ -1920,16 +1930,18 @@ mod tests {
     /// leaves finals untouched.
     #[test]
     fn test_finalize_marker_id_cf_dir_mono_matrix_leaves_finals_alone() {
-        let mut m = ARMarkerInfo::default();
-        m.id = -42;
-        m.dir = -42;
-        m.cf = -42.0;
-        m.id_patt = 1;
-        m.dir_patt = 1;
-        m.cf_patt = 0.6;
-        m.id_matrix = 2;
-        m.dir_matrix = 2;
-        m.cf_matrix = 0.7;
+        let mut m = ARMarkerInfo {
+            id: -42,
+            dir: -42,
+            cf: -42.0,
+            id_patt: 1,
+            dir_patt: 1,
+            cf_patt: 0.6,
+            id_matrix: 2,
+            dir_matrix: 2,
+            cf_matrix: 0.7,
+            ..Default::default()
+        };
 
         finalize_marker_id_cf_dir(
             &mut m,
@@ -1996,8 +2008,10 @@ mod tests {
     #[test]
     fn test_cutoff_phase_set_on_barcode_edc_fail() {
         use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
-        let mut marker = ARMarkerInfo::default();
-        marker.cutoff_phase = MatchError::BarcodeEdcFail.into();
+        let marker = ARMarkerInfo {
+            cutoff_phase: MatchError::BarcodeEdcFail.into(),
+            ..Default::default()
+        };
         assert_eq!(
             marker.cutoff_phase,
             ARMarkerInfoCutoffPhase::MatchBarcodeEdcFail
@@ -2008,8 +2022,10 @@ mod tests {
     #[test]
     fn test_cutoff_phase_set_on_match_generic() {
         use crate::types::{ARMarkerInfoCutoffPhase, MatchError};
-        let mut marker = ARMarkerInfo::default();
-        marker.cutoff_phase = MatchError::Generic.into();
+        let marker = ARMarkerInfo {
+            cutoff_phase: MatchError::Generic.into(),
+            ..Default::default()
+        };
         assert_eq!(marker.cutoff_phase, ARMarkerInfoCutoffPhase::MatchGeneric);
     }
 
@@ -2025,9 +2041,11 @@ mod tests {
     #[test]
     fn test_history_disabled_skips_merge() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_marker_extraction_mode = crate::types::AR_NOUSE_TRACKING_HISTORY;
-        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+        let mut handle = ARHandle {
+            ar_marker_extraction_mode: crate::types::AR_NOUSE_TRACKING_HISTORY,
+            ar_pattern_detection_mode: crate::pattern::AR_TEMPLATE_MATCHING_MONO,
+            ..Default::default()
+        };
 
         // Strong history record.
         handle.history[0].marker.id = 5;
@@ -2065,8 +2083,10 @@ mod tests {
     #[test]
     fn test_history_merge_strengthens_weak_marker_single_mode() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+        let mut handle = ARHandle {
+            ar_pattern_detection_mode: crate::pattern::AR_TEMPLATE_MATCHING_MONO,
+            ..Default::default()
+        };
 
         // Current marker: weak.
         handle.marker_info[0].area = 10000;
@@ -2109,8 +2129,10 @@ mod tests {
     #[test]
     fn test_history_merge_does_nothing_when_current_cf_higher() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+        let mut handle = ARHandle {
+            ar_pattern_detection_mode: crate::pattern::AR_TEMPLATE_MATCHING_MONO,
+            ..Default::default()
+        };
 
         handle.marker_info[0].area = 10000;
         handle.marker_info[0].pos = [100.0, 100.0];
@@ -2141,8 +2163,10 @@ mod tests {
     #[test]
     fn test_history_merge_skips_when_area_ratio_out_of_range() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_pattern_detection_mode = crate::pattern::AR_TEMPLATE_MATCHING_MONO;
+        let mut handle = ARHandle {
+            ar_pattern_detection_mode: crate::pattern::AR_TEMPLATE_MATCHING_MONO,
+            ..Default::default()
+        };
 
         handle.marker_info[0].area = 10000;
         handle.marker_info[0].pos = [100.0, 100.0];
@@ -2175,9 +2199,11 @@ mod tests {
     #[test]
     fn test_history_merge_combined_mode_updates_both_cfs() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_pattern_detection_mode =
-            crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION;
+        let mut handle = ARHandle {
+            ar_pattern_detection_mode:
+                crate::types::AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION,
+            ..Default::default()
+        };
 
         handle.marker_info[0].area = 10000;
         handle.marker_info[0].pos = [100.0, 100.0];
@@ -2271,9 +2297,10 @@ mod tests {
     #[test]
     fn test_save_creates_new_record_for_new_id() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-
-        handle.history_num = 0;
+        let mut handle = ARHandle {
+            history_num: 0,
+            ..Default::default()
+        };
 
         handle.marker_info[0].id = 42;
         handle.marker_info[0].area = 7777;
@@ -2323,8 +2350,10 @@ mod tests {
     #[test]
     fn test_v2_mode_skips_resurrection() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY_V2;
+        let mut handle = ARHandle {
+            ar_marker_extraction_mode: crate::types::AR_USE_TRACKING_HISTORY_V2,
+            ..Default::default()
+        };
 
         handle.history[0].marker.id = 9;
         handle.history[0].marker.area = 5000;
@@ -2347,8 +2376,10 @@ mod tests {
     #[test]
     fn test_resurrection_reinserts_missing_history_marker() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY;
+        let mut handle = ARHandle {
+            ar_marker_extraction_mode: crate::types::AR_USE_TRACKING_HISTORY,
+            ..Default::default()
+        };
 
         handle.history[0].marker.id = 9;
         handle.history[0].marker.area = 5000;
@@ -2370,8 +2401,10 @@ mod tests {
     #[test]
     fn test_resurrection_does_not_duplicate_existing_marker() {
         use crate::types::ARHandle;
-        let mut handle = ARHandle::default();
-        handle.ar_marker_extraction_mode = crate::types::AR_USE_TRACKING_HISTORY;
+        let mut handle = ARHandle {
+            ar_marker_extraction_mode: crate::types::AR_USE_TRACKING_HISTORY,
+            ..Default::default()
+        };
 
         handle.history[0].marker.area = 5000;
         handle.history[0].marker.pos = [50.0, 50.0];

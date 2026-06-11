@@ -246,9 +246,11 @@ mod tests {
 
     #[test]
     fn test_ar_param_change_size_doubles_resolution() {
-        let mut src = ARParam::default();
-        src.xsize = 640;
-        src.ysize = 480;
+        let mut src = ARParam {
+            xsize: 640,
+            ysize: 480,
+            ..Default::default()
+        };
         // fx, skew=0, cx, tx
         src.mat[0] = [700.0, 0.0, 320.0, 0.0];
         // 0, fy, cy, ty
@@ -277,9 +279,11 @@ mod tests {
 
     #[test]
     fn test_ar_param_change_size_halves_resolution() {
-        let mut src = ARParam::default();
-        src.xsize = 1280;
-        src.ysize = 960;
+        let mut src = ARParam {
+            xsize: 1280,
+            ysize: 960,
+            ..Default::default()
+        };
         src.mat[0] = [1400.0, 0.0, 640.0, 0.0];
         src.mat[1] = [0.0, 1400.0, 480.0, 0.0];
         src.mat[2] = [0.0, 0.0, 1.0, 0.0];
@@ -294,9 +298,11 @@ mod tests {
 
     #[test]
     fn test_ar_param_change_size_identity() {
-        let mut src = ARParam::default();
-        src.xsize = 640;
-        src.ysize = 480;
+        let mut src = ARParam {
+            xsize: 640,
+            ysize: 480,
+            ..Default::default()
+        };
         src.mat[0] = [700.0, 0.0, 320.0, 0.0];
         src.mat[1] = [0.0, 700.0, 240.0, 0.0];
         src.mat[2] = [0.0, 0.0, 1.0, 0.0];
