@@ -153,8 +153,11 @@ cargo test --all-features
 **Pre-req**: PRs 1–4.5 merged; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean on `dev`.
 
 **Scope**: `.github/workflows/ci.yml`
-- `build-and-test` job: replace `cargo clippy --workspace -- -D warnings` with `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
-- `pure-rust-build` job: keep `cargo clippy -p webarkitlib-rs -- -D warnings` (this job intentionally verifies the no-features path stays clean — that's a different invariant).
+- `kpm-build (ubuntu-latest)` job: add a new step `cargo clippy --workspace --all-targets --all-features -- -D warnings` (Linux-only). This job already has submodules + libclang, which `--all-features` requires (`ffi-backend` triggers C++ compilation in `build.rs`).
+- `build-and-test` job: keep `cargo clippy --workspace -- -D warnings` (default features, no submodules). This job's checkout intentionally skips submodules to verify the pure-Rust path doesn't accidentally depend on them — adding `--all-features` here would conflict with that invariant.
+- `pure-rust-build` job: keep `cargo clippy -p webarkitlib-rs -- -D warnings` (no-features path stays clean — a third invariant).
+
+**Discovery**: the original plan had the strict gate going into `build-and-test`. First push of PR 5 failed because that job's checkout doesn't include git submodules, so `--all-features` enabled `ffi-backend` and `build.rs` panicked looking for the C++ sources. Moved to `kpm-build (ubuntu-latest)` where the prerequisites already exist. Lints are OS-agnostic, so Linux-only is sufficient.
 
 **Verification**: open PR, watch CI go green. If a lint slips in between PR 4 merge and PR 5 (rustc drift, A1), fix in this PR.
 
