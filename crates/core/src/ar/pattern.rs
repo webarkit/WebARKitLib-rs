@@ -1235,8 +1235,10 @@ mod tests {
         let param_ltf = ARParamLTf::new_basic(xsize_i32, ysize_i32);
 
         // Build a simple marker_info with the quad we defined
-        let mut marker = ARMarkerInfo::default();
-        marker.vertex = vertex;
+        let marker = ARMarkerInfo {
+            vertex,
+            ..Default::default()
+        };
 
         // Save using the image-first signature of ar_patt_save
         let filename_path = std::path::Path::new(filename);
