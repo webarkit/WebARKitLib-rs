@@ -486,9 +486,11 @@ mod tests {
     use crate::types::ARParam;
 
     fn make_param(xsize: i32, ysize: i32, fx: f64, fy: f64, cx: f64, cy: f64) -> ARParam {
-        let mut p = ARParam::default();
-        p.xsize = xsize;
-        p.ysize = ysize;
+        let mut p = ARParam {
+            xsize,
+            ysize,
+            ..Default::default()
+        };
         p.mat[0] = [fx, 0.0, cx, 0.0];
         p.mat[1] = [0.0, fy, cy, 0.0];
         p.mat[2] = [0.0, 0.0, 1.0, 0.0];
