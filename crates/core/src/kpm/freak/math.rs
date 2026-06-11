@@ -2106,7 +2106,10 @@ mod tests {
 // the input domain and assert that the pure-Rust ports produce results within
 // a small tolerance of the C++ baseline.
 
-#[cfg(feature = "dual-mode")]
+// Only ever called from `#[cfg(all(test, feature = "dual-mode"))]`
+// modules below; gate the extern declaration the same way so the lib
+// target under --all-features doesn't see a phantom dead symbol (#180).
+#[cfg(all(test, feature = "dual-mode"))]
 extern "C" {
     // M6-1 (#63) — math_utils.h
     fn webarkit_cpp_fast_atan2(y: f32, x: f32) -> f32;

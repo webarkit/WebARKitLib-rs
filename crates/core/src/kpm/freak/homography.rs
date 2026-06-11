@@ -2813,7 +2813,10 @@ mod tests {
 // and the final homography agrees element-wise within accumulated float
 // rounding (~1e-5).
 
-#[cfg(feature = "dual-mode")]
+// Only ever called from `#[cfg(all(test, feature = "dual-mode"))]`
+// modules below; gate the extern declaration the same way so the lib
+// target under --all-features doesn't see a phantom dead symbol (#180).
+#[cfg(all(test, feature = "dual-mode"))]
 extern "C" {
     fn webarkit_cpp_mat3_exp_pade_via_eigen(out: *mut f32, input: *const f32);
 

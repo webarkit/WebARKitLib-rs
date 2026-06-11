@@ -1195,7 +1195,10 @@ mod tests {
 // the algorithm level, separately from the end-to-end VisualDatabase
 // parity gate in `visual_database.rs`.
 
-#[cfg(feature = "dual-mode")]
+// Only ever called from `#[cfg(all(test, feature = "dual-mode"))]`
+// modules below; gate the extern declaration the same way so the lib
+// target under --all-features doesn't see a phantom dead symbol (#180).
+#[cfg(all(test, feature = "dual-mode"))]
 extern "C" {
     /// M9 #150: reimplementation of `HoughSimilarityVoting::autoAdjustXYNumBins`
     /// in `kpm_c_api.cpp` (the C++ method is private, so the shim ports the

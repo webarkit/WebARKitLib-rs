@@ -805,7 +805,10 @@ mod tests {
 // assert that the match counts agree within a small tolerance (BHC RNG
 // differences and minor floating-point order can cause small variation).
 
-#[cfg(feature = "dual-mode")]
+// Only ever called from `#[cfg(all(test, feature = "dual-mode"))]`
+// modules below; gate the extern declaration the same way so the lib
+// target under --all-features doesn't see a phantom dead symbol (#180).
+#[cfg(all(test, feature = "dual-mode"))]
 extern "C" {
     fn webarkit_cpp_match_features_brute(
         query_descs: *const u8,
