@@ -1047,7 +1047,10 @@ mod tests {
 // from math/rand.h). This is what enables the BHC-indexed match dual-mode
 // test in matcher.rs to assert pair equality with C++ rather than count-only.
 
-#[cfg(feature = "dual-mode")]
+// Only ever called from `#[cfg(all(test, feature = "dual-mode"))]`
+// modules below; gate the extern declaration the same way so the lib
+// target under --all-features doesn't see a phantom dead symbol (#180).
+#[cfg(all(test, feature = "dual-mode"))]
 extern "C" {
     fn webarkit_cpp_fast_random(seed: *mut i32) -> i32;
     fn webarkit_cpp_array_shuffle(v: *mut i32, pop_size: i32, sample_size: i32, seed: *mut i32);
