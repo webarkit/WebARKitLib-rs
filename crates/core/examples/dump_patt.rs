@@ -112,10 +112,12 @@ fn main() {
     arlog_i!("Otsu threshold: {}", otsu_thresh);
 
     // Identity LT (skip lens distortion correction for the diagnostic).
-    let mut param_ltf = ARParamLTf::default();
-    param_ltf.xsize = width;
-    param_ltf.ysize = height;
-    param_ltf.o2i = vec![0.0; (width * height * 2) as usize];
+    let mut param_ltf = ARParamLTf {
+        xsize: width,
+        ysize: height,
+        o2i: vec![0.0; (width * height * 2) as usize],
+        ..Default::default()
+    };
     for y in 0..height {
         for x in 0..width {
             let idx = ((y * width + x) * 2) as usize;
@@ -125,26 +127,30 @@ fn main() {
     }
     let mut param_lt = Box::new(ARParamLT { param, param_ltf });
 
-    let mut ar_handle = ARHandle::default();
-    ar_handle.xsize = width;
-    ar_handle.ysize = height;
+    let mut ar_handle = ARHandle {
+        xsize: width,
+        ysize: height,
+        ar_image_proc_mode: 0, // FrameImage
+        ar_pattern_detection_mode: AR_TEMPLATE_MATCHING_COLOR,
+        ar_labeling_mode: 0,
+        ar_labeling_thresh: otsu_thresh as i32,
+        patt_ratio: 0.5,
+        matrix_code_type: ARMatrixCodeType::Code3x3,
+        ar_param_lt: &mut *param_lt,
+        ..Default::default()
+    };
     ar_handle.set_pixel_format(ARPixelFormat::MONO);
-    ar_handle.ar_image_proc_mode = 0; // FrameImage
-    ar_handle.ar_pattern_detection_mode = AR_TEMPLATE_MATCHING_COLOR;
-    ar_handle.ar_labeling_mode = 0;
-    ar_handle.ar_labeling_thresh = otsu_thresh as i32;
-    ar_handle.patt_ratio = 0.5;
-    ar_handle.matrix_code_type = ARMatrixCodeType::Code3x3;
-    ar_handle.ar_param_lt = &mut *param_lt;
 
-    let mut patt_handle = webarkitlib_rs::types::ARPattHandle::default();
-    patt_handle.patt_num_max = 50;
-    patt_handle.patt_size = 16;
-    patt_handle.pattf = vec![0; 50];
-    patt_handle.patt = vec![vec![0; 16 * 16 * 3 * 4]; 50];
-    patt_handle.pattpow = vec![0.0; 50 * 4];
-    patt_handle.patt_bw = vec![vec![0; 16 * 16 * 4]; 50];
-    patt_handle.pattpow_bw = vec![0.0; 50 * 4];
+    let mut patt_handle = webarkitlib_rs::types::ARPattHandle {
+        patt_num_max: 50,
+        patt_size: 16,
+        pattf: vec![0; 50],
+        patt: vec![vec![0; 16 * 16 * 3 * 4]; 50],
+        pattpow: vec![0.0; 50 * 4],
+        patt_bw: vec![vec![0; 16 * 16 * 4]; 50],
+        pattpow_bw: vec![0.0; 50 * 4],
+        ..Default::default()
+    };
 
     arlog_i!("Loading hiro pattern from {}", patt_path);
     if let Err(e) = ar_patt_load(&mut patt_handle, &patt_path) {
@@ -244,8 +250,7 @@ fn main() {
         "selected  = {} (of {} markers)\n",
         sel, ar_handle.marker_num
     ));
-    for i in 0..4 {
-        let idx = vertex_indices[i];
+    for (i, &idx) in vertex_indices.iter().enumerate() {
         meta.push_str(&format!(
             "vertex[{}] = ({}, {})\n",
             i, info2.x_coord[idx], info2.y_coord[idx]
