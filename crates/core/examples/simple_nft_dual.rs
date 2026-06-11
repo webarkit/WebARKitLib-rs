@@ -462,7 +462,7 @@ fn main() {
             // tier-2 check exactly.
             let matched = dual_result.matched_id;
             match (matched >= 0)
-                .then(|| matched as usize)
+                .then_some(matched as usize)
                 .and_then(|i| ref_dims.get(i))
             {
                 Some(&(ref_w, ref_h)) => {
@@ -607,13 +607,13 @@ fn main() {
 
     arlog_i!("  KPM match: page={}, error={:.4}", page_no, error);
     arlog_i!("  Initial 3x4 pose matrix:");
-    for r in 0..3 {
+    for row in cam_pose {
         arlog_i!(
             "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
-            cam_pose[r][0],
-            cam_pose[r][1],
-            cam_pose[r][2],
-            cam_pose[r][3]
+            row[0],
+            row[1],
+            row[2],
+            row[3]
         );
     }
 
@@ -646,13 +646,13 @@ fn main() {
         Ok(()) => {
             arlog_i!("  AR2 tracking succeeded! Error={:.4}", tracking_err);
             arlog_i!("  Refined 3x4 pose matrix:");
-            for r in 0..3 {
+            for row in &refined_pose {
                 arlog_i!(
                     "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
-                    refined_pose[r][0],
-                    refined_pose[r][1],
-                    refined_pose[r][2],
-                    refined_pose[r][3]
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3]
                 );
             }
         }

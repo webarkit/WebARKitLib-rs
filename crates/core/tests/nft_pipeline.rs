@@ -196,7 +196,7 @@ fn test_compare_with_c_generated_pinball_marker() {
     // Allow ±10%: float rounding differs across compilers and platforms.
     let ratio = rust_total as f64 / c_total as f64;
     assert!(
-        ratio >= 0.90 && ratio <= 1.10,
+        (0.90..=1.10).contains(&ratio),
         "feature count diverges: Rust {} vs C {} ({:.1}% — expected within ±10%)",
         rust_total,
         c_total,

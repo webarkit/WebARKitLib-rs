@@ -224,13 +224,13 @@ fn main() {
         Some((cam_pose, page_no, error)) => {
             arlog_i!("  ✓ KPM match found! Page={}, error={:.4}", page_no, error);
             arlog_i!("  Initial 3×4 pose matrix:");
-            for r in 0..3 {
+            for row in cam_pose {
                 arlog_i!(
                     "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
-                    cam_pose[r][0],
-                    cam_pose[r][1],
-                    cam_pose[r][2],
-                    cam_pose[r][3]
+                    row[0],
+                    row[1],
+                    row[2],
+                    row[3]
                 );
             }
 
@@ -273,13 +273,13 @@ fn main() {
                 Ok(()) => {
                     arlog_i!("  ✓ AR2 tracking succeeded! Error={:.4}", tracking_err);
                     arlog_i!("  Refined 3×4 pose matrix:");
-                    for r in 0..3 {
+                    for row in &refined_pose {
                         arlog_i!(
                             "    [{:>10.4} {:>10.4} {:>10.4} {:>10.4}]",
-                            refined_pose[r][0],
-                            refined_pose[r][1],
-                            refined_pose[r][2],
-                            refined_pose[r][3]
+                            row[0],
+                            row[1],
+                            row[2],
+                            row[3]
                         );
                     }
                 }

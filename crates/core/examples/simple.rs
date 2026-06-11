@@ -104,16 +104,14 @@ fn main() {
 
     // Load ARParam
     arlog_i!("Loading camera parameters from {}...", cparam_path);
-    let param_file = File::open(cparam_path).expect(&format!(
-        "Failed to open camera parameters: {}",
-        cparam_path
-    ));
+    let param_file = File::open(cparam_path)
+        .unwrap_or_else(|_| panic!("Failed to open camera parameters: {}", cparam_path));
     let param = ARParam::load(param_file).expect("Failed to read camera parameters");
 
     // Load image
     arlog_i!("Loading image {}...", img_path);
     let img = ImageReader::open(img_path)
-        .expect(&format!("Failed to open image: {}", img_path))
+        .unwrap_or_else(|_| panic!("Failed to open image: {}", img_path))
         .decode()
         .expect("Failed to decode image");
     let width = img.width() as i32;
@@ -128,7 +126,7 @@ fn main() {
         use std::io::Write;
         arlog_i!("Exporting {} for C benchmark...", hiro_raw_path.display());
         let mut f = File::create(&hiro_raw_path)
-            .expect(&format!("Failed to create {}", hiro_raw_path.display()));
+            .unwrap_or_else(|_| panic!("Failed to create {}", hiro_raw_path.display()));
         f.write_all(luma_img.as_raw())
             .expect("Failed to write luma raw data");
     }
@@ -157,12 +155,14 @@ fn main() {
     arlog_i!("Saved thresholded image to {}", thresh_path.display());
 
     // We mock an identity lookup table for the image size to avoid distortion failure
-    let mut param_ltf = ARParamLTf::default();
-    param_ltf.xsize = width;
-    param_ltf.ysize = height;
-    param_ltf.x_off = 0;
-    param_ltf.y_off = 0;
-    param_ltf.o2i = vec![0.0; (width * height * 2) as usize];
+    let mut param_ltf = ARParamLTf {
+        xsize: width,
+        ysize: height,
+        x_off: 0,
+        y_off: 0,
+        o2i: vec![0.0; (width * height * 2) as usize],
+        ..Default::default()
+    };
     for y in 0..height {
         for x in 0..width {
             let idx = ((y * width + x) * 2) as usize;
@@ -180,28 +180,32 @@ fn main() {
     let mut ar3d_handle_ptr = ar_3d_create_handle(&param).expect("Failed to create AR3DHandle");
 
     // Initialize the main tracking handle
-    let mut ar_handle = ARHandle::default();
-    ar_handle.ar_debug = 1;
-    ar_handle.xsize = width;
-    ar_handle.ysize = height;
+    let mut ar_handle = ARHandle {
+        ar_debug: 1,
+        xsize: width,
+        ysize: height,
+        ar_image_proc_mode: 0,        // FrameImage
+        ar_pattern_detection_mode: 0, // Template matching color/mono
+        ar_labeling_mode: 0,          // Black region
+        ar_labeling_thresh: otsu_thresh as i32,
+        patt_ratio: 0.5,
+        matrix_code_type: ARMatrixCodeType::Code3x3,
+        ar_param_lt: &mut *param_lt,
+        ..Default::default()
+    };
     ar_handle.set_pixel_format(ARPixelFormat::MONO); // raw luma input
-    ar_handle.ar_image_proc_mode = 0; // FrameImage
-    ar_handle.ar_pattern_detection_mode = 0; // Template matching color/mono
-    ar_handle.ar_labeling_mode = 0; // Black region
-    ar_handle.ar_labeling_thresh = otsu_thresh as i32;
-    ar_handle.patt_ratio = 0.5;
-    ar_handle.matrix_code_type = ARMatrixCodeType::Code3x3;
-    ar_handle.ar_param_lt = &mut *param_lt;
 
     // Allocate pattern handle and load real pattern
-    let mut patt_handle = webarkitlib_rs::types::ARPattHandle::default();
-    patt_handle.patt_num_max = 50;
-    patt_handle.patt_size = 16;
-    patt_handle.pattf = vec![0; 50];
-    patt_handle.patt = vec![vec![0; 16 * 16 * 3 * 4]; 50];
-    patt_handle.pattpow = vec![0.0; 50 * 4];
-    patt_handle.patt_bw = vec![vec![0; 16 * 16 * 4]; 50];
-    patt_handle.pattpow_bw = vec![0.0; 50 * 4];
+    let mut patt_handle = webarkitlib_rs::types::ARPattHandle {
+        patt_num_max: 50,
+        patt_size: 16,
+        pattf: vec![0; 50],
+        patt: vec![vec![0; 16 * 16 * 3 * 4]; 50],
+        pattpow: vec![0.0; 50 * 4],
+        patt_bw: vec![vec![0; 16 * 16 * 4]; 50],
+        pattpow_bw: vec![0.0; 50 * 4],
+        ..Default::default()
+    };
 
     arlog_i!("Loading hiro pattern from {}...", patt_path);
     match ar_patt_load(&mut patt_handle, patt_path) {
