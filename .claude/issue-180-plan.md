@@ -122,10 +122,35 @@ cargo test --all-features
 
 ---
 
+### PR 4.5 — Examples/tests/benches cleanup (unplanned, discovered during PR 4)
+
+**Branch**: `chore/clippy-180-pr4-5-examples-tests-benches`
+
+**Surfaced**: PR 4 cleared the final two **library** lints. Cargo had been halting on lib errors before checking `--all-targets`, so 26 examples/tests/benches lints were hidden until the lib went strict-clean. PR 5 couldn't tighten CI safely until these were also cleared.
+
+**Categories**:
+- 26 `excessive_precision` in `tests/kpm_regression.rs` — handled via file-scoped `#![allow(clippy::excessive_precision)]` with rationale (C++ baseline fixtures, extra digits document source-traceability).
+- 9 `field_reassign_with_default` in examples + benches — same struct-init conversion as PR 3.
+- 7 `unnecessary_cast usize→usize` in `generate_patt.rs` — drop redundant `as usize`.
+- 3 `or_fun_call inside expect` — `unwrap_or_else(|_| panic!(...))`.
+- 3 `ptr_arg &Vec<u8>` → `&[u8]`.
+- 3 `redundant_closure` (`|| String::new()` → `String::new`).
+- 5 `needless_range_loop` — iterator forms.
+- 5 singletons (`type_complexity` via `type RunReport = ...`, `redundant_pattern_matching` (`if let Ok(_)` → `.is_ok()`), `manual_range_contains`, `manual_is_multiple_of`, `let_unit_value`).
+
+**Coverage workflow tangent**: PR 4.5 also fixed an unrelated bug in `.github/workflows/coverage.yml` — tarpaulin's `--exclude-files "tests/*"` glob was workspace-root-relative and never matched our nested `crates/core/tests/`. Fixed to `**/tests/*`, and added a project `codecov.yml` mirroring the exclusions so the patch gate doesn't fail on PRs that land entirely in uninstrumented paths.
+
+**Commits**:
+- `chore: clear strict clippy lints in examples/tests/benches (#180)`
+- `chore(codecov): exclude examples/benches from coverage targets (#180)`
+- `ci(coverage): fix tarpaulin tests/ glob and mirror in codecov (#180)`
+
+---
+
 ### PR 5 — Tighten CI
 
 **Branch**: `chore/clippy-180-pr5-ci-tighten`
-**Pre-req**: PRs 1–4 merged; `cargo clippy --all-targets --all-features -- -D warnings` clean on `dev`.
+**Pre-req**: PRs 1–4.5 merged; `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean on `dev`.
 
 **Scope**: `.github/workflows/ci.yml`
 - `build-and-test` job: replace `cargo clippy --workspace -- -D warnings` with `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
