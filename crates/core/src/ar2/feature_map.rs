@@ -272,6 +272,11 @@ fn get_similarity_scalar(
 /// after `is_x86_feature_detected!`.
 #[cfg(all(feature = "simd-x86-sse41", target_arch = "x86_64"))]
 #[target_feature(enable = "sse4.1")]
+// rationale: SIMD variant of get_similarity; signature locked to match
+// the scalar fallback and sibling SIMD impl for runtime dispatch via
+// is_x86_feature_detected! — bundling args into a struct would force
+// every caller to materialize it on a hot path with no design win.
+#[allow(clippy::too_many_arguments)]
 unsafe fn get_similarity_sse41(
     image: &[u8],
     xsize: i32,
@@ -384,6 +389,11 @@ unsafe fn get_similarity_sse41(
 /// [`get_similarity`] after `is_x86_feature_detected!`.
 #[cfg(all(feature = "simd-x86-avx2", target_arch = "x86_64"))]
 #[target_feature(enable = "avx2,fma")]
+// rationale: SIMD variant of get_similarity; signature locked to match
+// the scalar fallback and sibling SIMD impl for runtime dispatch via
+// is_x86_feature_detected! — bundling args into a struct would force
+// every caller to materialize it on a hot path with no design win.
+#[allow(clippy::too_many_arguments)]
 unsafe fn get_similarity_avx2(
     image: &[u8],
     xsize: i32,
