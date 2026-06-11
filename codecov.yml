@@ -1,16 +1,18 @@
 # Codecov configuration for WebARKitLib-rs.
 #
-# Coverage scope: the pure-Rust library (`crates/core/src/`) and the
-# integration tests under `crates/core/tests/`. Examples and benches
-# are not instrumented for line coverage — they exist to demonstrate
-# usage and measure performance respectively, not to be exercised by
-# the coverage runner. Including them in the diff target produces
-# spurious "0% of diff hit" failures on PRs that touch them.
+# Coverage scope: the pure-Rust library (`crates/core/src/`). Examples,
+# benches, and integration tests are NOT instrumented by the coverage
+# runner (tarpaulin uses `--exclude-files "**/tests/*"` in
+# .github/workflows/coverage.yml; examples/benches are excluded by
+# convention — they exist to demonstrate usage and measure performance,
+# not to be exercised for line coverage).
 #
-# Surfaced during #180 PR 4.5: a cleanup PR touching examples/ and
-# benches/ failed `codecov/patch` despite the lib + tests being fully
-# strict-clean. The exclusions below are scoped narrowly so any real
-# regression in src/ or tests/ still fails the gate.
+# The `ignore` list below mirrors tarpaulin's exclusions on the codecov
+# side so PRs that happen to land entirely in uninstrumented code don't
+# fail `codecov/patch` at 0% diff hit.
+#
+# Surfaced during #180 PR 4.5: a cleanup PR touching examples/, benches/,
+# and tests/ failed codecov/patch even though the library was unchanged.
 
 coverage:
   status:
@@ -26,5 +28,6 @@ coverage:
 ignore:
   - "crates/core/examples/**"
   - "crates/core/benches/**"
+  - "crates/core/tests/**"
   - "crates/wasm/**"
   - "benchmarks/**"
