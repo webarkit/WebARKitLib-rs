@@ -26,7 +26,7 @@
 | # | Decision | Alternatives considered | Why this choice |
 |---|---|---|---|
 | 1 | Follow #180's 5-PR sequence verbatim | Refine ordering; merge PRs; re-baseline lint counts first | Issue is well-scoped; counts may drift but plan structure is sound |
-| 2 | PR 2 default posture: `#[allow(dead_code)]` + `// rationale:` on extern blocks; delete only the truly orphaned ones | Wire up callers (scope creep); bulk delete (irreversible); case-by-case triage (review burden) | Lowest risk; zero behavior change; honest about why shims exist (dual-mode parity) |
+| 2 | **(Updated during PR 2)** Tighten each extern block's cfg from `#[cfg(feature = "dual-mode")]` to `#[cfg(all(test, feature = "dual-mode"))]` — matches caller cfg, lint disappears because the extern only exists when callers do. Originally planned `#[allow(dead_code)]` + rationale. | Original plan (allow + rationale); wire up callers (scope creep); bulk delete (irreversible) | Evidence at PR 2 time: all 17 "dead" shims have callers, but the callers are gated `cfg(all(test, feature = "dual-mode"))` while the extern blocks were gated only on `cfg(feature = "dual-mode")`. The cfg mismatch was the real root cause; tightening fixes it honestly. Same effort per block (one line), zero behavior change. |
 | 3 | PR 4: inline `#[allow(clippy::too_many_arguments)]` + rationale on `get_similarity_sse41` / `get_similarity_avx2` | `clippy.toml` threshold raise; bundle args into struct | SIMD signatures locked by runtime-dispatch contract; inline is scoped, threshold raise loses signal everywhere |
 | 4 | Defer `clippy.toml` | Add now with `too-many-arguments-threshold = 9` | Only 2 sites today; revisit when SIMD surface grows in M10+ |
 | 5 | Keep CI on `dtolnay/rust-toolchain@stable` after PR 5 | Pin to a specific rustc version; document known-good rustc | Accept the churn; v0.7.0 is shipped, future rustc lint additions fix in follow-up PRs |
@@ -81,9 +81,7 @@ cargo test --all-features
 **Branch**: `chore/clippy-180-pr2-ffi-shims`
 **Scope**: `crates/core/src/kpm/freak/{clustering,homography,math,hough,matcher}.rs` — for each dead `extern "C" { fn webarkit_cpp_*(...) }` block:
 
-1. Run `cargo test --features dual-mode --lib` and `cargo test --features ffi-backend` to find which shims actually have callers.
-2. **If a caller exists** (under any feature combo): add `#[allow(dead_code)]` to the extern block (or to the specific item) with `// rationale: dual-mode parity shim; called from <module>::<test> under --features dual-mode`.
-3. **If no caller exists anywhere**: delete the extern declaration. Note the deletion in the PR body for reviewer scrutiny.
+**Implemented (Decision #2 updated)**: change each block's cfg gate from `#[cfg(feature = "dual-mode")]` to `#[cfg(all(test, feature = "dual-mode"))]` so the extern only exists when its caller (also `cfg(all(test, feature = "dual-mode"))`) does. Add a one-line comment above each block referencing #180 for traceability. Verified all 17 callers still resolve and dual-mode tests still pass.
 
 **Verification**: same triad as PR 1, plus `cargo test --features dual-mode --lib` and `cargo test --features ffi-backend` green.
 
