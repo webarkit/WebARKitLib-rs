@@ -132,20 +132,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for thresh in thresholds {
         arlog_i!("--- Testing BlackRegion, Threshold: {} ---", thresh);
 
-        let mut ar_handle = ARHandle::default();
-        ar_handle.xsize = width;
-        ar_handle.ysize = height;
-        ar_handle.ar_debug = 1;
+        let mut ar_handle = ARHandle {
+            xsize: width,
+            ysize: height,
+            ar_debug: 1,
+            ar_labeling_thresh: thresh,
+            ar_labeling_mode: 0, // BlackRegion
+            ..Default::default()
+        };
         ar_handle.set_pixel_format(ARPixelFormat::RGB);
-        ar_handle.ar_labeling_thresh = thresh;
-        ar_handle.ar_labeling_mode = 0; // BlackRegion
         ar_handle.set_pattern_detection_mode(AR_MATRIX_CODE_DETECTION);
         ar_handle.set_matrix_code_type(code_type);
 
-        let mut param_ltf = ARParamLTf::default();
-        param_ltf.xsize = width;
-        param_ltf.ysize = height;
-        param_ltf.o2i = vec![0.0; (width * height * 2) as usize];
+        let mut param_ltf = ARParamLTf {
+            xsize: width,
+            ysize: height,
+            o2i: vec![0.0; (width * height * 2) as usize],
+            ..Default::default()
+        };
         for y in 0..height {
             for x in 0..width {
                 let idx = ((y * width + x) * 2) as usize;
@@ -168,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             time: AR2VideoTimestampT { sec: 1, usec: 0 },
         };
 
-        if let Ok(_) = ar_detect_marker(&mut ar_handle, &frame) {
+        if ar_detect_marker(&mut ar_handle, &frame).is_ok() {
             arlog_i!("Found {} square candidates.", ar_handle.marker2_num);
             arlog_i!("Found {} valid barcode markers.", ar_handle.marker_num);
             let mut found_valid = false;

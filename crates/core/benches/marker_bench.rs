@@ -71,12 +71,14 @@ fn marker_detection_benchmark(c: &mut Criterion) {
         param_ltf,
     });
 
-    let mut ar_handle = ARHandle::default();
-    ar_handle.xsize = width;
-    ar_handle.ysize = height;
+    let mut ar_handle = ARHandle {
+        xsize: width,
+        ysize: height,
+        ar_labeling_thresh: 100, // Standard threshold
+        ar_param_lt: &mut *param_lt,
+        ..Default::default()
+    };
     ar_handle.set_pixel_format(ARPixelFormat::MONO);
-    ar_handle.ar_labeling_thresh = 100; // Standard threshold
-    ar_handle.ar_param_lt = &mut *param_lt;
 
     let mut patt_handle = webarkitlib_rs::types::ARPattHandle::new(16, 50);
     ar_patt_load(&mut patt_handle, patt_path).expect("Failed to load pattern");
@@ -97,7 +99,7 @@ fn marker_detection_benchmark(c: &mut Criterion) {
 
     c.bench_function("ar_full_pipeline_429x317", |b| {
         b.iter(|| {
-            let _ = ar_detect_marker(black_box(&mut ar_handle), black_box(&frame)).unwrap();
+            ar_detect_marker(black_box(&mut ar_handle), black_box(&frame)).unwrap();
             if ar_handle.marker_num > 0 {
                 let marker_info = &ar_handle.marker_info[0];
                 let mut trans = [[0.0; 4]; 3];

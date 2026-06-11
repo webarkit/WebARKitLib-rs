@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     arlog_i!("Loading image {}...", final_image_path.display());
     let full_img = ImageReader::open(&final_image_path)
-        .expect(&format!("Failed to open {}", final_image_path.display()))
+        .unwrap_or_else(|_| panic!("Failed to open {}", final_image_path.display()))
         .decode()
         .expect("Failed to decode image");
     let luma_img = full_img.to_luma8();

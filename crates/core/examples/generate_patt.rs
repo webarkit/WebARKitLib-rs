@@ -128,10 +128,11 @@ fn default_paths() -> (String, String) {
     )
 }
 
-fn run_once(
-    cfg: &Config,
-    suffix: &str,
-) -> Result<(usize, u8, u8, f64, Option<f64>, Option<usize>, Option<bool>), String> {
+/// Per-run report: `(num_detected, otsu_thresh, otsu_thresh_inv,
+/// mean_abs_diff, mean_abs_diff_inv, vert_flip_idx, vert_flip_used)`.
+type RunReport = (usize, u8, u8, f64, Option<f64>, Option<usize>, Option<bool>);
+
+fn run_once(cfg: &Config, suffix: &str) -> Result<RunReport, String> {
     // Load image
     let image = ImageReader::open(&cfg.input)
         .map_err(|e| format!("open image: {}", e))?
@@ -339,13 +340,15 @@ fn run_once(
         );
     }
 
-    let mut marker = ARMarkerInfo::default();
-    marker.vertex = [
-        [minx as f64, miny as f64],
-        [maxx as f64, miny as f64],
-        [maxx as f64, maxy as f64],
-        [minx as f64, maxy as f64],
-    ];
+    let marker = ARMarkerInfo {
+        vertex: [
+            [minx as f64, miny as f64],
+            [maxx as f64, miny as f64],
+            [maxx as f64, maxy as f64],
+            [minx as f64, maxy as f64],
+        ],
+        ..Default::default()
+    };
     if cfg.debug {
         arlog_i!("Debug: marker vertices: {:?}", marker.vertex);
     }
@@ -373,15 +376,15 @@ fn run_once(
     let _ = overlay_img.save(&overlay_path);
 
     // extract pattern image
-    let mut ext_patt = vec![0u8; (cfg.patt_size * cfg.patt_size * 3) as usize];
+    let mut ext_patt = vec![0u8; cfg.patt_size * cfg.patt_size * 3];
     if cfg.debug {
         arlog_i!("Debug: calling ar_patt_get_image2 with patt_size={} sample_size={} xsize={} ysize={} pixel_format={:?}", cfg.patt_size, cfg.patt_size * cfg.sample_factor, xsize, ysize, pixel_format);
     }
     if let Err(e) = ar_patt_get_image2(
         0,
         ARPixelFormat::RGB as i32,
-        cfg.patt_size as usize,
-        (cfg.patt_size * cfg.sample_factor) as usize,
+        cfg.patt_size,
+        cfg.patt_size * cfg.sample_factor,
         &img,
         xsize,
         ysize,
@@ -402,9 +405,9 @@ fn run_once(
 
     // save extracted PNG
     let mut out_img = image::RgbImage::new(cfg.patt_size as u32, cfg.patt_size as u32);
-    for y in 0..cfg.patt_size as usize {
-        for x in 0..cfg.patt_size as usize {
-            let idx = (y * cfg.patt_size as usize + x) * 3;
+    for y in 0..cfg.patt_size {
+        for x in 0..cfg.patt_size {
+            let idx = (y * cfg.patt_size + x) * 3;
             let b = ext_patt[idx];
             let g = ext_patt[idx + 1];
             let r = ext_patt[idx + 2];
@@ -433,7 +436,7 @@ fn run_once(
         0,
         &marker,
         patt_ratio,
-        cfg.patt_size as usize,
+        cfg.patt_size,
         &patt_path,
     )
     .map_err(|e| format!("ar_patt_save failed: {}", e))?;
@@ -530,7 +533,7 @@ fn parse_patt_blocks(content: &str, patt_size: usize) -> Result<Vec<Vec<u8>>, St
     if tokens.len() == block_len {
         return Ok(vec![tokens]);
     }
-    if tokens.len() % block_len != 0 {
+    if !tokens.len().is_multiple_of(block_len) {
         return Err(format!(
             "unexpected token count {} (not multiple of block_len {})",
             tokens.len(),
@@ -541,7 +544,7 @@ fn parse_patt_blocks(content: &str, patt_size: usize) -> Result<Vec<Vec<u8>>, St
     Ok(blocks)
 }
 
-fn mean_abs_diff_u8(a: &Vec<u8>, b: &Vec<u8>) -> f64 {
+fn mean_abs_diff_u8(a: &[u8], b: &[u8]) -> f64 {
     if a.len() != b.len() {
         return f64::INFINITY;
     }
@@ -552,7 +555,7 @@ fn mean_abs_diff_u8(a: &Vec<u8>, b: &Vec<u8>) -> f64 {
     s / (a.len() as f64)
 }
 
-fn flip_vert_u8(buf: &Vec<u8>, patt_size: usize) -> Vec<u8> {
+fn flip_vert_u8(buf: &[u8], patt_size: usize) -> Vec<u8> {
     let mut out = vec![0u8; buf.len()];
     let row_bytes = patt_size * 3;
     for y in 0..patt_size {
@@ -670,10 +673,9 @@ fn main() {
                             let patt = format!("generated{}.patt", suffix);
                             let ref_mean_str: String = ref_mean
                                 .map(|v| format!("{:.2}", v))
-                                .unwrap_or_else(|| String::new());
-                            let ref_idx_str: String = ref_idx
-                                .map(|i| i.to_string())
-                                .unwrap_or_else(|| String::new());
+                                .unwrap_or_else(String::new);
+                            let ref_idx_str: String =
+                                ref_idx.map(|i| i.to_string()).unwrap_or_else(String::new);
                             let ref_flip_str: String = ref_flip
                                 .map(|b| {
                                     if b {
@@ -682,7 +684,7 @@ fn main() {
                                         String::from("0")
                                     }
                                 })
-                                .unwrap_or_else(|| String::new());
+                                .unwrap_or_else(String::new);
                             writeln!(
                                 csv,
                                 "{},{},{},{},{},{},{},{},{:.2},{},{},{},{},{}",
