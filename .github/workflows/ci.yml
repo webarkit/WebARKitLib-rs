@@ -28,10 +28,7 @@ jobs:
       run: cargo fmt --all -- --check
 
     - name: Run cargo clippy
-      # Strict gate (#180): --all-targets covers examples/tests/benches;
-      # --all-features exercises ffi-backend, dual-mode, simd-* paths
-      # that the default-features check skipped.
-      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      run: cargo clippy --workspace -- -D warnings
 
     - name: Run cargo check
       run: cargo check --workspace
@@ -98,6 +95,15 @@ jobs:
 
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+
+    # Strict clippy gate (#180): --all-targets covers examples/tests/benches;
+    # --all-features exercises ffi-backend, dual-mode, simd-* paths the
+    # default-features check skipped. Ubuntu-only because this is the job
+    # that already has submodules + libclang; lints are OS-agnostic so
+    # running it on one platform is sufficient.
+    - name: Run cargo clippy (strict, --all-targets --all-features)
+      if: runner.os == 'Linux'
+      run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
     - name: Build kpm backend (FFI backend)
       run: cargo build -p webarkitlib-rs --features ffi-backend
