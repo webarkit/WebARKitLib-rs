@@ -199,14 +199,20 @@ jobs:
         key: miri-${{ env.MIRI_NIGHTLY }}
         shared-key: miri
 
-    # NOTE: -Zmiri-strict-provenance is intentionally NOT enabled.
-    # It trips inside transitive deps (e.g. crossbeam-epoch via rayon)
-    # that haven't migrated to Strict Provenance APIs yet. Re-evaluate
-    # once the ecosystem catches up. See docs/miri.md.
+    # NOTES on MIRIFLAGS:
+    # * -Zmiri-tree-borrows: use the Tree Borrows aliasing model instead
+    #   of the default Stacked Borrows. Stacked Borrows trips inside
+    #   crossbeam-epoch (a transitive dep of rayon, reached from our
+    #   ar2::feature_map par_chunks_mut) on patterns that are sound in
+    #   practice. Tree Borrows accepts them while still catching real
+    #   UB in our own code.
+    # * -Zmiri-strict-provenance is intentionally NOT enabled — it also
+    #   trips inside crossbeam-epoch (integer-to-pointer casts). Re-
+    #   evaluate once the ecosystem migrates. See docs/miri.md.
     - name: Run Miri (pure-Rust, lib targets only)
       run: cargo miri test -p webarkitlib-rs --lib
       env:
-        MIRIFLAGS: -Zmiri-backtrace=full
+        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows
 
   submodule-drift-check:
     runs-on: ubuntu-latest
