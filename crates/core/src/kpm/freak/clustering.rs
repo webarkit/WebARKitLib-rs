@@ -63,16 +63,17 @@ fn hamming_distance_32(a: u32, b: u32) -> u32 {
 /// Computes Hamming distance between two 96-byte (768-bit) FREAK descriptors.
 /// C equivalent: HammingDistance768
 pub fn hamming_distance_96(a: &[u8; 96], b: &[u8; 96]) -> u32 {
-    // SAFETY: Transmuting &[u8; 96] to &[u32; 24] is safe because:
-    // 1. Byte arrays are correctly sized (96 bytes = 24 × 4 bytes)
-    // 2. u32 alignment is guaranteed on all supported targets
-    // 3. The transmute creates a properly-aligned view of the same data
-    let a32 = unsafe { std::mem::transmute::<&[u8; 96], &[u32; 24]>(a) };
-    let b32 = unsafe { std::mem::transmute::<&[u8; 96], &[u32; 24]>(b) };
-
-    a32.iter()
-        .zip(b32.iter())
-        .map(|(x, y)| hamming_distance_32(*x, *y))
+    // Reassemble each 4-byte chunk via `u32::from_ne_bytes` rather than
+    // transmuting `&[u8; 96]` to `&[u32; 24]`. The transmute requires
+    // 4-byte alignment on the input, which `&[u8; 96]` does not
+    // guarantee — Miri flagged it as UB (#192).
+    (0..24)
+        .map(|i| {
+            let off = i * 4;
+            let ax = u32::from_ne_bytes([a[off], a[off + 1], a[off + 2], a[off + 3]]);
+            let bx = u32::from_ne_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]);
+            hamming_distance_32(ax, bx)
+        })
         .sum()
 }
 
