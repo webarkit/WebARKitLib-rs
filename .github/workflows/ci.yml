@@ -212,7 +212,9 @@ jobs:
     - name: Run Miri (pure-Rust, lib targets only)
       run: cargo miri test -p webarkitlib-rs --lib
       env:
-        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows
+        # -Zmiri-disable-isolation: allow filesystem ops so tests that
+        # use `tempfile` (e.g. ar2::feature_set roundtrip) can run.
+        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows -Zmiri-disable-isolation
 
   submodule-drift-check:
     runs-on: ubuntu-latest
