@@ -954,6 +954,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: BHC build over 80 descriptors — too slow under Miri
     fn test_bhc_set_num_hypotheses_then_build() {
         // Setting num_hypotheses to a non-default value must not break build/query.
         let descs = make_synth_descriptors(80);
@@ -977,6 +978,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: BHC build over 80 descriptors — too slow under Miri
     fn test_bhc_set_num_centers_preserves_num_hypotheses() {
         // Regression test for setter ordering: set_num_centers must not
         // silently reset num_hypotheses back to 1 (it did before #146).
@@ -996,6 +998,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: BHC build over 80 descriptors — too slow under Miri
     fn test_bhc_max_nodes_to_pop_zero_is_tied_min_only() {
         // With max_nodes_to_pop=0 (default), query should produce exactly
         // the same result set as the pre-#146 implementation: only
@@ -1013,6 +1016,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: BHC build over 200 descriptors ×2 — by far the slowest test under Miri
     fn test_bhc_max_nodes_to_pop_widens_candidate_set() {
         // Monotonicity check: query(max_nodes_to_pop=N) should return at
         // least as many candidates as query(max_nodes_to_pop=0) on the same

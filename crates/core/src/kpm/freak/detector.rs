@@ -1116,6 +1116,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image DoG detection — too slow under Miri
     fn test_dog_detector_finds_keypoints_on_real_image() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_test_pyramid(&img, 3);
@@ -1125,6 +1126,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image DoG detection — too slow under Miri
     fn test_dog_detector_keypoints_within_image_bounds() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_test_pyramid(&img, 3);

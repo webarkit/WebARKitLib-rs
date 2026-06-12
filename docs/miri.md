@@ -41,6 +41,38 @@ covers the modules where manual buffer math and `unsafe` live:
 - **Integration tests under `tests/`** that depend on FFI (e.g.
   `kpm_regression`, `cross_stack_parity`, `absolute_corner_error` in
   `dual-mode`) — these need the C++ baseline to run.
+- **Heavy algorithmic / pipeline tests** annotated with
+  `#[cfg_attr(miri, ignore)]` (see next section).
+
+## Tests skipped under Miri (`#[cfg_attr(miri, ignore)]`)
+
+Some unit tests run full pipelines — BHC tree construction over hundreds
+of descriptors, DoG keypoint detection on real benchmark images, full
+`ar2_gen_feature_map` runs. Native `cargo test` finishes them in
+milliseconds because the code is compiled and parallelized. Miri
+interprets MIR single-threaded, so the same tests can take 30+ minutes
+each — and they exercise no `unsafe` boundary that targeted unit tests
+don't already cover (#194).
+
+We annotate these with `#[cfg_attr(miri, ignore)]`:
+
+```rust
+#[test]
+#[cfg_attr(miri, ignore)] // #194: full pipeline — too slow under Miri
+fn test_heavy_pipeline() { ... }
+```
+
+Effect: the test still runs under regular `cargo test`; it's skipped
+only under `cargo miri test`. Targeted unit tests on `unsafe`
+boundaries (`hamming_distance_*`, descriptor pack/unpack, byteorder
+reads, image_proc indexing) stay enabled — those are the ones Miri
+actually validates.
+
+To run a Miri-ignored test locally for investigation:
+
+```bash
+cargo +nightly miri test -p webarkitlib-rs --lib <test_name> -- --ignored
+```
 
 ## Running Miri locally
 

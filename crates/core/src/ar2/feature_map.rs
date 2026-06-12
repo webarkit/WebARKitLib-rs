@@ -942,6 +942,7 @@ mod tests {
 
     /// Lightweight version using a small synthetic image.
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full ar2_gen_feature_map pipeline (64×64) — too slow under Miri
     fn test_feature_map_small_synthetic() {
         let w: i32 = 64;
         let h: i32 = 64;
@@ -969,6 +970,7 @@ mod tests {
 
     /// Verify mindpi/maxdpi are computed correctly for a 3-level pyramid.
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full ar2_gen_feature_map pipeline (32×32 × 3 scales) — too slow under Miri
     fn test_feature_map_mindpi_maxdpi() {
         // Build a 3-scale set manually: 72, 57, 45 dpi
         let make = |dpi: f32| AR2ImageT {
