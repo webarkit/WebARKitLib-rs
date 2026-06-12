@@ -954,6 +954,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pyramid + DoG + BHC pipeline on real image — too slow under Miri
     fn test_visual_database_add_image_builds_index() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut db = VisualDatabase::new().expect("new");
@@ -965,6 +966,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pyramid + DoG + BHC pipeline on real image — too slow under Miri
     fn test_visual_database_add_keyframe_builds_index_when_absent() {
         // Build a keyframe externally without calling build_index, hand it to
         // add_keyframe, assert add_keyframe built the index for us.
@@ -989,6 +991,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pyramid + DoG + BHC pipeline on real image — too slow under Miri
     fn test_visual_database_add_keyframe_preserves_caller_built_index() {
         // If the caller pre-built the index, add_keyframe must not rebuild.
         // Verified by the fact that after a successful pre-build the keyframe
