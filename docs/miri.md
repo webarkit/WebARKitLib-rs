@@ -101,18 +101,33 @@ Procedure:
 The `Swatinem/rust-cache@v2` key includes `MIRI_NIGHTLY`, so the cache
 invalidates automatically on bump.
 
+## Aliasing model: Tree Borrows (not Stacked Borrows)
+
+CI sets `MIRIFLAGS=-Zmiri-tree-borrows`. We use the **Tree Borrows**
+aliasing model instead of Miri's default **Stacked Borrows** because
+Stacked Borrows trips inside `crossbeam-epoch` (a transitive dep of
+`rayon`, reached from `ar2::feature_map`'s `par_chunks_mut`) on
+patterns that are sound in practice. Tree Borrows is a newer
+experimental aliasing model that accepts those patterns while still
+catching real UB in our code.
+
+If you want to spot-check our own `unsafe` under the stricter Stacked
+Borrows locally, just drop the flag:
+
+```bash
+MIRIFLAGS="-Zmiri-backtrace=full" cargo +nightly miri test \
+    -p webarkitlib-rs --lib <our_test_name>
+```
+
 ## Why `-Zmiri-strict-provenance` is NOT enabled in CI
 
-The first CI run with strict provenance enabled tripped inside
-`crossbeam-epoch` (a transitive dep of `rayon`), called from
-`ar2::feature_map`'s `par_chunks_mut`. That dep predates the Strict
-Provenance APIs and still uses integer-to-pointer casts internally.
-
-Running CI with strict provenance against unmigrated third-party deps
-produces failures we cannot fix in this repo. We keep regular Miri (the
-core UB net) on by default and revisit strict provenance once the
-ecosystem catches up. Developers are encouraged to spot-check their own
-new `unsafe` code locally with `MIRIFLAGS="-Zmiri-strict-provenance"`.
+Strict provenance also trips inside `crossbeam-epoch` (it predates the
+Strict Provenance APIs and still uses integer-to-pointer casts
+internally). Running CI with strict provenance against unmigrated
+third-party deps produces failures we cannot fix in this repo. We
+revisit once the ecosystem catches up. Developers are encouraged to
+spot-check their own new `unsafe` code locally with
+`MIRIFLAGS="-Zmiri-strict-provenance"`.
 
 ## CI gate status
 
