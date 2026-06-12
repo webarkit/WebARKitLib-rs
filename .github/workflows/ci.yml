@@ -162,6 +162,48 @@ jobs:
           --test absolute_corner_error \
           --features dual-mode -- --nocapture
 
+  # Miri UB validation (#182): runs the pure-Rust lib under the MIR
+  # interpreter to catch use-after-free, OOB reads, invalid `unsafe`
+  # invariants, uninitialized-memory reads, and reference-aliasing
+  # violations that escape regular tests. Excludes `ffi-backend`
+  # (Miri can't execute C++) and `simd-x86-*` (Miri's x86 SIMD support
+  # is incomplete). Scalar fallbacks ARE validated.
+  #
+  # `continue-on-error: true` initially — will be ratcheted to required
+  # once initial UB findings are resolved via follow-up PRs tracked
+  # under #182. See docs/miri.md for scope, exclusions, local-run
+  # instructions, and the nightly-pin bump procedure.
+  miri:
+    name: miri (pure-Rust UB validation)
+    runs-on: ubuntu-latest
+    # Restrict to PRs against dev/main only — Miri is 5–30x slower than
+    # cargo test and the pre-merge gate is where it earns its keep.
+    if: github.event_name == 'pull_request' && (github.base_ref == 'dev' || github.base_ref == 'main')
+    continue-on-error: true
+    env:
+      # Pinned nightly — bump manually if Miri breaks on this date or
+      # every ~3 months for freshness. See docs/miri.md.
+      MIRI_NIGHTLY: nightly-2026-06-01
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install pinned nightly + Miri
+      run: |
+        rustup toolchain install $MIRI_NIGHTLY --component miri --profile minimal
+        rustup default $MIRI_NIGHTLY
+        cargo miri setup
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: miri-${{ env.MIRI_NIGHTLY }}
+        shared-key: miri
+
+    - name: Run Miri (pure-Rust, lib targets only)
+      run: cargo miri test -p webarkitlib-rs --lib
+      env:
+        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-strict-provenance
+
   submodule-drift-check:
     runs-on: ubuntu-latest
     steps:
