@@ -171,6 +171,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pyramid + DoG pipeline on real image — too slow under Miri
     fn test_find_features_populates_keyframe() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut pyr = GaussianScaleSpacePyramid::new(3);
@@ -197,6 +198,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pyramid + DoG + BHC pipeline on real image — too slow under Miri
     fn test_keyframe_build_index_populates_index() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut pyr = GaussianScaleSpacePyramid::new(3);
@@ -215,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pipeline run twice — too slow under Miri
     fn test_keyframe_build_index_is_idempotent() {
         // Calling build_index twice should not error; the second call replaces
         // the first cleanly (mirrors C++ Keyframe::buildIndex which always
