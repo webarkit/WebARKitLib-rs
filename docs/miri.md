@@ -71,7 +71,8 @@ MIRIFLAGS="-Zmiri-backtrace=full" cargo +nightly miri test -p webarkitlib-rs --l
 # for spot-checking our own code)
 MIRIFLAGS="-Zmiri-strict-provenance" cargo +nightly miri test -p webarkitlib-rs --lib
 
-# Disable isolation if a test needs filesystem access Miri rejects
+# -Zmiri-disable-isolation (already set in CI — lets tests using
+# tempfile / disk I/O run; e.g. ar2::feature_set roundtrip)
 MIRIFLAGS="-Zmiri-disable-isolation" cargo +nightly miri test -p webarkitlib-rs --lib
 ```
 
