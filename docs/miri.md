@@ -67,8 +67,8 @@ When Miri reports UB, useful environment knobs:
 # Full backtrace on the offending operation
 MIRIFLAGS="-Zmiri-backtrace=full" cargo +nightly miri test -p webarkitlib-rs --lib
 
-# Strict provenance (already set in CI — catches pointer-provenance bugs
-# that loose provenance silently allows)
+# Strict provenance (NOT enabled in CI — see note below; useful locally
+# for spot-checking our own code)
 MIRIFLAGS="-Zmiri-strict-provenance" cargo +nightly miri test -p webarkitlib-rs --lib
 
 # Disable isolation if a test needs filesystem access Miri rejects
@@ -100,6 +100,19 @@ Procedure:
 
 The `Swatinem/rust-cache@v2` key includes `MIRI_NIGHTLY`, so the cache
 invalidates automatically on bump.
+
+## Why `-Zmiri-strict-provenance` is NOT enabled in CI
+
+The first CI run with strict provenance enabled tripped inside
+`crossbeam-epoch` (a transitive dep of `rayon`), called from
+`ar2::feature_map`'s `par_chunks_mut`. That dep predates the Strict
+Provenance APIs and still uses integer-to-pointer casts internally.
+
+Running CI with strict provenance against unmigrated third-party deps
+produces failures we cannot fix in this repo. We keep regular Miri (the
+core UB net) on by default and revisit strict provenance once the
+ecosystem catches up. Developers are encouraged to spot-check their own
+new `unsafe` code locally with `MIRIFLAGS="-Zmiri-strict-provenance"`.
 
 ## CI gate status
 

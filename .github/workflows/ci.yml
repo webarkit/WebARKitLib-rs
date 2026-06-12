@@ -199,10 +199,14 @@ jobs:
         key: miri-${{ env.MIRI_NIGHTLY }}
         shared-key: miri
 
+    # NOTE: -Zmiri-strict-provenance is intentionally NOT enabled.
+    # It trips inside transitive deps (e.g. crossbeam-epoch via rayon)
+    # that haven't migrated to Strict Provenance APIs yet. Re-evaluate
+    # once the ecosystem catches up. See docs/miri.md.
     - name: Run Miri (pure-Rust, lib targets only)
       run: cargo miri test -p webarkitlib-rs --lib
       env:
-        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-strict-provenance
+        MIRIFLAGS: -Zmiri-backtrace=full
 
   submodule-drift-check:
     runs-on: ubuntu-latest
