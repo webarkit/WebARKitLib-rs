@@ -13,9 +13,6 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Google Antigravity local agent state (optional, but usually good to keep out of repos)
-.agents/
-
 # VSCode files
 .vscode/
 
