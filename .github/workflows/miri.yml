@@ -1,0 +1,73 @@
+name: Miri
+
+# Miri UB validation (#182): runs the pure-Rust lib under the MIR
+# interpreter to catch use-after-free, OOB reads, invalid `unsafe`
+# invariants, uninitialized-memory reads, and reference-aliasing
+# violations that escape regular tests.
+#
+# Excludes `ffi-backend` (Miri can't execute C++) and `simd-x86-*`
+# (Miri's x86 SIMD support is incomplete). Scalar fallbacks ARE
+# validated.
+#
+# Heavy algorithmic / pipeline tests are skipped via
+# `#[cfg_attr(miri, ignore)]` (#194) — they don't exercise unsafe
+# boundaries and would dominate runtime. See docs/miri.md.
+#
+# Required gate: this workflow MUST pass for PRs targeting dev/main.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  miri:
+    name: miri (pure-Rust UB validation)
+    runs-on: ubuntu-latest
+    env:
+      # Pinned nightly — bump manually if Miri breaks on this date or
+      # every ~3 months for freshness. See docs/miri.md.
+      MIRI_NIGHTLY: nightly-2026-06-01
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install pinned nightly + Miri
+      run: |
+        rustup toolchain install $MIRI_NIGHTLY --component miri --profile minimal
+        rustup default $MIRI_NIGHTLY
+        cargo miri setup
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: miri-${{ env.MIRI_NIGHTLY }}
+        shared-key: miri
+
+    # NOTES on MIRIFLAGS:
+    # * -Zmiri-tree-borrows: use the Tree Borrows aliasing model instead
+    #   of the default Stacked Borrows. Stacked Borrows trips inside
+    #   crossbeam-epoch (a transitive dep of rayon, reached from our
+    #   ar2::feature_map par_chunks_mut) on patterns that are sound in
+    #   practice. Tree Borrows accepts them while still catching real
+    #   UB in our own code.
+    # * -Zmiri-disable-isolation: allow filesystem ops so tests that
+    #   use `tempfile` (e.g. ar2::feature_set roundtrip) can run.
+    # * -Zmiri-ignore-leaks: rayon's global thread pool spawns workers
+    #   that aren't joined at process exit. Miri flags that as a leak
+    #   by default; ignoring it is the recommended setting for rayon-
+    #   using test suites and does NOT weaken UB detection.
+    # * -Zmiri-strict-provenance is intentionally NOT enabled — it also
+    #   trips inside crossbeam-epoch (integer-to-pointer casts). Re-
+    #   evaluate once the ecosystem migrates. See docs/miri.md.
+    - name: Run Miri (pure-Rust, lib targets only)
+      run: cargo miri test -p webarkitlib-rs --lib
+      env:
+        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows -Zmiri-disable-isolation -Zmiri-ignore-leaks
