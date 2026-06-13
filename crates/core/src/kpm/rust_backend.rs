@@ -596,6 +596,7 @@ mod tests {
     /// Issue #141 required test: add a reference image, query with a
     /// different image, expect a successful match.
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full FREAK matcher pipeline on real image pair — too slow under Miri
     fn test_rust_freak_matcher_implements_backend() {
         let (ref_img, rw, rh) = load_grayscale("../../benchmarks/data/found.jpg");
         let (qry_img, qw, qh) = load_grayscale("../../benchmarks/data/img.jpg");
@@ -617,6 +618,7 @@ mod tests {
     /// Covers the `extract_features` path used by
     /// `KpmRefDataSet::generate()`. Detects features without storing.
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full FREAK extract on real image — too slow under Miri
     fn test_rust_freak_matcher_extract_features() {
         let (img, w, h) = load_grayscale("../../benchmarks/data/found.jpg");
         let mut matcher = RustFreakMatcher::new(w as i32, h as i32).unwrap();
@@ -676,6 +678,7 @@ mod tests {
     /// insertion). Extracts features from `found.jpg`, feeds them back as
     /// the database, queries with the same image, expects a self-match.
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full FREAK extract + match cycle — too slow under Miri
     fn test_rust_freak_matcher_add_freak_features() {
         let (ref_img, rw, rh) = load_grayscale("../../benchmarks/data/found.jpg");
         let mut matcher = RustFreakMatcher::new(rw as i32, rh as i32).unwrap();
