@@ -337,6 +337,7 @@ mod tests {
     // ── Length / shape ────────────────────────────────────────────────
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image FREAK extraction — too slow under Miri
     fn test_freak_descriptor_length_one_keypoint() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_pyramid(&img);
@@ -348,6 +349,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image FREAK extraction — too slow under Miri
     fn test_freak_descriptor_length_multiple_keypoints() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_pyramid(&img);
@@ -361,6 +363,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image FREAK extraction — too slow under Miri
     fn test_freak_descriptor_padding_bytes_are_zero() {
         // Bytes 84..96 of each descriptor must be zero (matches C++ store layout).
         let img = load_grayscale("../../benchmarks/data/found.jpg");
@@ -382,6 +385,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image FREAK extraction — too slow under Miri
     fn test_freak_descriptor_empty_input() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_pyramid(&img);
@@ -391,6 +395,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: real-image FREAK extraction (×2) — too slow under Miri
     fn test_freak_descriptor_is_reproducible() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let pyr = build_pyramid(&img);
