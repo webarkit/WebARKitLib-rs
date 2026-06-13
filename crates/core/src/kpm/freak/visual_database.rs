@@ -887,6 +887,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pipeline + BHC index — too slow under Miri
     fn test_visual_database_add_and_query_same_image() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut db = VisualDatabase::new().expect("new");
@@ -910,6 +911,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pipeline + BHC index — too slow under Miri
     fn test_visual_database_query_different_image_returns_no_match() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let blank = synthetic_blank(640, 480);
@@ -930,6 +932,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pipeline + BHC index — too slow under Miri
     fn test_visual_database_add_same_id_returns_err() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut db = VisualDatabase::new().expect("new");
@@ -939,6 +942,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // #194: full pipeline + BHC index — too slow under Miri
     fn test_visual_database_erase_removes_keyframe() {
         let img = load_grayscale("../../benchmarks/data/found.jpg");
         let mut db = VisualDatabase::new().expect("new");
