@@ -214,7 +214,11 @@ jobs:
       env:
         # -Zmiri-disable-isolation: allow filesystem ops so tests that
         # use `tempfile` (e.g. ar2::feature_set roundtrip) can run.
-        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows -Zmiri-disable-isolation
+        # -Zmiri-ignore-leaks: rayon's global thread pool spawns workers
+        # that aren't joined at process exit. Miri flags that as a leak
+        # by default; ignoring it is the recommended setting for rayon-
+        # using test suites and does NOT weaken UB detection.
+        MIRIFLAGS: -Zmiri-backtrace=full -Zmiri-tree-borrows -Zmiri-disable-isolation -Zmiri-ignore-leaks
 
   submodule-drift-check:
     runs-on: ubuntu-latest
