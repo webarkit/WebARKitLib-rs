@@ -3,6 +3,7 @@
 ![WebARKitLib-rs](./assets/WebARKitLib-Rust-banner.jpg)
 
 [![CI](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/ci.yml)
+[![Miri](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/miri.yml/badge.svg)](https://github.com/webarkit/WebARKitLib-rs/actions/workflows/miri.yml)
 [![codecov](https://codecov.io/gh/webarkit/WebARKitLib-rs/branch/main/graph/badge.svg)](https://codecov.io/gh/webarkit/WebARKitLib-rs)
 [![Crates.io](https://img.shields.io/crates/v/webarkitlib-rs.svg)](https://crates.io/crates/webarkitlib-rs)
 [![npm](https://img.shields.io/npm/v/@webarkit/webarkitlib-wasm.svg)](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm)

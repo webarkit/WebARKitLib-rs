@@ -121,7 +121,7 @@ understanding the report.
 
 ## Bumping the nightly pin
 
-The pin lives in `.github/workflows/ci.yml` as the `MIRI_NIGHTLY` job
+The pin lives in `.github/workflows/miri.yml` as the `MIRI_NIGHTLY` job
 env var. Bump when:
 
 - CI hits a known nightly Miri regression (link the upstream issue in
@@ -133,7 +133,7 @@ Procedure:
 1. Pick a recent known-good nightly from
    <https://rust-lang.github.io/rustup-components-history/> (filter on
    `miri`).
-2. Update `MIRI_NIGHTLY` in `ci.yml` AND the "Running locally" snippet
+2. Update `MIRI_NIGHTLY` in `miri.yml` AND the "Running locally" snippet
    in this file.
 3. Open a PR; CI will validate the new pin.
 
@@ -170,10 +170,10 @@ spot-check their own new `unsafe` code locally with
 
 ## CI gate status
 
-The Miri job currently runs with `continue-on-error: true` (advisory).
-It will be ratcheted to a required gate once initial UB findings
-surfaced by the first runs are resolved via follow-up PRs tracked under
-[#182](https://github.com/webarkit/WebARKitLib-rs/issues/182).
+The Miri job is a **required gate** for PRs targeting `dev` and `main`,
+runs in its own workflow at `.github/workflows/miri.yml`, and surfaces
+via a dedicated badge in the project README.
 
-Each finding gets its own fix PR — never a mega-PR — mirroring the #180
-cleanup series pattern.
+Each future finding gets its own fix PR — never a mega-PR — mirroring
+the #180 cleanup series pattern (and #192 from this safety net's first
+run, which uncovered a real unaligned-transmute UB).
