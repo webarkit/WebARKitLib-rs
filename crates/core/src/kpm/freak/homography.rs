@@ -2358,8 +2358,14 @@ mod tests {
         assert!(approx_eq(c, std::f32::consts::LN_2, 1e-6));
 
         // 2D with x=3, y=4, 1/σ²=1: log(1 + (9+16)) = log(26) ≈ 3.2580965
+        // Tolerance is 1e-5 (not 1e-6) because Miri's f32::ln impl is
+        // non-deterministic by a few ULPs across calls within a single
+        // run — the function calls .ln() internally and the assert calls
+        // it again on the RHS, so the two results can diverge slightly.
+        // 1e-5 is still well within f32 precision (~7 decimal digits at
+        // this magnitude) and tests mathematical correctness.
         let c2 = cauchy_cost_2d(3.0, 4.0, 1.0);
-        assert!(approx_eq(c2, 26.0_f32.ln(), 1e-6));
+        assert!(approx_eq(c2, 26.0_f32.ln(), 1e-5));
     }
 
     #[test]
