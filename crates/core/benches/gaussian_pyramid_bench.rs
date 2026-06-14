@@ -65,6 +65,16 @@ use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
 };
 use webarkitlib_rs::kpm::freak::{num_octaves_for, GaussianScaleSpacePyramid};
 
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
+    binomial_4th_order_f32_to_f32_sse41, binomial_4th_order_u8_to_f32_sse41,
+};
+
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
+    binomial_4th_order_f32_to_f32_avx2, binomial_4th_order_u8_to_f32_avx2,
+};
+
 /// Typical AR camera input resolutions as `(width, height)`.
 const SIZES: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
 
@@ -97,6 +107,30 @@ fn bench_binomial_u8(c: &mut Criterion) {
             &src,
             |bencher, src| bencher.iter(|| binomial_4th_order_u8_to_f32_scalar(black_box(src))),
         );
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+        if is_x86_feature_detected!("sse4.1") {
+            group.bench_with_input(
+                BenchmarkId::new("sse41", format!("{w}x{h}")),
+                &src,
+                // SAFETY: sse4.1 confirmed available by the runtime check above.
+                |bencher, src| {
+                    bencher.iter(|| unsafe { binomial_4th_order_u8_to_f32_sse41(black_box(src)) })
+                },
+            );
+        }
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+        if is_x86_feature_detected!("avx2") {
+            group.bench_with_input(
+                BenchmarkId::new("avx2", format!("{w}x{h}")),
+                &src,
+                // SAFETY: avx2 confirmed available by the runtime check above.
+                |bencher, src| {
+                    bencher.iter(|| unsafe { binomial_4th_order_u8_to_f32_avx2(black_box(src)) })
+                },
+            );
+        }
     }
     group.finish();
 }
@@ -111,6 +145,30 @@ fn bench_binomial_f32(c: &mut Criterion) {
             &src,
             |bencher, src| bencher.iter(|| binomial_4th_order_f32_to_f32_scalar(black_box(src))),
         );
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+        if is_x86_feature_detected!("sse4.1") {
+            group.bench_with_input(
+                BenchmarkId::new("sse41", format!("{w}x{h}")),
+                &src,
+                // SAFETY: sse4.1 confirmed available by the runtime check above.
+                |bencher, src| {
+                    bencher.iter(|| unsafe { binomial_4th_order_f32_to_f32_sse41(black_box(src)) })
+                },
+            );
+        }
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+        if is_x86_feature_detected!("avx2") {
+            group.bench_with_input(
+                BenchmarkId::new("avx2", format!("{w}x{h}")),
+                &src,
+                // SAFETY: avx2 confirmed available by the runtime check above.
+                |bencher, src| {
+                    bencher.iter(|| unsafe { binomial_4th_order_f32_to_f32_avx2(black_box(src)) })
+                },
+            );
+        }
     }
     group.finish();
 }

@@ -273,21 +273,88 @@ pub fn num_octaves_for(width: usize, height: usize, min_size: usize) -> usize {
 // and `downsample_bilinear` from `gaussian_scale_space_pyramid.cpp`.
 // ─────────────────────────────────────────────────────────────────────────
 
-/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 source → f32 dest.
-///
-/// Dispatches to the fastest available implementation; currently scalar
-/// only (SIMD paths land in #201). See
-/// [`binomial_4th_order_u8_to_f32_scalar`].
-///
-/// # Note on visibility
-///
-/// This dispatcher, the `*_scalar` helpers, and
-/// [`downsample_bilinear_f32`] are `pub` so the criterion benchmark (a
-/// separate crate) can measure them directly. They are not a stability
-/// guarantee — prefer [`GaussianScaleSpacePyramid::build`].
-#[must_use]
-pub fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
-    binomial_4th_order_u8_to_f32_scalar(src)
+// Note on visibility: the binomial dispatchers, their `*_scalar` /
+// `*_avx2` / `*_sse41` variants, and the `downsample_bilinear_f32*`
+// helpers are `pub` so the criterion benchmark (a separate crate) can
+// measure them directly. They are not a stability guarantee — prefer
+// [`GaussianScaleSpacePyramid::build`].
+
+// u8 → f32 binomial helpers. The H pass is exact `u16` integer arithmetic
+// (max 4080); the V pass sums in `u32` then does a single `as f32 * INV_256`.
+// Integer ops are associative/exact, and the lone float multiply matches the
+// scalar exactly, so SIMD variants reusing these for borders/remainder stay
+// bit-for-bit identical (validated by the `dual-mode` parity test).
+
+/// Horizontal-pass border columns (0, 1, width-2, width-1), u8 → u16.
+#[inline]
+fn binomial_h_borders_u8(s: &[u8], t: &mut [u16], width: usize) {
+    t[0] = 6 * s[0] as u16 + 4 * (s[0] as u16 + s[1] as u16) + (s[0] as u16 + s[2] as u16);
+    t[1] = 6 * s[1] as u16 + 4 * (s[0] as u16 + s[2] as u16) + (s[0] as u16 + s[3] as u16);
+    let c = width - 2;
+    t[c] = 6 * s[c] as u16
+        + 4 * (s[c - 1] as u16 + s[c + 1] as u16)
+        + (s[c - 2] as u16 + s[c + 1] as u16);
+    let c = width - 1;
+    t[c] = 6 * s[c] as u16 + 4 * (s[c - 1] as u16 + s[c] as u16) + (s[c - 2] as u16 + s[c] as u16);
+}
+
+/// Horizontal-pass interior columns `start..end`, u8 → u16.
+#[inline]
+fn binomial_h_interior_u8(s: &[u8], t: &mut [u16], start: usize, end: usize) {
+    for col in start..end {
+        t[col] = 6 * s[col] as u16
+            + 4 * (s[col - 1] as u16 + s[col + 1] as u16)
+            + (s[col - 2] as u16 + s[col + 2] as u16);
+    }
+}
+
+/// Vertical-pass border rows (0, 1, height-2, height-1), u16 → f32.
+#[inline]
+fn binomial_v_borders_u8(tmp: &[u16], dst: &mut [f32], width: usize, height: usize) {
+    for col in 0..width {
+        let p = tmp[col] as u32;
+        let pp1 = tmp[width + col] as u32;
+        let pp2 = tmp[2 * width + col] as u32;
+        dst[col] = ((6 * p + 4 * (p + pp1) + p + pp2) as f32) * INV_256;
+        let pm = tmp[col] as u32;
+        let p = tmp[width + col] as u32;
+        let pp1 = tmp[2 * width + col] as u32;
+        let pp2 = tmp[3 * width + col] as u32;
+        dst[width + col] = ((6 * p + 4 * (pm + pp1) + pm + pp2) as f32) * INV_256;
+    }
+    let h = height;
+    for col in 0..width {
+        let pm2 = tmp[(h - 4) * width + col] as u32;
+        let pm1 = tmp[(h - 3) * width + col] as u32;
+        let p = tmp[(h - 2) * width + col] as u32;
+        let pp = tmp[(h - 1) * width + col] as u32;
+        dst[(h - 2) * width + col] = ((6 * p + 4 * (pm1 + pp) + pm2 + pp) as f32) * INV_256;
+        let pm2 = tmp[(h - 3) * width + col] as u32;
+        let pm1 = tmp[(h - 2) * width + col] as u32;
+        let p = tmp[(h - 1) * width + col] as u32;
+        dst[(h - 1) * width + col] = ((6 * p + 4 * (pm1 + p) + pm2 + p) as f32) * INV_256;
+    }
+}
+
+/// Vertical-pass interior row `row`, columns `start..end`, u16 → f32.
+#[inline]
+fn binomial_v_interior_u8(
+    tmp: &[u16],
+    dst: &mut [f32],
+    row: usize,
+    width: usize,
+    start: usize,
+    end: usize,
+) {
+    let row_off = row * width;
+    for col in start..end {
+        let pm2 = tmp[(row - 2) * width + col] as u32;
+        let pm1 = tmp[(row - 1) * width + col] as u32;
+        let p = tmp[row_off + col] as u32;
+        let pp1 = tmp[(row + 1) * width + col] as u32;
+        let pp2 = tmp[(row + 2) * width + col] as u32;
+        dst[row_off + col] = ((6 * p + 4 * (pm1 + pp1) + pm2 + pp2) as f32) * INV_256;
+    }
 }
 
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 source → f32 dest.
@@ -310,88 +377,358 @@ pub fn binomial_4th_order_u8_to_f32_scalar(src: &Matrix<u8>) -> Matrix<f32> {
     for row in 0..height {
         let row_off = row * width;
         let s = &src_data[row_off..row_off + width];
-        // col 0: xm2 = xm1 = c = s[0], xp1 = s[1], xp2 = s[2].
-        tmp[row_off] =
-            6 * s[0] as u16 + 4 * (s[0] as u16 + s[1] as u16) + (s[0] as u16 + s[2] as u16);
-        // col 1: xm2 = s[0], xm1 = s[0], c = s[1], xp1 = s[2], xp2 = s[3].
-        tmp[row_off + 1] =
-            6 * s[1] as u16 + 4 * (s[0] as u16 + s[2] as u16) + (s[0] as u16 + s[3] as u16);
-        // Non-border cols.
-        for col in 2..width - 2 {
-            tmp[row_off + col] = 6 * s[col] as u16
-                + 4 * (s[col - 1] as u16 + s[col + 1] as u16)
-                + (s[col - 2] as u16 + s[col + 2] as u16);
-        }
-        // col width-2: xp2 clamped to s[width-1].
-        let c = width - 2;
-        tmp[row_off + c] = 6 * s[c] as u16
-            + 4 * (s[c - 1] as u16 + s[c + 1] as u16)
-            + (s[c - 2] as u16 + s[c + 1] as u16);
-        // col width-1: xp1 = xp2 = s[width-1].
-        let c = width - 1;
-        tmp[row_off + c] =
-            6 * s[c] as u16 + 4 * (s[c - 1] as u16 + s[c] as u16) + (s[c - 2] as u16 + s[c] as u16);
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_u8(s, t, width);
+        binomial_h_interior_u8(s, t, 2, width - 2);
     }
 
     // Vertical pass.
     let mut dst_data = vec![0f32; width * height];
-    const INV_256: f32 = 1.0 / 256.0;
-
-    // Top border: rows 0 and 1.
-    for col in 0..width {
-        // row 0: pm2 = pm1 = p = tmp[col]; pp1 = tmp[width+col]; pp2 = tmp[2w+col].
-        let p = tmp[col] as u32;
-        let pp1 = tmp[width + col] as u32;
-        let pp2 = tmp[2 * width + col] as u32;
-        dst_data[col] = ((6 * p + 4 * (p + pp1) + p + pp2) as f32) * INV_256;
-        // row 1: pm2 = pm1 = tmp[col]; p = tmp[w+col]; pp1 = tmp[2w+col]; pp2 = tmp[3w+col].
-        let pm = tmp[col] as u32;
-        let p = tmp[width + col] as u32;
-        let pp1 = tmp[2 * width + col] as u32;
-        let pp2 = tmp[3 * width + col] as u32;
-        dst_data[width + col] = ((6 * p + 4 * (pm + pp1) + pm + pp2) as f32) * INV_256;
-    }
-
-    // Non-border rows.
+    binomial_v_borders_u8(&tmp, &mut dst_data, width, height);
     for row in 2..height - 2 {
-        let row_off = row * width;
-        for col in 0..width {
-            let pm2 = tmp[(row - 2) * width + col] as u32;
-            let pm1 = tmp[(row - 1) * width + col] as u32;
-            let p = tmp[row_off + col] as u32;
-            let pp1 = tmp[(row + 1) * width + col] as u32;
-            let pp2 = tmp[(row + 2) * width + col] as u32;
-            dst_data[row_off + col] = ((6 * p + 4 * (pm1 + pp1) + pm2 + pp2) as f32) * INV_256;
-        }
-    }
-
-    // Bottom border: rows h-2 and h-1.
-    let h = height;
-    for col in 0..width {
-        // row h-2: pp1 = pp2 = tmp[(h-1)*w + col].
-        let pm2 = tmp[(h - 4) * width + col] as u32;
-        let pm1 = tmp[(h - 3) * width + col] as u32;
-        let p = tmp[(h - 2) * width + col] as u32;
-        let pp = tmp[(h - 1) * width + col] as u32;
-        dst_data[(h - 2) * width + col] = ((6 * p + 4 * (pm1 + pp) + pm2 + pp) as f32) * INV_256;
-        // row h-1: p = pp1 = pp2 = tmp[(h-1)*w + col].
-        let pm2 = tmp[(h - 3) * width + col] as u32;
-        let pm1 = tmp[(h - 2) * width + col] as u32;
-        let p = tmp[(h - 1) * width + col] as u32;
-        dst_data[(h - 1) * width + col] = ((6 * p + 4 * (pm1 + p) + pm2 + p) as f32) * INV_256;
+        binomial_v_interior_u8(&tmp, &mut dst_data, row, width, 0, width);
     }
 
     Matrix::<f32>::from_vec(height, width, 1, dst_data)
 }
 
+/// AVX2 u8 → f32 binomial filter. H pass vectorized 16 cols/iter (exact
+/// `i16` integer math); V pass 8 cols/iter (`i32` sum → `f32 * INV_256`).
+/// Borders/remainder use the shared scalar helpers, so output is
+/// bit-for-bit identical to [`binomial_4th_order_u8_to_f32_scalar`].
+///
+/// # Safety
+///
+/// Caller must ensure the `avx2` target feature is available at runtime
+/// (the [`binomial_4th_order_u8_to_f32`] dispatcher guarantees this).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+#[target_feature(enable = "avx2")]
+#[must_use]
+pub unsafe fn binomial_4th_order_u8_to_f32_avx2(src: &Matrix<u8>) -> Matrix<f32> {
+    use std::arch::x86_64::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0u16; width * height];
+
+    let six16 = _mm256_set1_epi16(6);
+    let four16 = _mm256_set1_epi16(4);
+
+    // Horizontal pass (16 cols/iter). Values <= 4080 fit i16 exactly.
+    for row in 0..height {
+        let row_off = row * width;
+        let s = &src_data[row_off..row_off + width];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_u8(s, t, width);
+        let end = width - 2;
+        let mut col = 2;
+        while col + 16 <= end {
+            // SAFETY: col >= 2 and col + 16 <= width - 2, so each 16-byte load
+            // (s[col-2 ..= col+17]) and the 16×u16 store to t[col..col+16] are
+            // in bounds.
+            let c0 =
+                _mm256_cvtepu8_epi16(_mm_loadu_si128(s.as_ptr().add(col - 2) as *const __m128i));
+            let c1 =
+                _mm256_cvtepu8_epi16(_mm_loadu_si128(s.as_ptr().add(col - 1) as *const __m128i));
+            let c2 = _mm256_cvtepu8_epi16(_mm_loadu_si128(s.as_ptr().add(col) as *const __m128i));
+            let c3 =
+                _mm256_cvtepu8_epi16(_mm_loadu_si128(s.as_ptr().add(col + 1) as *const __m128i));
+            let c4 =
+                _mm256_cvtepu8_epi16(_mm_loadu_si128(s.as_ptr().add(col + 2) as *const __m128i));
+            let inner = _mm256_add_epi16(c1, c3);
+            let mut r = _mm256_add_epi16(
+                _mm256_mullo_epi16(six16, c2),
+                _mm256_mullo_epi16(four16, inner),
+            );
+            r = _mm256_add_epi16(r, c0);
+            r = _mm256_add_epi16(r, c4);
+            _mm256_storeu_si256(t.as_mut_ptr().add(col) as *mut __m256i, r);
+            col += 16;
+        }
+        binomial_h_interior_u8(s, t, col, end);
+    }
+
+    // Vertical pass (8 cols/iter). Sum <= 65280 fits i32; convert then scale.
+    let mut dst_data = vec![0f32; width * height];
+    binomial_v_borders_u8(&tmp, &mut dst_data, width, height);
+    let six32 = _mm256_set1_epi32(6);
+    let four32 = _mm256_set1_epi32(4);
+    let inv = _mm256_set1_ps(INV_256);
+    for row in 2..height - 2 {
+        let row_off = row * width;
+        let mut col = 0;
+        while col + 8 <= width {
+            // SAFETY: col + 8 <= width and 2 <= row < height-2, so each 8×u16
+            // load and the 8×f32 store to dst[row_off+col..+8] are in bounds.
+            let pm2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                tmp.as_ptr().add((row - 2) * width + col) as *const __m128i,
+            ));
+            let pm1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                tmp.as_ptr().add((row - 1) * width + col) as *const __m128i,
+            ));
+            let p = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                tmp.as_ptr().add(row_off + col) as *const __m128i
+            ));
+            let pp1 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                tmp.as_ptr().add((row + 1) * width + col) as *const __m128i,
+            ));
+            let pp2 = _mm256_cvtepu16_epi32(_mm_loadu_si128(
+                tmp.as_ptr().add((row + 2) * width + col) as *const __m128i,
+            ));
+            let inner = _mm256_add_epi32(pm1, pp1);
+            let mut r = _mm256_add_epi32(
+                _mm256_mullo_epi32(six32, p),
+                _mm256_mullo_epi32(four32, inner),
+            );
+            r = _mm256_add_epi32(r, pm2);
+            r = _mm256_add_epi32(r, pp2);
+            let rf = _mm256_mul_ps(_mm256_cvtepi32_ps(r), inv);
+            _mm256_storeu_ps(dst_data.as_mut_ptr().add(row_off + col), rf);
+            col += 8;
+        }
+        binomial_v_interior_u8(&tmp, &mut dst_data, row, width, col, width);
+    }
+
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+/// SSE4.1 u8 → f32 binomial filter. H pass 8 cols/iter, V pass 4 cols/iter.
+/// Bit-for-bit identical to [`binomial_4th_order_u8_to_f32_scalar`].
+///
+/// # Safety
+///
+/// Caller must ensure the `sse4.1` target feature is available at runtime
+/// (the [`binomial_4th_order_u8_to_f32`] dispatcher guarantees this).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+#[target_feature(enable = "sse4.1")]
+#[must_use]
+pub unsafe fn binomial_4th_order_u8_to_f32_sse41(src: &Matrix<u8>) -> Matrix<f32> {
+    use std::arch::x86_64::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0u16; width * height];
+
+    let six16 = _mm_set1_epi16(6);
+    let four16 = _mm_set1_epi16(4);
+
+    for row in 0..height {
+        let row_off = row * width;
+        let s = &src_data[row_off..row_off + width];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_u8(s, t, width);
+        let end = width - 2;
+        let mut col = 2;
+        while col + 8 <= end {
+            // SAFETY: col >= 2 and col + 8 <= width - 2, so each 8-byte load
+            // (s[col-2 ..= col+9]) and the 8×u16 store to t[col..col+8] are
+            // in bounds.
+            let c0 = _mm_cvtepu8_epi16(_mm_loadl_epi64(s.as_ptr().add(col - 2) as *const __m128i));
+            let c1 = _mm_cvtepu8_epi16(_mm_loadl_epi64(s.as_ptr().add(col - 1) as *const __m128i));
+            let c2 = _mm_cvtepu8_epi16(_mm_loadl_epi64(s.as_ptr().add(col) as *const __m128i));
+            let c3 = _mm_cvtepu8_epi16(_mm_loadl_epi64(s.as_ptr().add(col + 1) as *const __m128i));
+            let c4 = _mm_cvtepu8_epi16(_mm_loadl_epi64(s.as_ptr().add(col + 2) as *const __m128i));
+            let inner = _mm_add_epi16(c1, c3);
+            let mut r = _mm_add_epi16(_mm_mullo_epi16(six16, c2), _mm_mullo_epi16(four16, inner));
+            r = _mm_add_epi16(r, c0);
+            r = _mm_add_epi16(r, c4);
+            _mm_storeu_si128(t.as_mut_ptr().add(col) as *mut __m128i, r);
+            col += 8;
+        }
+        binomial_h_interior_u8(s, t, col, end);
+    }
+
+    let mut dst_data = vec![0f32; width * height];
+    binomial_v_borders_u8(&tmp, &mut dst_data, width, height);
+    let six32 = _mm_set1_epi32(6);
+    let four32 = _mm_set1_epi32(4);
+    let inv = _mm_set1_ps(INV_256);
+    for row in 2..height - 2 {
+        let row_off = row * width;
+        let mut col = 0;
+        while col + 4 <= width {
+            // SAFETY: col + 4 <= width and 2 <= row < height-2, so each 4×u16
+            // load and the 4×f32 store to dst[row_off+col..+4] are in bounds.
+            let pm2 = _mm_cvtepu16_epi32(_mm_loadl_epi64(
+                tmp.as_ptr().add((row - 2) * width + col) as *const __m128i,
+            ));
+            let pm1 = _mm_cvtepu16_epi32(_mm_loadl_epi64(
+                tmp.as_ptr().add((row - 1) * width + col) as *const __m128i,
+            ));
+            let p = _mm_cvtepu16_epi32(_mm_loadl_epi64(
+                tmp.as_ptr().add(row_off + col) as *const __m128i
+            ));
+            let pp1 = _mm_cvtepu16_epi32(_mm_loadl_epi64(
+                tmp.as_ptr().add((row + 1) * width + col) as *const __m128i,
+            ));
+            let pp2 = _mm_cvtepu16_epi32(_mm_loadl_epi64(
+                tmp.as_ptr().add((row + 2) * width + col) as *const __m128i,
+            ));
+            let inner = _mm_add_epi32(pm1, pp1);
+            let mut r = _mm_add_epi32(_mm_mullo_epi32(six32, p), _mm_mullo_epi32(four32, inner));
+            r = _mm_add_epi32(r, pm2);
+            r = _mm_add_epi32(r, pp2);
+            let rf = _mm_mul_ps(_mm_cvtepi32_ps(r), inv);
+            _mm_storeu_ps(dst_data.as_mut_ptr().add(row_off + col), rf);
+            col += 4;
+        }
+        binomial_v_interior_u8(&tmp, &mut dst_data, row, width, col, width);
+    }
+
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 → f32.
+///
+/// Dispatches AVX2 → SSE4.1 → scalar on x86_64 (runtime detection); scalar
+/// elsewhere. Every path is bit-for-bit identical to
+/// [`binomial_4th_order_u8_to_f32_scalar`].
+///
+/// (A wasm32 SIMD path is a small follow-up: this filter runs once per
+/// build — octave 0 — so the dominant per-octave cost is the f32 → f32
+/// filter, which does have a wasm32 path.)
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: avx2 confirmed available at runtime.
+            return unsafe { binomial_4th_order_u8_to_f32_avx2(src) };
+        }
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            // SAFETY: sse4.1 confirmed available at runtime.
+            return unsafe { binomial_4th_order_u8_to_f32_sse41(src) };
+        }
+    }
+
+    #[allow(unreachable_code)]
+    binomial_4th_order_u8_to_f32_scalar(src)
+}
+
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32.
 ///
-/// Dispatches to the fastest available implementation; currently scalar
-/// only (SIMD paths land in #201). See
-/// [`binomial_4th_order_f32_to_f32_scalar`].
+/// Dispatches AVX2 → SSE4.1 → scalar on x86_64 (runtime detection),
+/// simd128 on wasm32. Every path is bit-for-bit identical to
+/// [`binomial_4th_order_f32_to_f32_scalar`] (no FMA, matched op order).
 #[must_use]
 pub fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: avx2 confirmed available at runtime.
+            return unsafe { binomial_4th_order_f32_to_f32_avx2(src) };
+        }
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            // SAFETY: sse4.1 confirmed available at runtime.
+            return unsafe { binomial_4th_order_f32_to_f32_sse41(src) };
+        }
+    }
+    #[cfg(all(
+        target_arch = "wasm32",
+        feature = "simd-wasm32",
+        target_feature = "simd128"
+    ))]
+    {
+        // SAFETY: simd128 guaranteed by the cfg gate.
+        return unsafe { binomial_4th_order_f32_to_f32_wasm(src) };
+    }
+
+    #[allow(unreachable_code)]
     binomial_4th_order_f32_to_f32_scalar(src)
+}
+
+/// `1 / 256` normalization applied on the vertical pass of the binomial
+/// filter. Exactly representable in f32.
+const INV_256: f32 = 1.0 / 256.0;
+
+// The four helpers below are the single source of truth for the binomial
+// filter arithmetic. The scalar reference and every SIMD variant call them
+// for the borders and the scalar remainder, so the exact f32 operation
+// order (`((6*c + 4*(l+r)) + ll) + rr`, no FMA) is defined in one place and
+// stays bit-for-bit identical to the C++ baseline (validated by the
+// `dual-mode` parity test).
+
+/// Horizontal-pass border columns (0, 1, width-2, width-1) for one row.
+/// `s` and `t` are the row slices of the source and the temp buffer.
+#[inline]
+fn binomial_h_borders_f32(s: &[f32], t: &mut [f32], width: usize) {
+    t[0] = 6.0 * s[0] + 4.0 * (s[0] + s[1]) + s[0] + s[2];
+    t[1] = 6.0 * s[1] + 4.0 * (s[0] + s[2]) + s[0] + s[3];
+    let c = width - 2;
+    t[c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c + 1]) + s[c - 2] + s[c + 1];
+    let c = width - 1;
+    t[c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c]) + s[c - 2] + s[c];
+}
+
+/// Horizontal-pass interior columns `start..end` (each reads `s[col-2..=col+2]`).
+#[inline]
+fn binomial_h_interior_f32(s: &[f32], t: &mut [f32], start: usize, end: usize) {
+    for col in start..end {
+        t[col] = 6.0 * s[col] + 4.0 * (s[col - 1] + s[col + 1]) + s[col - 2] + s[col + 2];
+    }
+}
+
+/// Vertical-pass border rows (0, 1, height-2, height-1) for all columns.
+#[inline]
+fn binomial_v_borders_f32(tmp: &[f32], dst: &mut [f32], width: usize, height: usize) {
+    for col in 0..width {
+        // row 0
+        let p = tmp[col];
+        let pp1 = tmp[width + col];
+        let pp2 = tmp[2 * width + col];
+        dst[col] = (6.0 * p + 4.0 * (p + pp1) + p + pp2) * INV_256;
+        // row 1
+        let pm = tmp[col];
+        let p = tmp[width + col];
+        let pp1 = tmp[2 * width + col];
+        let pp2 = tmp[3 * width + col];
+        dst[width + col] = (6.0 * p + 4.0 * (pm + pp1) + pm + pp2) * INV_256;
+    }
+    let h = height;
+    for col in 0..width {
+        let pm2 = tmp[(h - 4) * width + col];
+        let pm1 = tmp[(h - 3) * width + col];
+        let p = tmp[(h - 2) * width + col];
+        let pp = tmp[(h - 1) * width + col];
+        dst[(h - 2) * width + col] = (6.0 * p + 4.0 * (pm1 + pp) + pm2 + pp) * INV_256;
+        let pm2 = tmp[(h - 3) * width + col];
+        let pm1 = tmp[(h - 2) * width + col];
+        let p = tmp[(h - 1) * width + col];
+        dst[(h - 1) * width + col] = (6.0 * p + 4.0 * (pm1 + p) + pm2 + p) * INV_256;
+    }
+}
+
+/// Vertical-pass interior row `row`, columns `start..end`.
+#[inline]
+fn binomial_v_interior_f32(
+    tmp: &[f32],
+    dst: &mut [f32],
+    row: usize,
+    width: usize,
+    start: usize,
+    end: usize,
+) {
+    let row_off = row * width;
+    for col in start..end {
+        let pm2 = tmp[(row - 2) * width + col];
+        let pm1 = tmp[(row - 1) * width + col];
+        let p = tmp[row_off + col];
+        let pp1 = tmp[(row + 1) * width + col];
+        let pp2 = tmp[(row + 2) * width + col];
+        dst[row_off + col] = (6.0 * p + 4.0 * (pm1 + pp1) + pm2 + pp2) * INV_256;
+    }
 }
 
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32. Used for
@@ -408,64 +745,259 @@ pub fn binomial_4th_order_f32_to_f32_scalar(src: &Matrix<f32>) -> Matrix<f32> {
     let src_data = src.as_slice();
     let mut tmp = vec![0f32; width * height];
 
-    // Horizontal pass. Addition order matches C++ left-to-right exactly to
-    // preserve f32 bit-for-bit parity (no parenthesizing of the (ll + rr) term).
+    // Horizontal pass.
     for row in 0..height {
         let row_off = row * width;
         let s = &src_data[row_off..row_off + width];
-        tmp[row_off] = 6.0 * s[0] + 4.0 * (s[0] + s[1]) + s[0] + s[2];
-        tmp[row_off + 1] = 6.0 * s[1] + 4.0 * (s[0] + s[2]) + s[0] + s[3];
-        for col in 2..width - 2 {
-            tmp[row_off + col] =
-                6.0 * s[col] + 4.0 * (s[col - 1] + s[col + 1]) + s[col - 2] + s[col + 2];
-        }
-        let c = width - 2;
-        tmp[row_off + c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c + 1]) + s[c - 2] + s[c + 1];
-        let c = width - 1;
-        tmp[row_off + c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c]) + s[c - 2] + s[c];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_f32(s, t, width);
+        binomial_h_interior_f32(s, t, 2, width - 2);
     }
 
     // Vertical pass.
     let mut dst_data = vec![0f32; width * height];
-    const INV_256: f32 = 1.0 / 256.0;
-
-    for col in 0..width {
-        // row 0
-        let p = tmp[col];
-        let pp1 = tmp[width + col];
-        let pp2 = tmp[2 * width + col];
-        dst_data[col] = (6.0 * p + 4.0 * (p + pp1) + p + pp2) * INV_256;
-        // row 1
-        let pm = tmp[col];
-        let p = tmp[width + col];
-        let pp1 = tmp[2 * width + col];
-        let pp2 = tmp[3 * width + col];
-        dst_data[width + col] = (6.0 * p + 4.0 * (pm + pp1) + pm + pp2) * INV_256;
+    binomial_v_borders_f32(&tmp, &mut dst_data, width, height);
+    for row in 2..height - 2 {
+        binomial_v_interior_f32(&tmp, &mut dst_data, row, width, 0, width);
     }
 
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+/// AVX2 f32 → f32 binomial filter. Vectorizes the interior of both passes
+/// (8 lanes/iter); borders and the per-row remainder use the shared scalar
+/// helpers, so output is **bit-for-bit identical** to
+/// [`binomial_4th_order_f32_to_f32_scalar`].
+///
+/// No FMA is used (separate `mul`/`add`), matching the C++ baseline built
+/// with `-ffp-contract=off` and the scalar operation order.
+///
+/// # Safety
+///
+/// Caller must ensure the `avx2` target feature is available at runtime
+/// (the [`binomial_4th_order_f32_to_f32`] dispatcher guarantees this).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+#[target_feature(enable = "avx2")]
+#[must_use]
+pub unsafe fn binomial_4th_order_f32_to_f32_avx2(src: &Matrix<f32>) -> Matrix<f32> {
+    use std::arch::x86_64::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0f32; width * height];
+
+    let six = _mm256_set1_ps(6.0);
+    let four = _mm256_set1_ps(4.0);
+
+    // Horizontal pass.
+    for row in 0..height {
+        let row_off = row * width;
+        let s = &src_data[row_off..row_off + width];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_f32(s, t, width);
+        let end = width - 2;
+        let mut col = 2;
+        while col + 8 <= end {
+            // SAFETY: col >= 2 and col + 8 <= width - 2, so reads of
+            // s[col-2 ..= col+9] and the write to t[col..col+8] are in bounds.
+            let c0 = _mm256_loadu_ps(s.as_ptr().add(col - 2));
+            let c1 = _mm256_loadu_ps(s.as_ptr().add(col - 1));
+            let c2 = _mm256_loadu_ps(s.as_ptr().add(col));
+            let c3 = _mm256_loadu_ps(s.as_ptr().add(col + 1));
+            let c4 = _mm256_loadu_ps(s.as_ptr().add(col + 2));
+            let inner = _mm256_add_ps(c1, c3);
+            let mut r = _mm256_add_ps(_mm256_mul_ps(six, c2), _mm256_mul_ps(four, inner));
+            r = _mm256_add_ps(r, c0);
+            r = _mm256_add_ps(r, c4);
+            _mm256_storeu_ps(t.as_mut_ptr().add(col), r);
+            col += 8;
+        }
+        binomial_h_interior_f32(s, t, col, end);
+    }
+
+    // Vertical pass.
+    let mut dst_data = vec![0f32; width * height];
+    binomial_v_borders_f32(&tmp, &mut dst_data, width, height);
+    let inv = _mm256_set1_ps(INV_256);
     for row in 2..height - 2 {
         let row_off = row * width;
-        for col in 0..width {
-            let pm2 = tmp[(row - 2) * width + col];
-            let pm1 = tmp[(row - 1) * width + col];
-            let p = tmp[row_off + col];
-            let pp1 = tmp[(row + 1) * width + col];
-            let pp2 = tmp[(row + 2) * width + col];
-            dst_data[row_off + col] = (6.0 * p + 4.0 * (pm1 + pp1) + pm2 + pp2) * INV_256;
+        let mut col = 0;
+        while col + 8 <= width {
+            // SAFETY: col + 8 <= width and 2 <= row < height-2, so the five
+            // row reads and the write to dst[row_off+col..+8] are in bounds.
+            let pm2 = _mm256_loadu_ps(tmp.as_ptr().add((row - 2) * width + col));
+            let pm1 = _mm256_loadu_ps(tmp.as_ptr().add((row - 1) * width + col));
+            let p = _mm256_loadu_ps(tmp.as_ptr().add(row_off + col));
+            let pp1 = _mm256_loadu_ps(tmp.as_ptr().add((row + 1) * width + col));
+            let pp2 = _mm256_loadu_ps(tmp.as_ptr().add((row + 2) * width + col));
+            let inner = _mm256_add_ps(pm1, pp1);
+            let mut r = _mm256_add_ps(_mm256_mul_ps(six, p), _mm256_mul_ps(four, inner));
+            r = _mm256_add_ps(r, pm2);
+            r = _mm256_add_ps(r, pp2);
+            r = _mm256_mul_ps(r, inv);
+            _mm256_storeu_ps(dst_data.as_mut_ptr().add(row_off + col), r);
+            col += 8;
         }
+        binomial_v_interior_f32(&tmp, &mut dst_data, row, width, col, width);
     }
 
-    let h = height;
-    for col in 0..width {
-        let pm2 = tmp[(h - 4) * width + col];
-        let pm1 = tmp[(h - 3) * width + col];
-        let p = tmp[(h - 2) * width + col];
-        let pp = tmp[(h - 1) * width + col];
-        dst_data[(h - 2) * width + col] = (6.0 * p + 4.0 * (pm1 + pp) + pm2 + pp) * INV_256;
-        let pm2 = tmp[(h - 3) * width + col];
-        let pm1 = tmp[(h - 2) * width + col];
-        let p = tmp[(h - 1) * width + col];
-        dst_data[(h - 1) * width + col] = (6.0 * p + 4.0 * (pm1 + p) + pm2 + p) * INV_256;
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+/// SSE4.1 f32 → f32 binomial filter (4 lanes/iter). Bit-for-bit identical
+/// to [`binomial_4th_order_f32_to_f32_scalar`]; no FMA.
+///
+/// # Safety
+///
+/// Caller must ensure the `sse4.1` target feature is available at runtime
+/// (the [`binomial_4th_order_f32_to_f32`] dispatcher guarantees this).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+#[target_feature(enable = "sse4.1")]
+#[must_use]
+pub unsafe fn binomial_4th_order_f32_to_f32_sse41(src: &Matrix<f32>) -> Matrix<f32> {
+    use std::arch::x86_64::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0f32; width * height];
+
+    let six = _mm_set1_ps(6.0);
+    let four = _mm_set1_ps(4.0);
+
+    for row in 0..height {
+        let row_off = row * width;
+        let s = &src_data[row_off..row_off + width];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_f32(s, t, width);
+        let end = width - 2;
+        let mut col = 2;
+        while col + 4 <= end {
+            // SAFETY: col >= 2 and col + 4 <= width - 2, so reads of
+            // s[col-2 ..= col+5] and the write to t[col..col+4] are in bounds.
+            let c0 = _mm_loadu_ps(s.as_ptr().add(col - 2));
+            let c1 = _mm_loadu_ps(s.as_ptr().add(col - 1));
+            let c2 = _mm_loadu_ps(s.as_ptr().add(col));
+            let c3 = _mm_loadu_ps(s.as_ptr().add(col + 1));
+            let c4 = _mm_loadu_ps(s.as_ptr().add(col + 2));
+            let inner = _mm_add_ps(c1, c3);
+            let mut r = _mm_add_ps(_mm_mul_ps(six, c2), _mm_mul_ps(four, inner));
+            r = _mm_add_ps(r, c0);
+            r = _mm_add_ps(r, c4);
+            _mm_storeu_ps(t.as_mut_ptr().add(col), r);
+            col += 4;
+        }
+        binomial_h_interior_f32(s, t, col, end);
+    }
+
+    let mut dst_data = vec![0f32; width * height];
+    binomial_v_borders_f32(&tmp, &mut dst_data, width, height);
+    let inv = _mm_set1_ps(INV_256);
+    for row in 2..height - 2 {
+        let row_off = row * width;
+        let mut col = 0;
+        while col + 4 <= width {
+            // SAFETY: col + 4 <= width and 2 <= row < height-2, so the five
+            // row reads and the write to dst[row_off+col..+4] are in bounds.
+            let pm2 = _mm_loadu_ps(tmp.as_ptr().add((row - 2) * width + col));
+            let pm1 = _mm_loadu_ps(tmp.as_ptr().add((row - 1) * width + col));
+            let p = _mm_loadu_ps(tmp.as_ptr().add(row_off + col));
+            let pp1 = _mm_loadu_ps(tmp.as_ptr().add((row + 1) * width + col));
+            let pp2 = _mm_loadu_ps(tmp.as_ptr().add((row + 2) * width + col));
+            let inner = _mm_add_ps(pm1, pp1);
+            let mut r = _mm_add_ps(_mm_mul_ps(six, p), _mm_mul_ps(four, inner));
+            r = _mm_add_ps(r, pm2);
+            r = _mm_add_ps(r, pp2);
+            r = _mm_mul_ps(r, inv);
+            _mm_storeu_ps(dst_data.as_mut_ptr().add(row_off + col), r);
+            col += 4;
+        }
+        binomial_v_interior_f32(&tmp, &mut dst_data, row, width, col, width);
+    }
+
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+/// wasm32 `simd128` f32 → f32 binomial filter (4 lanes/iter). Bit-for-bit
+/// identical to [`binomial_4th_order_f32_to_f32_scalar`]; no FMA.
+///
+/// # Safety
+///
+/// Requires the `simd128` target feature, guaranteed by the `cfg` gate on
+/// the [`binomial_4th_order_f32_to_f32`] dispatcher call site.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "simd-wasm32",
+    target_feature = "simd128"
+))]
+#[target_feature(enable = "simd128")]
+#[must_use]
+pub unsafe fn binomial_4th_order_f32_to_f32_wasm(src: &Matrix<f32>) -> Matrix<f32> {
+    use std::arch::wasm32::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0f32; width * height];
+
+    let six = f32x4_splat(6.0);
+    let four = f32x4_splat(4.0);
+
+    for row in 0..height {
+        let row_off = row * width;
+        let s = &src_data[row_off..row_off + width];
+        let t = &mut tmp[row_off..row_off + width];
+        binomial_h_borders_f32(s, t, width);
+        let end = width - 2;
+        let mut col = 2;
+        while col + 4 <= end {
+            // SAFETY: col >= 2 and col + 4 <= width - 2, so reads of
+            // s[col-2 ..= col+5] and the write to t[col..col+4] are in bounds.
+            let c0 = v128_load(s.as_ptr().add(col - 2) as *const v128);
+            let c1 = v128_load(s.as_ptr().add(col - 1) as *const v128);
+            let c2 = v128_load(s.as_ptr().add(col) as *const v128);
+            let c3 = v128_load(s.as_ptr().add(col + 1) as *const v128);
+            let c4 = v128_load(s.as_ptr().add(col + 2) as *const v128);
+            let inner = f32x4_add(c1, c3);
+            let mut r = f32x4_add(f32x4_mul(six, c2), f32x4_mul(four, inner));
+            r = f32x4_add(r, c0);
+            r = f32x4_add(r, c4);
+            v128_store(t.as_mut_ptr().add(col) as *mut v128, r);
+            col += 4;
+        }
+        binomial_h_interior_f32(s, t, col, end);
+    }
+
+    let mut dst_data = vec![0f32; width * height];
+    binomial_v_borders_f32(&tmp, &mut dst_data, width, height);
+    let inv = f32x4_splat(INV_256);
+    for row in 2..height - 2 {
+        let row_off = row * width;
+        let mut col = 0;
+        while col + 4 <= width {
+            // SAFETY: col + 4 <= width and 2 <= row < height-2, so the five
+            // row reads and the write to dst[row_off+col..+4] are in bounds.
+            let pm2 = v128_load(tmp.as_ptr().add((row - 2) * width + col) as *const v128);
+            let pm1 = v128_load(tmp.as_ptr().add((row - 1) * width + col) as *const v128);
+            let p = v128_load(tmp.as_ptr().add(row_off + col) as *const v128);
+            let pp1 = v128_load(tmp.as_ptr().add((row + 1) * width + col) as *const v128);
+            let pp2 = v128_load(tmp.as_ptr().add((row + 2) * width + col) as *const v128);
+            let inner = f32x4_add(pm1, pp1);
+            let mut r = f32x4_add(f32x4_mul(six, p), f32x4_mul(four, inner));
+            r = f32x4_add(r, pm2);
+            r = f32x4_add(r, pp2);
+            r = f32x4_mul(r, inv);
+            v128_store(dst_data.as_mut_ptr().add(row_off + col) as *mut v128, r);
+            col += 4;
+        }
+        binomial_v_interior_f32(&tmp, &mut dst_data, row, width, col, width);
     }
 
     Matrix::<f32>::from_vec(height, width, 1, dst_data)
@@ -513,6 +1045,148 @@ mod tests {
     fn gradient_u8(rows: usize, cols: usize) -> Matrix<u8> {
         let data: Vec<u8> = (0..rows * cols).map(|i| (i & 0xFF) as u8).collect();
         Matrix::<u8>::from_vec(rows, cols, 1, data)
+    }
+
+    // ── SIMD parity (#201) ───────────────────────────────────────────────
+
+    /// Deterministic pseudo-random f32 image (values in `[0, 256)`), seeded
+    /// so failures reproduce.
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    fn random_f32(rows: usize, cols: usize, seed: u64) -> Matrix<f32> {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let data: Vec<f32> = (0..rows * cols)
+            .map(|_| rng.random::<u8>() as f32)
+            .collect();
+        Matrix::<f32>::from_vec(rows, cols, 1, data)
+    }
+
+    /// Sizes exercising the SIMD interior, the scalar remainder of both the
+    /// 8-wide (AVX2) and 4-wide (SSE) loops, tiny images (all-scalar
+    /// interior), and odd dimensions. All `>= 5x5` (filter precondition).
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    const GAUSS_PARITY_SIZES: &[(usize, usize)] = &[
+        (5, 5),
+        (5, 7),
+        (7, 9),
+        (8, 8),
+        (9, 11),
+        (10, 10),
+        (11, 13),
+        (16, 16),
+        (17, 17),
+        (19, 23),
+        (32, 32),
+        (33, 31),
+        (64, 64),
+        (65, 63),
+        (100, 100),
+        (128, 130),
+    ];
+
+    /// Assert two f32 matrices are bit-for-bit identical.
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    fn assert_bits_eq(a: &Matrix<f32>, b: &Matrix<f32>, what: &str) {
+        assert_eq!(a.as_slice().len(), b.as_slice().len(), "{what}: size");
+        for (i, (&x, &y)) in a.as_slice().iter().zip(b.as_slice().iter()).enumerate() {
+            assert_eq!(x.to_bits(), y.to_bits(), "{what}: bit mismatch at {i}");
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    #[test]
+    fn test_binomial_f32_avx2_matches_scalar() {
+        if !is_x86_feature_detected!("avx2") {
+            eprintln!("avx2 unavailable; skipping");
+            return;
+        }
+        for (i, &(rows, cols)) in GAUSS_PARITY_SIZES.iter().enumerate() {
+            let src = random_f32(rows, cols, 0x00B1_0A20 + i as u64);
+            let scalar = binomial_4th_order_f32_to_f32_scalar(&src);
+            // SAFETY: guarded by the runtime avx2 check above.
+            let simd = unsafe { binomial_4th_order_f32_to_f32_avx2(&src) };
+            assert_bits_eq(&scalar, &simd, &format!("avx2 {rows}x{cols}"));
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_binomial_f32_sse41_matches_scalar() {
+        if !is_x86_feature_detected!("sse4.1") {
+            eprintln!("sse4.1 unavailable; skipping");
+            return;
+        }
+        for (i, &(rows, cols)) in GAUSS_PARITY_SIZES.iter().enumerate() {
+            let src = random_f32(rows, cols, 0x0055_B100 + i as u64);
+            let scalar = binomial_4th_order_f32_to_f32_scalar(&src);
+            // SAFETY: guarded by the runtime sse4.1 check above.
+            let simd = unsafe { binomial_4th_order_f32_to_f32_sse41(&src) };
+            assert_bits_eq(&scalar, &simd, &format!("sse41 {rows}x{cols}"));
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_binomial_f32_dispatch_matches_scalar() {
+        for (i, &(rows, cols)) in GAUSS_PARITY_SIZES.iter().enumerate() {
+            let src = random_f32(rows, cols, 0x0D15_B100 + i as u64);
+            let scalar = binomial_4th_order_f32_to_f32_scalar(&src);
+            let dispatched = binomial_4th_order_f32_to_f32(&src);
+            assert_bits_eq(&scalar, &dispatched, &format!("dispatch {rows}x{cols}"));
+        }
+    }
+
+    /// Deterministic pseudo-random u8 image, seeded so failures reproduce.
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    fn random_u8(rows: usize, cols: usize, seed: u64) -> Matrix<u8> {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let data: Vec<u8> = (0..rows * cols).map(|_| rng.random::<u8>()).collect();
+        Matrix::<u8>::from_vec(rows, cols, 1, data)
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    #[test]
+    fn test_binomial_u8_avx2_matches_scalar() {
+        if !is_x86_feature_detected!("avx2") {
+            eprintln!("avx2 unavailable; skipping");
+            return;
+        }
+        for (i, &(rows, cols)) in GAUSS_PARITY_SIZES.iter().enumerate() {
+            let src = random_u8(rows, cols, 0x00C8_0A20 + i as u64);
+            let scalar = binomial_4th_order_u8_to_f32_scalar(&src);
+            // SAFETY: guarded by the runtime avx2 check above.
+            let simd = unsafe { binomial_4th_order_u8_to_f32_avx2(&src) };
+            assert_bits_eq(&scalar, &simd, &format!("u8 avx2 {rows}x{cols}"));
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_binomial_u8_sse41_matches_scalar() {
+        if !is_x86_feature_detected!("sse4.1") {
+            eprintln!("sse4.1 unavailable; skipping");
+            return;
+        }
+        for (i, &(rows, cols)) in GAUSS_PARITY_SIZES.iter().enumerate() {
+            let src = random_u8(rows, cols, 0x0055_C800 + i as u64);
+            let scalar = binomial_4th_order_u8_to_f32_scalar(&src);
+            // SAFETY: guarded by the runtime sse4.1 check above.
+            let simd = unsafe { binomial_4th_order_u8_to_f32_sse41(&src) };
+            assert_bits_eq(&scalar, &simd, &format!("u8 sse41 {rows}x{cols}"));
+        }
     }
 
     // ── Configuration sanity ─────────────────────────────────────────────
