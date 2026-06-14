@@ -153,3 +153,7 @@ required-features = ["simd-x86-sse41"]
 name = "feature_map_bench"
 harness = false
 required-features = ["log-helpers"]
+
+[[bench]]
+name = "gaussian_pyramid_bench"
+harness = false
