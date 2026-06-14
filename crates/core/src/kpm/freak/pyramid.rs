@@ -187,6 +187,27 @@ impl Pyramid {
 
 /// 2x2 box-filter downsample, byte-identical to C++ `BoxFilterDecimate`.
 ///
+/// Dispatches to the fastest available implementation at runtime,
+/// falling back to [`downsample_scalar`]. SIMD paths are added by #132;
+/// for now this is a thin wrapper over the scalar implementation, but it
+/// is the stable entry point callers (and benchmarks) should target.
+///
+/// Output dimensions: `new_h = ceil((src.rows - 1) / 2)`,
+/// `new_w = ceil((src.cols - 1) / 2)`.
+///
+/// # Note on visibility
+///
+/// `downsample` / `downsample_scalar` are `pub` so the criterion
+/// benchmark (a separate crate) can measure them directly. They are not
+/// part of a stability guarantee — prefer [`Pyramid::build`].
+#[must_use]
+pub fn downsample(src: &Matrix<u8>) -> Matrix<u8> {
+    downsample_scalar(src)
+}
+
+/// Scalar 2x2 box-filter downsample, byte-identical to C++
+/// `BoxFilterDecimate`.
+///
 /// Output dimensions: `new_h = ceil((src.rows - 1) / 2)`,
 /// `new_w = ceil((src.cols - 1) / 2)`.
 ///
@@ -194,7 +215,8 @@ impl Pyramid {
 /// to avoid overflow), add 2 for rounding, then shift right by 2. This
 /// is the combined effect of `HorizontalBoxFilterDecimate` plus
 /// `VerticalBoxFilter` from `pyramid-inline.h`.
-fn downsample(src: &Matrix<u8>) -> Matrix<u8> {
+#[must_use]
+pub fn downsample_scalar(src: &Matrix<u8>) -> Matrix<u8> {
     let new_h = (src.rows.saturating_sub(1) as f32 / 2.0).ceil() as usize;
     let new_w = (src.cols.saturating_sub(1) as f32 / 2.0).ceil() as usize;
 
