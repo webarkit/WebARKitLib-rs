@@ -54,6 +54,12 @@ use rand::{Rng, SeedableRng};
 use std::hint::black_box;
 use webarkitlib_rs::kpm::freak::pyramid::{downsample_scalar, Pyramid};
 
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+use webarkitlib_rs::kpm::freak::pyramid::downsample_sse41;
+
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+use webarkitlib_rs::kpm::freak::pyramid::downsample_avx2;
+
 /// Typical AR camera input resolutions as `(width, height)`.
 const SIZES: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
 
@@ -77,6 +83,26 @@ fn bench_downsample(c: &mut Criterion) {
             &src,
             |bencher, src| bencher.iter(|| downsample_scalar(black_box(src))),
         );
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+        if is_x86_feature_detected!("sse4.1") {
+            group.bench_with_input(
+                BenchmarkId::new("sse41", format!("{w}x{h}")),
+                &src,
+                // SAFETY: sse4.1 confirmed available by the runtime check above.
+                |bencher, src| bencher.iter(|| unsafe { downsample_sse41(black_box(src)) }),
+            );
+        }
+
+        #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+        if is_x86_feature_detected!("avx2") {
+            group.bench_with_input(
+                BenchmarkId::new("avx2", format!("{w}x{h}")),
+                &src,
+                // SAFETY: avx2 confirmed available by the runtime check above.
+                |bencher, src| bencher.iter(|| unsafe { downsample_avx2(black_box(src)) }),
+            );
+        }
     }
     group.finish();
 }
