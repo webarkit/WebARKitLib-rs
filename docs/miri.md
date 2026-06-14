@@ -174,6 +174,16 @@ The Miri job is a **required gate** for PRs targeting `dev` and `main`,
 runs in its own workflow at `.github/workflows/miri.yml`, and surfaces
 via a dedicated badge in the project README.
 
+Docs-only changes (`**/*.md`, `docs/**`, `assets/**`, `LICENSE*`,
+`.gitignore`, `.gitattributes`) are skipped via `paths-ignore` in the
+real Miri workflow. A companion shim workflow at
+`.github/workflows/miri-skip.yml` runs on exactly those paths and
+emits a passing check with the same name (`miri (pure-Rust UB
+validation)`), so branch protection's required-check rule is
+satisfied without spinning up the nightly toolchain for a README typo.
+If you change the `paths-ignore` list in `miri.yml`, mirror the change
+to the `paths` list in `miri-skip.yml`.
+
 Each future finding gets its own fix PR — never a mega-PR — mirroring
 the #180 cleanup series pattern (and #192 from this safety net's first
 run, which uncovered a real unaligned-transmute UB).
