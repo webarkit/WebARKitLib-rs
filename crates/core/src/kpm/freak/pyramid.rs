@@ -187,22 +187,74 @@ impl Pyramid {
 
 /// 2x2 box-filter downsample, byte-identical to C++ `BoxFilterDecimate`.
 ///
-/// Dispatches to the fastest available implementation at runtime,
-/// falling back to [`downsample_scalar`]. SIMD paths are added by #132;
-/// for now this is a thin wrapper over the scalar implementation, but it
-/// is the stable entry point callers (and benchmarks) should target.
+/// Dispatches to the fastest available implementation at runtime
+/// (AVX2 → SSE4.1 on x86_64, simd128 on wasm32), falling back to
+/// [`downsample_scalar`]. Every path produces bit-for-bit identical
+/// output to the scalar baseline — see the property tests below.
 ///
 /// Output dimensions: `new_h = ceil((src.rows - 1) / 2)`,
 /// `new_w = ceil((src.cols - 1) / 2)`.
 ///
 /// # Note on visibility
 ///
-/// `downsample` / `downsample_scalar` are `pub` so the criterion
-/// benchmark (a separate crate) can measure them directly. They are not
-/// part of a stability guarantee — prefer [`Pyramid::build`].
+/// `downsample` / `downsample_scalar` (and the SIMD variants) are `pub`
+/// so the criterion benchmark (a separate crate) can measure them
+/// directly. They are not part of a stability guarantee — prefer
+/// [`Pyramid::build`].
 #[must_use]
 pub fn downsample(src: &Matrix<u8>) -> Matrix<u8> {
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    {
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: the `avx2` target feature is confirmed present at
+            // runtime, satisfying the precondition of `downsample_avx2`.
+            return unsafe { downsample_avx2(src) };
+        }
+    }
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    {
+        if is_x86_feature_detected!("sse4.1") {
+            // SAFETY: the `sse4.1` target feature is confirmed present at
+            // runtime, satisfying the precondition of `downsample_sse41`.
+            return unsafe { downsample_sse41(src) };
+        }
+    }
+    #[cfg(all(
+        target_arch = "wasm32",
+        feature = "simd-wasm32",
+        target_feature = "simd128"
+    ))]
+    {
+        // SAFETY: `simd128` is guaranteed by the `target_feature` cfg gate,
+        // so the intrinsics in `downsample_wasm` are always valid here.
+        return unsafe { downsample_wasm(src) };
+    }
+
+    #[allow(unreachable_code)]
     downsample_scalar(src)
+}
+
+/// Output dimensions of a single downsample step: `(new_h, new_w)`.
+#[inline]
+fn downsample_dims(src: &Matrix<u8>) -> (usize, usize) {
+    let new_h = (src.rows.saturating_sub(1) as f32 / 2.0).ceil() as usize;
+    let new_w = (src.cols.saturating_sub(1) as f32 / 2.0).ceil() as usize;
+    (new_h, new_w)
+}
+
+/// Scalar fill of one output row for output columns `start..dst_row.len()`.
+///
+/// Shared by the scalar implementation and the SIMD remainder tails so the
+/// rounding (`(a + b + c + d + 2) >> 2`) is defined in exactly one place.
+#[inline]
+fn downsample_row_tail_scalar(row0: &[u8], row1: &[u8], dst_row: &mut [u8], start: usize) {
+    for (out_col, dst) in dst_row.iter_mut().enumerate().skip(start) {
+        let c = out_col * 2;
+        // u16 promotion prevents u8 wrap; max sum = 4*255 + 2 = 1022.
+        let sum: u16 =
+            row0[c] as u16 + row0[c + 1] as u16 + row1[c] as u16 + row1[c + 1] as u16 + 2;
+        *dst = (sum >> 2) as u8;
+    }
 }
 
 /// Scalar 2x2 box-filter downsample, byte-identical to C++
@@ -217,27 +269,241 @@ pub fn downsample(src: &Matrix<u8>) -> Matrix<u8> {
 /// `VerticalBoxFilter` from `pyramid-inline.h`.
 #[must_use]
 pub fn downsample_scalar(src: &Matrix<u8>) -> Matrix<u8> {
-    let new_h = (src.rows.saturating_sub(1) as f32 / 2.0).ceil() as usize;
-    let new_w = (src.cols.saturating_sub(1) as f32 / 2.0).ceil() as usize;
+    let (new_h, new_w) = downsample_dims(src);
 
     let src_data = src.as_slice();
     let src_cols = src.cols;
 
-    let mut dst_data = Vec::<u8>::with_capacity(new_h * new_w);
+    let mut dst_data = vec![0u8; new_h * new_w];
 
     for out_row in 0..new_h {
         let r0 = (out_row * 2) * src_cols;
         let r1 = r0 + src_cols;
         let row0 = &src_data[r0..r0 + src_cols];
         let row1 = &src_data[r1..r1 + src_cols];
+        let dst_row = &mut dst_data[out_row * new_w..(out_row + 1) * new_w];
+        downsample_row_tail_scalar(row0, row1, dst_row, 0);
+    }
 
-        for out_col in 0..new_w {
-            let c = out_col * 2;
-            // u16 promotion prevents u8 wrap; max sum = 4*255 + 2 = 1022.
-            let sum: u16 =
-                row0[c] as u16 + row0[c + 1] as u16 + row1[c] as u16 + row1[c + 1] as u16 + 2;
-            dst_data.push((sum >> 2) as u8);
+    Matrix::<u8>::from_vec(new_h, new_w, 1, dst_data)
+}
+
+/// AVX2 2x2 box-filter downsample. Processes 32 output columns per
+/// iteration (64 source columns) using 256-bit lanes; the remaining
+/// columns of each row fall back to [`downsample_row_tail_scalar`].
+///
+/// Output is byte-identical to [`downsample_scalar`].
+///
+/// # Safety
+///
+/// The caller must ensure the `avx2` target feature is available at
+/// runtime (the [`downsample`] dispatcher guarantees this via
+/// `is_x86_feature_detected!`).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+#[target_feature(enable = "avx2")]
+#[must_use]
+pub unsafe fn downsample_avx2(src: &Matrix<u8>) -> Matrix<u8> {
+    use std::arch::x86_64::*;
+
+    let (new_h, new_w) = downsample_dims(src);
+    let src_data = src.as_slice();
+    let src_cols = src.cols;
+    let mut dst_data = vec![0u8; new_h * new_w];
+
+    // Number of leading output columns we can serve with full 32-wide
+    // blocks. A block at output col `o` reads source cols `[2o, 2o + 64)`
+    // and writes `[o, o + 32)`; both stay in bounds while
+    // `2 * (o + 32) <= src_cols` (which also implies `o + 32 <= new_w`).
+    let simd_cols = if src_cols >= 64 {
+        ((src_cols - 64) / 2 / 32) * 32 + 32
+    } else {
+        0
+    };
+
+    let ones = _mm256_set1_epi8(1);
+    let two = _mm256_set1_epi16(2);
+
+    for out_row in 0..new_h {
+        let r0 = (out_row * 2) * src_cols;
+        let r1 = r0 + src_cols;
+        let row0 = &src_data[r0..r0 + src_cols];
+        let row1 = &src_data[r1..r1 + src_cols];
+        let dst_row = &mut dst_data[out_row * new_w..(out_row + 1) * new_w];
+
+        let mut o = 0;
+        while o < simd_cols {
+            let c = o * 2;
+            // SAFETY: `c + 64 <= src_cols` by construction of `simd_cols`,
+            // and `o + 32 <= new_w`, so all loads/stores are in bounds.
+            let a0 = _mm256_loadu_si256(row0.as_ptr().add(c) as *const __m256i);
+            let a1 = _mm256_loadu_si256(row0.as_ptr().add(c + 32) as *const __m256i);
+            let b0 = _mm256_loadu_si256(row1.as_ptr().add(c) as *const __m256i);
+            let b1 = _mm256_loadu_si256(row1.as_ptr().add(c + 32) as *const __m256i);
+
+            // Horizontal pairwise sums of adjacent bytes -> u16 lanes.
+            let h0lo = _mm256_maddubs_epi16(a0, ones);
+            let h0hi = _mm256_maddubs_epi16(a1, ones);
+            let h1lo = _mm256_maddubs_epi16(b0, ones);
+            let h1hi = _mm256_maddubs_epi16(b1, ones);
+
+            // Vertical: (h0 + h1 + 2) >> 2.
+            let slo = _mm256_srli_epi16(_mm256_add_epi16(_mm256_add_epi16(h0lo, h1lo), two), 2);
+            let shi = _mm256_srli_epi16(_mm256_add_epi16(_mm256_add_epi16(h0hi, h1hi), two), 2);
+
+            // packus works per 128-bit lane, interleaving the halves;
+            // permute the 64-bit chunks back into sequential order.
+            let packed = _mm256_packus_epi16(slo, shi);
+            let out = _mm256_permute4x64_epi64(packed, 0xD8);
+            _mm256_storeu_si256(dst_row.as_mut_ptr().add(o) as *mut __m256i, out);
+
+            o += 32;
         }
+
+        downsample_row_tail_scalar(row0, row1, dst_row, simd_cols);
+    }
+
+    Matrix::<u8>::from_vec(new_h, new_w, 1, dst_data)
+}
+
+/// SSE4.1 2x2 box-filter downsample. Processes 16 output columns per
+/// iteration (32 source columns) using 128-bit lanes; the remaining
+/// columns of each row fall back to [`downsample_row_tail_scalar`].
+///
+/// Output is byte-identical to [`downsample_scalar`].
+///
+/// # Safety
+///
+/// The caller must ensure the `sse4.1` target feature is available at
+/// runtime (the [`downsample`] dispatcher guarantees this via
+/// `is_x86_feature_detected!`).
+#[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+#[target_feature(enable = "sse4.1")]
+#[must_use]
+pub unsafe fn downsample_sse41(src: &Matrix<u8>) -> Matrix<u8> {
+    use std::arch::x86_64::*;
+
+    let (new_h, new_w) = downsample_dims(src);
+    let src_data = src.as_slice();
+    let src_cols = src.cols;
+    let mut dst_data = vec![0u8; new_h * new_w];
+
+    // A block at output col `o` reads source cols `[2o, 2o + 32)` and
+    // writes `[o, o + 16)`; safe while `2 * (o + 16) <= src_cols`.
+    let simd_cols = if src_cols >= 32 {
+        ((src_cols - 32) / 2 / 16) * 16 + 16
+    } else {
+        0
+    };
+
+    let ones = _mm_set1_epi8(1);
+    let two = _mm_set1_epi16(2);
+
+    for out_row in 0..new_h {
+        let r0 = (out_row * 2) * src_cols;
+        let r1 = r0 + src_cols;
+        let row0 = &src_data[r0..r0 + src_cols];
+        let row1 = &src_data[r1..r1 + src_cols];
+        let dst_row = &mut dst_data[out_row * new_w..(out_row + 1) * new_w];
+
+        let mut o = 0;
+        while o < simd_cols {
+            let c = o * 2;
+            // SAFETY: `c + 32 <= src_cols` by construction of `simd_cols`,
+            // and `o + 16 <= new_w`, so all loads/stores are in bounds.
+            let a0 = _mm_loadu_si128(row0.as_ptr().add(c) as *const __m128i);
+            let a1 = _mm_loadu_si128(row0.as_ptr().add(c + 16) as *const __m128i);
+            let b0 = _mm_loadu_si128(row1.as_ptr().add(c) as *const __m128i);
+            let b1 = _mm_loadu_si128(row1.as_ptr().add(c + 16) as *const __m128i);
+
+            let h0lo = _mm_maddubs_epi16(a0, ones);
+            let h0hi = _mm_maddubs_epi16(a1, ones);
+            let h1lo = _mm_maddubs_epi16(b0, ones);
+            let h1hi = _mm_maddubs_epi16(b1, ones);
+
+            let slo = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(h0lo, h1lo), two), 2);
+            let shi = _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(h0hi, h1hi), two), 2);
+
+            let out = _mm_packus_epi16(slo, shi);
+            _mm_storeu_si128(dst_row.as_mut_ptr().add(o) as *mut __m128i, out);
+
+            o += 16;
+        }
+
+        downsample_row_tail_scalar(row0, row1, dst_row, simd_cols);
+    }
+
+    Matrix::<u8>::from_vec(new_h, new_w, 1, dst_data)
+}
+
+/// wasm32 SIMD (`simd128`) 2x2 box-filter downsample. Processes 16 output
+/// columns per iteration (32 source columns); the remaining columns of
+/// each row fall back to [`downsample_row_tail_scalar`].
+///
+/// Output is byte-identical to [`downsample_scalar`].
+///
+/// # Safety
+///
+/// Requires the `simd128` target feature, which is guaranteed by the
+/// `#[cfg(target_feature = "simd128")]` gate on the [`downsample`]
+/// dispatcher call site.
+#[cfg(all(
+    target_arch = "wasm32",
+    feature = "simd-wasm32",
+    target_feature = "simd128"
+))]
+#[target_feature(enable = "simd128")]
+#[must_use]
+pub unsafe fn downsample_wasm(src: &Matrix<u8>) -> Matrix<u8> {
+    use std::arch::wasm32::*;
+
+    let (new_h, new_w) = downsample_dims(src);
+    let src_data = src.as_slice();
+    let src_cols = src.cols;
+    let mut dst_data = vec![0u8; new_h * new_w];
+
+    // A block at output col `o` reads source cols `[2o, 2o + 32)` and
+    // writes `[o, o + 16)`; safe while `2 * (o + 16) <= src_cols`.
+    let simd_cols = if src_cols >= 32 {
+        ((src_cols - 32) / 2 / 16) * 16 + 16
+    } else {
+        0
+    };
+
+    let two = i16x8_splat(2);
+
+    for out_row in 0..new_h {
+        let r0 = (out_row * 2) * src_cols;
+        let r1 = r0 + src_cols;
+        let row0 = &src_data[r0..r0 + src_cols];
+        let row1 = &src_data[r1..r1 + src_cols];
+        let dst_row = &mut dst_data[out_row * new_w..(out_row + 1) * new_w];
+
+        let mut o = 0;
+        while o < simd_cols {
+            let c = o * 2;
+            // SAFETY: `c + 32 <= src_cols` by construction of `simd_cols`,
+            // and `o + 16 <= new_w`, so all loads/stores are in bounds.
+            let a0 = v128_load(row0.as_ptr().add(c) as *const v128);
+            let a1 = v128_load(row0.as_ptr().add(c + 16) as *const v128);
+            let b0 = v128_load(row1.as_ptr().add(c) as *const v128);
+            let b1 = v128_load(row1.as_ptr().add(c + 16) as *const v128);
+
+            // Horizontal pairwise sums of adjacent u8 lanes -> u16 lanes.
+            let h0lo = u16x8_extadd_pairwise_u8x16(a0);
+            let h0hi = u16x8_extadd_pairwise_u8x16(a1);
+            let h1lo = u16x8_extadd_pairwise_u8x16(b0);
+            let h1hi = u16x8_extadd_pairwise_u8x16(b1);
+
+            let slo = u16x8_shr(i16x8_add(i16x8_add(h0lo, h1lo), two), 2);
+            let shi = u16x8_shr(i16x8_add(i16x8_add(h0hi, h1hi), two), 2);
+
+            let out = u8x16_narrow_i16x8(slo, shi);
+            v128_store(dst_row.as_mut_ptr().add(o) as *mut v128, out);
+
+            o += 16;
+        }
+
+        downsample_row_tail_scalar(row0, row1, dst_row, simd_cols);
     }
 
     Matrix::<u8>::from_vec(new_h, new_w, 1, dst_data)
@@ -365,5 +631,99 @@ mod tests {
             p.build(&img),
             Err(PyramidError::LevelTooSmall { .. })
         ));
+    }
+
+    // ── SIMD parity (#132) ───────────────────────────────────────────────
+
+    /// Deterministic pseudo-random image, seeded so failures reproduce.
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    fn random_img(rows: usize, cols: usize, seed: u64) -> Matrix<u8> {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let data: Vec<u8> = (0..rows * cols).map(|_| rng.random::<u8>()).collect();
+        Matrix::<u8>::from_vec(rows, cols, 1, data)
+    }
+
+    /// Sizes chosen to exercise the SIMD main loop, the scalar remainder
+    /// tail, odd dimensions, sub-block widths, and block boundaries.
+    #[cfg(any(
+        all(target_arch = "x86_64", feature = "simd-x86-sse41"),
+        all(target_arch = "x86_64", feature = "simd-x86-avx2"),
+    ))]
+    const PARITY_SIZES: &[(usize, usize)] = &[
+        (2, 2),
+        (3, 3),
+        (4, 4),
+        (5, 7),
+        (15, 15),
+        (16, 16),
+        (17, 17),
+        (31, 33),
+        (32, 32),
+        (33, 31),
+        (63, 65),
+        (64, 64),
+        (65, 63),
+        (100, 100),
+        (129, 127),
+        (200, 320),
+    ];
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_downsample_sse41_matches_scalar() {
+        if !is_x86_feature_detected!("sse4.1") {
+            eprintln!("sse4.1 not available at runtime; skipping parity test");
+            return;
+        }
+        for (i, &(rows, cols)) in PARITY_SIZES.iter().enumerate() {
+            let img = random_img(rows, cols, 0x5E_5E_00 + i as u64);
+            let scalar = downsample_scalar(&img);
+            // SAFETY: guarded by the runtime `sse4.1` check above.
+            let simd = unsafe { downsample_sse41(&img) };
+            assert_eq!(
+                scalar.as_slice(),
+                simd.as_slice(),
+                "sse41 mismatch at {rows}x{cols}"
+            );
+        }
+    }
+
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    #[test]
+    fn test_downsample_avx2_matches_scalar() {
+        if !is_x86_feature_detected!("avx2") {
+            eprintln!("avx2 not available at runtime; skipping parity test");
+            return;
+        }
+        for (i, &(rows, cols)) in PARITY_SIZES.iter().enumerate() {
+            let img = random_img(rows, cols, 0xA2_A2_00 + i as u64);
+            let scalar = downsample_scalar(&img);
+            // SAFETY: guarded by the runtime `avx2` check above.
+            let simd = unsafe { downsample_avx2(&img) };
+            assert_eq!(
+                scalar.as_slice(),
+                simd.as_slice(),
+                "avx2 mismatch at {rows}x{cols}"
+            );
+        }
+    }
+
+    /// The public dispatcher must agree with the scalar baseline regardless
+    /// of which path it selects at runtime.
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_downsample_dispatch_matches_scalar() {
+        for (i, &(rows, cols)) in PARITY_SIZES.iter().enumerate() {
+            let img = random_img(rows, cols, 0xD1_5A_00 + i as u64);
+            assert_eq!(
+                downsample_scalar(&img).as_slice(),
+                downsample(&img).as_slice(),
+                "dispatch mismatch at {rows}x{cols}"
+            );
+        }
     }
 }
