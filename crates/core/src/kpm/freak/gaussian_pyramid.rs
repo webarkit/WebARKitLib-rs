@@ -275,12 +275,30 @@ pub fn num_octaves_for(width: usize, height: usize, min_size: usize) -> usize {
 
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 source → f32 dest.
 ///
+/// Dispatches to the fastest available implementation; currently scalar
+/// only (SIMD paths land in #201). See
+/// [`binomial_4th_order_u8_to_f32_scalar`].
+///
+/// # Note on visibility
+///
+/// This dispatcher, the `*_scalar` helpers, and
+/// [`downsample_bilinear_f32`] are `pub` so the criterion benchmark (a
+/// separate crate) can measure them directly. They are not a stability
+/// guarantee — prefer [`GaussianScaleSpacePyramid::build`].
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
+    binomial_4th_order_u8_to_f32_scalar(src)
+}
+
+/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 source → f32 dest.
+///
 /// H pass uses `u16` accumulator (max value `16 * 255 = 4080`, fits `u16`).
 /// V pass multiplies by `1 / 256` to yield `f32` output. Border replication:
 /// edge pixels extend the 2-pixel border on each side.
 ///
 /// C equivalent: `vision::binomial_4th_order(float*, unsigned short*, const unsigned char*, ...)`.
-fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32_scalar(src: &Matrix<u8>) -> Matrix<f32> {
     let width = src.cols;
     let height = src.rows;
     debug_assert!(width >= 5 && height >= 5);
@@ -366,12 +384,23 @@ fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
     Matrix::<f32>::from_vec(height, width, 1, dst_data)
 }
 
+/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32.
+///
+/// Dispatches to the fastest available implementation; currently scalar
+/// only (SIMD paths land in #201). See
+/// [`binomial_4th_order_f32_to_f32_scalar`].
+#[must_use]
+pub fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
+    binomial_4th_order_f32_to_f32_scalar(src)
+}
+
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32. Used for
 /// the second and third levels within an octave and for all levels in
 /// non-zero octaves.
 ///
 /// C equivalent: `vision::binomial_4th_order(float*, float*, const float*, ...)`.
-fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
+#[must_use]
+pub fn binomial_4th_order_f32_to_f32_scalar(src: &Matrix<f32>) -> Matrix<f32> {
     let width = src.cols;
     let height = src.rows;
     debug_assert!(width >= 5 && height >= 5);
@@ -443,11 +472,21 @@ fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
 }
 
 /// 2x2 bilinear downsample. Output dims: `(src.rows >> 1, src.cols >> 1)`.
+///
+/// Dispatches to the fastest available implementation; currently scalar
+/// only (SIMD paths land in #202). See [`downsample_bilinear_f32_scalar`].
+#[must_use]
+pub fn downsample_bilinear_f32(src: &Matrix<f32>) -> Matrix<f32> {
+    downsample_bilinear_f32_scalar(src)
+}
+
+/// 2x2 bilinear downsample. Output dims: `(src.rows >> 1, src.cols >> 1)`.
 /// Per output pixel: `(p00 + p01 + p10 + p11) * 0.25`. No `ceil` adjustment
 /// (unlike the M8-1 box-filter pyramid).
 ///
 /// C equivalent: `vision::downsample_bilinear`.
-fn downsample_bilinear_f32(src: &Matrix<f32>) -> Matrix<f32> {
+#[must_use]
+pub fn downsample_bilinear_f32_scalar(src: &Matrix<f32>) -> Matrix<f32> {
     let dst_w = src.cols >> 1;
     let dst_h = src.rows >> 1;
     let src_data = src.as_slice();

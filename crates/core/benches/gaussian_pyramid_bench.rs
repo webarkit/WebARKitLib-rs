@@ -1,0 +1,160 @@
+/*
+ *  gaussian_pyramid_bench.rs
+ *  WebARKitLib-rs
+ *
+ *  This file is part of WebARKitLib-rs - WebARKit.
+ *
+ *  WebARKitLib-rs is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU Lesser General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  WebARKitLib-rs is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public License
+ *  along with WebARKitLib-rs.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  As a special exception, the copyright holders of this library give you
+ *  permission to link this library with independent modules to produce an
+ *  executable, regardless of the license terms of these independent modules, and to
+ *  copy and distribute the resulting executable under terms of your choice,
+ *  provided that you also meet, for each linked independent module, the terms and
+ *  conditions of the license of that module. An independent module is a module
+ *  which is neither derived from nor based on this library. If you modify this
+ *  library, you may extend this exception to your version of the library, but you
+ *  are not obligated to do so. If you do not wish to do so, delete this exception
+ *  statement from your version.
+ *
+ *  Copyright 2026 WebARKit.
+ *
+ *  Author(s): Walter Perdan @kalwalt https://github.com/kalwalt
+ *
+ */
+
+//! Criterion baseline for the **Gaussian scale-space pyramid** (#200) — the
+//! pyramid the KPM/FREAK detector actually uses (via
+//! `DoGScaleInvariantDetector`).
+//!
+//! Establishes the scalar baseline so the SIMD work can prove its speedup:
+//! the binomial 5-tap filter (#201) and the bilinear downsample (#202).
+//!
+//! Groups, each at 640×480, 1280×720 and 1920×1080:
+//!
+//! - `gaussian_binomial_u8`: `binomial_4th_order_u8_to_f32_scalar` (octave 0).
+//! - `gaussian_binomial_f32`: `binomial_4th_order_f32_to_f32_scalar` (the
+//!   dominant per-octave cost — runs 3× per octave).
+//! - `gaussian_bilinear`: `downsample_bilinear_f32_scalar` (between octaves).
+//! - `gaussian_build`: end-to-end `GaussianScaleSpacePyramid::build` with
+//!   `num_octaves` from `num_octaves_for(w, h, 8)`, matching the real KPM
+//!   backend (`rust_backend.rs`).
+//!
+//! Inputs are filled deterministically with a fixed-seed PRNG so runs are
+//! comparable across machines and across PRs in the series.
+
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use purecv::core::Matrix;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use std::hint::black_box;
+use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
+    binomial_4th_order_f32_to_f32_scalar, binomial_4th_order_u8_to_f32_scalar,
+    downsample_bilinear_f32_scalar,
+};
+use webarkitlib_rs::kpm::freak::{num_octaves_for, GaussianScaleSpacePyramid};
+
+/// Typical AR camera input resolutions as `(width, height)`.
+const SIZES: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
+
+/// `min_size` for `num_octaves_for`, matching the real KPM backend.
+const MIN_COARSE_SIZE: usize = 8;
+
+/// Deterministic grayscale `Matrix<u8>` (`rows × cols`), fixed-seed PRNG.
+fn random_u8(rows: usize, cols: usize) -> Matrix<u8> {
+    let mut rng = StdRng::seed_from_u64(0x6A05_51A2);
+    let data: Vec<u8> = (0..rows * cols).map(|_| rng.random::<u8>()).collect();
+    Matrix::<u8>::from_vec(rows, cols, 1, data)
+}
+
+/// Deterministic `Matrix<f32>` with values in `[0, 256)`, fixed-seed PRNG.
+fn random_f32(rows: usize, cols: usize) -> Matrix<f32> {
+    let mut rng = StdRng::seed_from_u64(0x6A05_51A3);
+    let data: Vec<f32> = (0..rows * cols)
+        .map(|_| rng.random::<u8>() as f32)
+        .collect();
+    Matrix::<f32>::from_vec(rows, cols, 1, data)
+}
+
+fn bench_binomial_u8(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gaussian_binomial_u8");
+    for &(w, h) in SIZES {
+        let src = random_u8(h, w);
+        group.throughput(Throughput::Elements((w * h) as u64));
+        group.bench_with_input(
+            BenchmarkId::new("scalar", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| binomial_4th_order_u8_to_f32_scalar(black_box(src))),
+        );
+    }
+    group.finish();
+}
+
+fn bench_binomial_f32(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gaussian_binomial_f32");
+    for &(w, h) in SIZES {
+        let src = random_f32(h, w);
+        group.throughput(Throughput::Elements((w * h) as u64));
+        group.bench_with_input(
+            BenchmarkId::new("scalar", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| binomial_4th_order_f32_to_f32_scalar(black_box(src))),
+        );
+    }
+    group.finish();
+}
+
+fn bench_bilinear(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gaussian_bilinear");
+    for &(w, h) in SIZES {
+        let src = random_f32(h, w);
+        group.throughput(Throughput::Elements((w * h) as u64));
+        group.bench_with_input(
+            BenchmarkId::new("scalar", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| downsample_bilinear_f32_scalar(black_box(src))),
+        );
+    }
+    group.finish();
+}
+
+fn bench_build(c: &mut Criterion) {
+    let mut group = c.benchmark_group("gaussian_build");
+    for &(w, h) in SIZES {
+        let src = random_u8(h, w);
+        let n_oct = num_octaves_for(w, h, MIN_COARSE_SIZE);
+        group.throughput(Throughput::Elements((w * h) as u64));
+        group.bench_with_input(
+            BenchmarkId::new("scalar", format!("{w}x{h}")),
+            &src,
+            |bencher, src| {
+                bencher.iter(|| {
+                    let mut p = GaussianScaleSpacePyramid::new(n_oct);
+                    p.build(black_box(src)).expect("build should succeed");
+                    p
+                })
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_binomial_u8,
+    bench_binomial_f32,
+    bench_bilinear,
+    bench_build
+);
+criterion_main!(benches);
