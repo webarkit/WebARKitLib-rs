@@ -20,10 +20,24 @@ on:
     branches:
       - dev
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
   push:
     branches:
       - dev
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
 
 env:
   CARGO_TERM_COLOR: always
