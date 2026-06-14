@@ -1,0 +1,54 @@
+name: Miri
+
+# Skip-shim for the Miri required gate.
+#
+# The real Miri workflow (.github/workflows/miri.yml) uses `paths-ignore`
+# to skip docs-only changes. But the `protect-main` / `protect-dev`
+# rulesets require a check named `miri (pure-Rust UB validation)` to
+# pass on every PR — including docs-only ones. Without this shim a
+# README-only PR would have a "missing" required check and could not
+# merge.
+#
+# This workflow declares the same `name:` and the same job `name:` as
+# miri.yml, but triggers ONLY on the paths the real workflow ignores.
+# It does no actual work — it just emits a passing check with the
+# expected name so branch protection is satisfied.
+#
+# IMPORTANT: keep the workflow `name:` and job `name:` here in sync
+# with miri.yml. GitHub matches required checks on those names
+# exactly.
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '**/*.md'
+      - 'docs/**'
+      - 'assets/**'
+      - 'LICENSE*'
+      - '.gitignore'
+      - '.gitattributes'
+
+jobs:
+  miri:
+    name: miri (pure-Rust UB validation)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip — docs-only change, no Rust touched
+        run: |
+          echo "This change touches only docs / assets / LICENSE."
+          echo "The real Miri workflow ran zero seconds because there"
+          echo "is no Rust code change to validate."
