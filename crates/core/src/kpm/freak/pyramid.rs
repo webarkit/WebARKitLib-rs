@@ -726,4 +726,55 @@ mod tests {
             );
         }
     }
+
+    /// Exhaustive width sweep: every column count from 2..=160 (covering
+    /// sub-block widths, single/multi full blocks, and every possible
+    /// remainder for both the 16-wide SSE/wasm and 32-wide AVX2 main
+    /// loops) crossed with a few row counts. This is the strong guarantee
+    /// that the SIMD/scalar split point is correct for *all* dimensions,
+    /// not just the hand-picked sizes above.
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-avx2"))]
+    #[test]
+    fn test_downsample_avx2_matches_scalar_exhaustive() {
+        if !is_x86_feature_detected!("avx2") {
+            eprintln!("avx2 not available at runtime; skipping exhaustive parity test");
+            return;
+        }
+        for rows in [2usize, 3, 4, 5] {
+            for cols in 2usize..=160 {
+                let img = random_img(rows, cols, 0xE0_0000 + (rows * 1000 + cols) as u64);
+                let scalar = downsample_scalar(&img);
+                // SAFETY: guarded by the runtime `avx2` check above.
+                let simd = unsafe { downsample_avx2(&img) };
+                assert_eq!(
+                    scalar.as_slice(),
+                    simd.as_slice(),
+                    "avx2 exhaustive mismatch at {rows}x{cols}"
+                );
+            }
+        }
+    }
+
+    /// Same exhaustive width sweep for the SSE4.1 path.
+    #[cfg(all(target_arch = "x86_64", feature = "simd-x86-sse41"))]
+    #[test]
+    fn test_downsample_sse41_matches_scalar_exhaustive() {
+        if !is_x86_feature_detected!("sse4.1") {
+            eprintln!("sse4.1 not available at runtime; skipping exhaustive parity test");
+            return;
+        }
+        for rows in [2usize, 3, 4, 5] {
+            for cols in 2usize..=160 {
+                let img = random_img(rows, cols, 0x55_0000 + (rows * 1000 + cols) as u64);
+                let scalar = downsample_scalar(&img);
+                // SAFETY: guarded by the runtime `sse4.1` check above.
+                let simd = unsafe { downsample_sse41(&img) };
+                assert_eq!(
+                    scalar.as_slice(),
+                    simd.as_slice(),
+                    "sse41 exhaustive mismatch at {rows}x{cols}"
+                );
+            }
+        }
+    }
 }
