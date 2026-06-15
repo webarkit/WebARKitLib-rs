@@ -155,5 +155,9 @@ harness = false
 required-features = ["log-helpers"]
 
 [[bench]]
+name = "pyramid_bench"
+harness = false
+
+[[bench]]
 name = "gaussian_pyramid_bench"
 harness = false
