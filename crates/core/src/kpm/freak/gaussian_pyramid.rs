@@ -269,201 +269,381 @@ pub fn num_octaves_for(width: usize, height: usize, min_size: usize) -> usize {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Private filter helpers — byte-for-byte port of C++ `binomial_4th_order`
-// and `downsample_bilinear` from `gaussian_scale_space_pyramid.cpp`.
+// Filter helpers — byte-for-byte port of C++ `binomial_4th_order` and
+// `downsample_bilinear` from `gaussian_scale_space_pyramid.cpp`.
+//
+// The per-row helpers below are the single source of truth for the
+// arithmetic; the serial scalar paths and the rayon paths (#207) both call
+// them, so output is bit-for-bit identical regardless of threading
+// (validated by the `dual-mode` C++ parity test). rows are independent, so
+// parallelizing over them changes nothing numerically.
 // ─────────────────────────────────────────────────────────────────────────
+
+/// `1 / 256` normalization applied on the vertical pass. Exact in f32.
+const INV_256: f32 = 1.0 / 256.0;
+
+/// Below this pixel count the rayon path's thread-pool overhead outweighs the
+/// win, so the dispatchers run serially (CLAUDE.md §3: "don't parallelize
+/// small loops"). Benchmarking showed the binomial filter regresses at
+/// 640×480 (~0.3 MPx) but scales ~1.5× at 1280×720 (~0.9 MPx); this
+/// conservative threshold keeps ≤480p serial and is a machine-dependent
+/// heuristic, not a hard tuning point.
+const PARALLEL_MIN_PIXELS: usize = 600_000;
+
+// ── f32 → f32 per-row helpers ────────────────────────────────────────────
+
+/// Horizontal pass of one row, f32 → f32. `s` and `t` are the row slices of
+/// the source and the temp buffer.
+#[inline]
+fn binomial_h_row_f32(s: &[f32], t: &mut [f32], width: usize) {
+    t[0] = 6.0 * s[0] + 4.0 * (s[0] + s[1]) + s[0] + s[2];
+    t[1] = 6.0 * s[1] + 4.0 * (s[0] + s[2]) + s[0] + s[3];
+    for col in 2..width - 2 {
+        t[col] = 6.0 * s[col] + 4.0 * (s[col - 1] + s[col + 1]) + s[col - 2] + s[col + 2];
+    }
+    let c = width - 2;
+    t[c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c + 1]) + s[c - 2] + s[c + 1];
+    let c = width - 1;
+    t[c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c]) + s[c - 2] + s[c];
+}
+
+/// Vertical pass of one output `row`, f32 → f32. Reads `tmp`, writes
+/// `dst_row` (length `width`). Border rows (0, 1, height-2, height-1)
+/// replicate edges; interior rows use the full 5-tap.
+#[inline]
+fn binomial_v_row_f32(tmp: &[f32], dst_row: &mut [f32], row: usize, width: usize, height: usize) {
+    if row == 0 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let p = tmp[col];
+            let pp1 = tmp[width + col];
+            let pp2 = tmp[2 * width + col];
+            *d = (6.0 * p + 4.0 * (p + pp1) + p + pp2) * INV_256;
+        }
+    } else if row == 1 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm = tmp[col];
+            let p = tmp[width + col];
+            let pp1 = tmp[2 * width + col];
+            let pp2 = tmp[3 * width + col];
+            *d = (6.0 * p + 4.0 * (pm + pp1) + pm + pp2) * INV_256;
+        }
+    } else if row == height - 2 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(height - 4) * width + col];
+            let pm1 = tmp[(height - 3) * width + col];
+            let p = tmp[(height - 2) * width + col];
+            let pp = tmp[(height - 1) * width + col];
+            *d = (6.0 * p + 4.0 * (pm1 + pp) + pm2 + pp) * INV_256;
+        }
+    } else if row == height - 1 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(height - 3) * width + col];
+            let pm1 = tmp[(height - 2) * width + col];
+            let p = tmp[(height - 1) * width + col];
+            *d = (6.0 * p + 4.0 * (pm1 + p) + pm2 + p) * INV_256;
+        }
+    } else {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(row - 2) * width + col];
+            let pm1 = tmp[(row - 1) * width + col];
+            let p = tmp[row * width + col];
+            let pp1 = tmp[(row + 1) * width + col];
+            let pp2 = tmp[(row + 2) * width + col];
+            *d = (6.0 * p + 4.0 * (pm1 + pp1) + pm2 + pp2) * INV_256;
+        }
+    }
+}
+
+// ── u8 → f32 per-row helpers ─────────────────────────────────────────────
+
+/// Horizontal pass of one row, u8 → u16 (exact integer; max 4080).
+#[inline]
+fn binomial_h_row_u8(s: &[u8], t: &mut [u16], width: usize) {
+    t[0] = 6 * s[0] as u16 + 4 * (s[0] as u16 + s[1] as u16) + (s[0] as u16 + s[2] as u16);
+    t[1] = 6 * s[1] as u16 + 4 * (s[0] as u16 + s[2] as u16) + (s[0] as u16 + s[3] as u16);
+    for col in 2..width - 2 {
+        t[col] = 6 * s[col] as u16
+            + 4 * (s[col - 1] as u16 + s[col + 1] as u16)
+            + (s[col - 2] as u16 + s[col + 2] as u16);
+    }
+    let c = width - 2;
+    t[c] = 6 * s[c] as u16
+        + 4 * (s[c - 1] as u16 + s[c + 1] as u16)
+        + (s[c - 2] as u16 + s[c + 1] as u16);
+    let c = width - 1;
+    t[c] = 6 * s[c] as u16 + 4 * (s[c - 1] as u16 + s[c] as u16) + (s[c - 2] as u16 + s[c] as u16);
+}
+
+/// Vertical pass of one output `row`, u16 → f32 (sum in `u32`, then
+/// `* INV_256`).
+#[inline]
+fn binomial_v_row_u8(tmp: &[u16], dst_row: &mut [f32], row: usize, width: usize, height: usize) {
+    if row == 0 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let p = tmp[col] as u32;
+            let pp1 = tmp[width + col] as u32;
+            let pp2 = tmp[2 * width + col] as u32;
+            *d = ((6 * p + 4 * (p + pp1) + p + pp2) as f32) * INV_256;
+        }
+    } else if row == 1 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm = tmp[col] as u32;
+            let p = tmp[width + col] as u32;
+            let pp1 = tmp[2 * width + col] as u32;
+            let pp2 = tmp[3 * width + col] as u32;
+            *d = ((6 * p + 4 * (pm + pp1) + pm + pp2) as f32) * INV_256;
+        }
+    } else if row == height - 2 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(height - 4) * width + col] as u32;
+            let pm1 = tmp[(height - 3) * width + col] as u32;
+            let p = tmp[(height - 2) * width + col] as u32;
+            let pp = tmp[(height - 1) * width + col] as u32;
+            *d = ((6 * p + 4 * (pm1 + pp) + pm2 + pp) as f32) * INV_256;
+        }
+    } else if row == height - 1 {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(height - 3) * width + col] as u32;
+            let pm1 = tmp[(height - 2) * width + col] as u32;
+            let p = tmp[(height - 1) * width + col] as u32;
+            *d = ((6 * p + 4 * (pm1 + p) + pm2 + p) as f32) * INV_256;
+        }
+    } else {
+        for (col, d) in dst_row.iter_mut().enumerate() {
+            let pm2 = tmp[(row - 2) * width + col] as u32;
+            let pm1 = tmp[(row - 1) * width + col] as u32;
+            let p = tmp[row * width + col] as u32;
+            let pp1 = tmp[(row + 1) * width + col] as u32;
+            let pp2 = tmp[(row + 2) * width + col] as u32;
+            *d = ((6 * p + 4 * (pm1 + pp1) + pm2 + pp2) as f32) * INV_256;
+        }
+    }
+}
+
+/// 2x2 bilinear downsample of one output row: `(p00+p01+p10+p11) * 0.25`.
+#[inline]
+fn bilinear_row_f32(src_data: &[f32], dst_row: &mut [f32], out_row: usize, src_w: usize) {
+    let r0 = (out_row * 2) * src_w;
+    let r1 = r0 + src_w;
+    for (col, d) in dst_row.iter_mut().enumerate() {
+        let c = col * 2;
+        let sum = src_data[r0 + c] + src_data[r0 + c + 1] + src_data[r1 + c] + src_data[r1 + c + 1];
+        *d = sum * 0.25;
+    }
+}
+
+// ── u8 → f32 ─────────────────────────────────────────────────────────────
 
 /// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, u8 source → f32 dest.
 ///
-/// H pass uses `u16` accumulator (max value `16 * 255 = 4080`, fits `u16`).
-/// V pass multiplies by `1 / 256` to yield `f32` output. Border replication:
-/// edge pixels extend the 2-pixel border on each side.
+/// Dispatches to the rayon path above [`PARALLEL_MIN_PIXELS`] (non-wasm),
+/// else scalar. Output is identical either way.
+///
+/// # Note on visibility
+///
+/// This dispatcher, the `*_scalar` / `*_rayon` variants, and
+/// [`downsample_bilinear_f32`] are `pub` so the criterion benchmark (a
+/// separate crate) can measure them directly. They are not a stability
+/// guarantee — prefer [`GaussianScaleSpacePyramid::build`].
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if src.rows.saturating_mul(src.cols) >= PARALLEL_MIN_PIXELS {
+            return binomial_4th_order_u8_to_f32_rayon(src);
+        }
+    }
+    binomial_4th_order_u8_to_f32_scalar(src)
+}
+
+/// Serial u8 → f32 binomial filter. H pass uses `u16` accumulators (max
+/// `16 * 255 = 4080`); V pass sums in `u32` then `* 1/256`. Border
+/// replication extends edge pixels by 2 on each side.
 ///
 /// C equivalent: `vision::binomial_4th_order(float*, unsigned short*, const unsigned char*, ...)`.
-fn binomial_4th_order_u8_to_f32(src: &Matrix<u8>) -> Matrix<f32> {
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32_scalar(src: &Matrix<u8>) -> Matrix<f32> {
     let width = src.cols;
     let height = src.rows;
     debug_assert!(width >= 5 && height >= 5);
 
     let src_data = src.as_slice();
     let mut tmp = vec![0u16; width * height];
-
-    // Horizontal pass.
     for row in 0..height {
-        let row_off = row * width;
-        let s = &src_data[row_off..row_off + width];
-        // col 0: xm2 = xm1 = c = s[0], xp1 = s[1], xp2 = s[2].
-        tmp[row_off] =
-            6 * s[0] as u16 + 4 * (s[0] as u16 + s[1] as u16) + (s[0] as u16 + s[2] as u16);
-        // col 1: xm2 = s[0], xm1 = s[0], c = s[1], xp1 = s[2], xp2 = s[3].
-        tmp[row_off + 1] =
-            6 * s[1] as u16 + 4 * (s[0] as u16 + s[2] as u16) + (s[0] as u16 + s[3] as u16);
-        // Non-border cols.
-        for col in 2..width - 2 {
-            tmp[row_off + col] = 6 * s[col] as u16
-                + 4 * (s[col - 1] as u16 + s[col + 1] as u16)
-                + (s[col - 2] as u16 + s[col + 2] as u16);
-        }
-        // col width-2: xp2 clamped to s[width-1].
-        let c = width - 2;
-        tmp[row_off + c] = 6 * s[c] as u16
-            + 4 * (s[c - 1] as u16 + s[c + 1] as u16)
-            + (s[c - 2] as u16 + s[c + 1] as u16);
-        // col width-1: xp1 = xp2 = s[width-1].
-        let c = width - 1;
-        tmp[row_off + c] =
-            6 * s[c] as u16 + 4 * (s[c - 1] as u16 + s[c] as u16) + (s[c - 2] as u16 + s[c] as u16);
+        let off = row * width;
+        binomial_h_row_u8(
+            &src_data[off..off + width],
+            &mut tmp[off..off + width],
+            width,
+        );
     }
 
-    // Vertical pass.
     let mut dst_data = vec![0f32; width * height];
-    const INV_256: f32 = 1.0 / 256.0;
-
-    // Top border: rows 0 and 1.
-    for col in 0..width {
-        // row 0: pm2 = pm1 = p = tmp[col]; pp1 = tmp[width+col]; pp2 = tmp[2w+col].
-        let p = tmp[col] as u32;
-        let pp1 = tmp[width + col] as u32;
-        let pp2 = tmp[2 * width + col] as u32;
-        dst_data[col] = ((6 * p + 4 * (p + pp1) + p + pp2) as f32) * INV_256;
-        // row 1: pm2 = pm1 = tmp[col]; p = tmp[w+col]; pp1 = tmp[2w+col]; pp2 = tmp[3w+col].
-        let pm = tmp[col] as u32;
-        let p = tmp[width + col] as u32;
-        let pp1 = tmp[2 * width + col] as u32;
-        let pp2 = tmp[3 * width + col] as u32;
-        dst_data[width + col] = ((6 * p + 4 * (pm + pp1) + pm + pp2) as f32) * INV_256;
-    }
-
-    // Non-border rows.
-    for row in 2..height - 2 {
-        let row_off = row * width;
-        for col in 0..width {
-            let pm2 = tmp[(row - 2) * width + col] as u32;
-            let pm1 = tmp[(row - 1) * width + col] as u32;
-            let p = tmp[row_off + col] as u32;
-            let pp1 = tmp[(row + 1) * width + col] as u32;
-            let pp2 = tmp[(row + 2) * width + col] as u32;
-            dst_data[row_off + col] = ((6 * p + 4 * (pm1 + pp1) + pm2 + pp2) as f32) * INV_256;
-        }
-    }
-
-    // Bottom border: rows h-2 and h-1.
-    let h = height;
-    for col in 0..width {
-        // row h-2: pp1 = pp2 = tmp[(h-1)*w + col].
-        let pm2 = tmp[(h - 4) * width + col] as u32;
-        let pm1 = tmp[(h - 3) * width + col] as u32;
-        let p = tmp[(h - 2) * width + col] as u32;
-        let pp = tmp[(h - 1) * width + col] as u32;
-        dst_data[(h - 2) * width + col] = ((6 * p + 4 * (pm1 + pp) + pm2 + pp) as f32) * INV_256;
-        // row h-1: p = pp1 = pp2 = tmp[(h-1)*w + col].
-        let pm2 = tmp[(h - 3) * width + col] as u32;
-        let pm1 = tmp[(h - 2) * width + col] as u32;
-        let p = tmp[(h - 1) * width + col] as u32;
-        dst_data[(h - 1) * width + col] = ((6 * p + 4 * (pm1 + p) + pm2 + p) as f32) * INV_256;
+    for row in 0..height {
+        let off = row * width;
+        binomial_v_row_u8(&tmp, &mut dst_data[off..off + width], row, width, height);
     }
 
     Matrix::<f32>::from_vec(height, width, 1, dst_data)
 }
 
-/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32. Used for
-/// the second and third levels within an octave and for all levels in
-/// non-zero octaves.
+/// Rayon u8 → f32 binomial filter — parallel over rows. Bit-for-bit
+/// identical to [`binomial_4th_order_u8_to_f32_scalar`] (rows independent).
+#[cfg(not(target_arch = "wasm32"))]
+#[must_use]
+pub fn binomial_4th_order_u8_to_f32_rayon(src: &Matrix<u8>) -> Matrix<f32> {
+    use rayon::prelude::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0u16; width * height];
+    tmp.par_chunks_mut(width)
+        .zip(src_data.par_chunks(width))
+        .for_each(|(t_row, s_row)| binomial_h_row_u8(s_row, t_row, width));
+
+    let mut dst_data = vec![0f32; width * height];
+    dst_data
+        .par_chunks_mut(width)
+        .enumerate()
+        .for_each(|(row, dst_row)| binomial_v_row_u8(&tmp, dst_row, row, width, height));
+
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+// ── f32 → f32 ────────────────────────────────────────────────────────────
+
+/// 5-tap separable `[1, 4, 6, 4, 1]` binomial filter, f32 → f32.
+///
+/// Dispatches to the rayon path above [`PARALLEL_MIN_PIXELS`] (non-wasm),
+/// else scalar. Output is identical either way.
+#[must_use]
+pub fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if src.rows.saturating_mul(src.cols) >= PARALLEL_MIN_PIXELS {
+            return binomial_4th_order_f32_to_f32_rayon(src);
+        }
+    }
+    binomial_4th_order_f32_to_f32_scalar(src)
+}
+
+/// Serial f32 → f32 binomial filter. Used for scales 1 and 2 within an
+/// octave and for all scales in non-zero octaves.
 ///
 /// C equivalent: `vision::binomial_4th_order(float*, float*, const float*, ...)`.
-fn binomial_4th_order_f32_to_f32(src: &Matrix<f32>) -> Matrix<f32> {
+#[must_use]
+pub fn binomial_4th_order_f32_to_f32_scalar(src: &Matrix<f32>) -> Matrix<f32> {
     let width = src.cols;
     let height = src.rows;
     debug_assert!(width >= 5 && height >= 5);
 
     let src_data = src.as_slice();
     let mut tmp = vec![0f32; width * height];
-
-    // Horizontal pass. Addition order matches C++ left-to-right exactly to
-    // preserve f32 bit-for-bit parity (no parenthesizing of the (ll + rr) term).
     for row in 0..height {
-        let row_off = row * width;
-        let s = &src_data[row_off..row_off + width];
-        tmp[row_off] = 6.0 * s[0] + 4.0 * (s[0] + s[1]) + s[0] + s[2];
-        tmp[row_off + 1] = 6.0 * s[1] + 4.0 * (s[0] + s[2]) + s[0] + s[3];
-        for col in 2..width - 2 {
-            tmp[row_off + col] =
-                6.0 * s[col] + 4.0 * (s[col - 1] + s[col + 1]) + s[col - 2] + s[col + 2];
-        }
-        let c = width - 2;
-        tmp[row_off + c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c + 1]) + s[c - 2] + s[c + 1];
-        let c = width - 1;
-        tmp[row_off + c] = 6.0 * s[c] + 4.0 * (s[c - 1] + s[c]) + s[c - 2] + s[c];
+        let off = row * width;
+        binomial_h_row_f32(
+            &src_data[off..off + width],
+            &mut tmp[off..off + width],
+            width,
+        );
     }
 
-    // Vertical pass.
     let mut dst_data = vec![0f32; width * height];
-    const INV_256: f32 = 1.0 / 256.0;
-
-    for col in 0..width {
-        // row 0
-        let p = tmp[col];
-        let pp1 = tmp[width + col];
-        let pp2 = tmp[2 * width + col];
-        dst_data[col] = (6.0 * p + 4.0 * (p + pp1) + p + pp2) * INV_256;
-        // row 1
-        let pm = tmp[col];
-        let p = tmp[width + col];
-        let pp1 = tmp[2 * width + col];
-        let pp2 = tmp[3 * width + col];
-        dst_data[width + col] = (6.0 * p + 4.0 * (pm + pp1) + pm + pp2) * INV_256;
-    }
-
-    for row in 2..height - 2 {
-        let row_off = row * width;
-        for col in 0..width {
-            let pm2 = tmp[(row - 2) * width + col];
-            let pm1 = tmp[(row - 1) * width + col];
-            let p = tmp[row_off + col];
-            let pp1 = tmp[(row + 1) * width + col];
-            let pp2 = tmp[(row + 2) * width + col];
-            dst_data[row_off + col] = (6.0 * p + 4.0 * (pm1 + pp1) + pm2 + pp2) * INV_256;
-        }
-    }
-
-    let h = height;
-    for col in 0..width {
-        let pm2 = tmp[(h - 4) * width + col];
-        let pm1 = tmp[(h - 3) * width + col];
-        let p = tmp[(h - 2) * width + col];
-        let pp = tmp[(h - 1) * width + col];
-        dst_data[(h - 2) * width + col] = (6.0 * p + 4.0 * (pm1 + pp) + pm2 + pp) * INV_256;
-        let pm2 = tmp[(h - 3) * width + col];
-        let pm1 = tmp[(h - 2) * width + col];
-        let p = tmp[(h - 1) * width + col];
-        dst_data[(h - 1) * width + col] = (6.0 * p + 4.0 * (pm1 + p) + pm2 + p) * INV_256;
+    for row in 0..height {
+        let off = row * width;
+        binomial_v_row_f32(&tmp, &mut dst_data[off..off + width], row, width, height);
     }
 
     Matrix::<f32>::from_vec(height, width, 1, dst_data)
 }
 
+/// Rayon f32 → f32 binomial filter — parallel over rows. Bit-for-bit
+/// identical to [`binomial_4th_order_f32_to_f32_scalar`] (rows independent).
+#[cfg(not(target_arch = "wasm32"))]
+#[must_use]
+pub fn binomial_4th_order_f32_to_f32_rayon(src: &Matrix<f32>) -> Matrix<f32> {
+    use rayon::prelude::*;
+
+    let width = src.cols;
+    let height = src.rows;
+    debug_assert!(width >= 5 && height >= 5);
+
+    let src_data = src.as_slice();
+    let mut tmp = vec![0f32; width * height];
+    tmp.par_chunks_mut(width)
+        .zip(src_data.par_chunks(width))
+        .for_each(|(t_row, s_row)| binomial_h_row_f32(s_row, t_row, width));
+
+    let mut dst_data = vec![0f32; width * height];
+    dst_data
+        .par_chunks_mut(width)
+        .enumerate()
+        .for_each(|(row, dst_row)| binomial_v_row_f32(&tmp, dst_row, row, width, height));
+
+    Matrix::<f32>::from_vec(height, width, 1, dst_data)
+}
+
+// ── bilinear downsample ──────────────────────────────────────────────────
+
 /// 2x2 bilinear downsample. Output dims: `(src.rows >> 1, src.cols >> 1)`.
-/// Per output pixel: `(p00 + p01 + p10 + p11) * 0.25`. No `ceil` adjustment
-/// (unlike the M8-1 box-filter pyramid).
+///
+/// Dispatches to the rayon path above [`PARALLEL_MIN_PIXELS`] (non-wasm),
+/// else scalar.
+#[must_use]
+pub fn downsample_bilinear_f32(src: &Matrix<f32>) -> Matrix<f32> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        if src.rows.saturating_mul(src.cols) >= PARALLEL_MIN_PIXELS {
+            return downsample_bilinear_f32_rayon(src);
+        }
+    }
+    downsample_bilinear_f32_scalar(src)
+}
+
+/// Serial 2x2 bilinear downsample. Per output pixel:
+/// `(p00 + p01 + p10 + p11) * 0.25`. No `ceil` adjustment (unlike the M8-1
+/// box-filter pyramid).
 ///
 /// C equivalent: `vision::downsample_bilinear`.
-fn downsample_bilinear_f32(src: &Matrix<f32>) -> Matrix<f32> {
+#[must_use]
+pub fn downsample_bilinear_f32_scalar(src: &Matrix<f32>) -> Matrix<f32> {
     let dst_w = src.cols >> 1;
     let dst_h = src.rows >> 1;
     let src_data = src.as_slice();
     let src_w = src.cols;
 
-    let mut dst_data = Vec::<f32>::with_capacity(dst_w * dst_h);
+    let mut dst_data = vec![0f32; dst_w * dst_h];
     for row in 0..dst_h {
-        let r0 = (row * 2) * src_w;
-        let r1 = r0 + src_w;
-        for col in 0..dst_w {
-            let c = col * 2;
-            let sum =
-                src_data[r0 + c] + src_data[r0 + c + 1] + src_data[r1 + c] + src_data[r1 + c + 1];
-            dst_data.push(sum * 0.25);
-        }
+        bilinear_row_f32(
+            src_data,
+            &mut dst_data[row * dst_w..(row + 1) * dst_w],
+            row,
+            src_w,
+        );
     }
+    Matrix::<f32>::from_vec(dst_h, dst_w, 1, dst_data)
+}
+
+/// Rayon 2x2 bilinear downsample — parallel over output rows. Bit-for-bit
+/// identical to [`downsample_bilinear_f32_scalar`].
+#[cfg(not(target_arch = "wasm32"))]
+#[must_use]
+pub fn downsample_bilinear_f32_rayon(src: &Matrix<f32>) -> Matrix<f32> {
+    use rayon::prelude::*;
+
+    let dst_w = src.cols >> 1;
+    let dst_h = src.rows >> 1;
+    let src_data = src.as_slice();
+    let src_w = src.cols;
+
+    let mut dst_data = vec![0f32; dst_w * dst_h];
+    dst_data
+        .par_chunks_mut(dst_w)
+        .enumerate()
+        .for_each(|(out_row, dst_row)| bilinear_row_f32(src_data, dst_row, out_row, src_w));
     Matrix::<f32>::from_vec(dst_h, dst_w, 1, dst_data)
 }
 
@@ -474,6 +654,115 @@ mod tests {
     fn gradient_u8(rows: usize, cols: usize) -> Matrix<u8> {
         let data: Vec<u8> = (0..rows * cols).map(|i| (i & 0xFF) as u8).collect();
         Matrix::<u8>::from_vec(rows, cols, 1, data)
+    }
+
+    // ── rayon parity (#207) ──────────────────────────────────────────────
+
+    /// Deterministic random u8 / f32 images, seeded so failures reproduce.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn rng_u8(rows: usize, cols: usize, seed: u64) -> Matrix<u8> {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let data: Vec<u8> = (0..rows * cols).map(|_| rng.random::<u8>()).collect();
+        Matrix::<u8>::from_vec(rows, cols, 1, data)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn rng_f32(rows: usize, cols: usize, seed: u64) -> Matrix<f32> {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
+        let data: Vec<f32> = (0..rows * cols)
+            .map(|_| rng.random::<u8>() as f32)
+            .collect();
+        Matrix::<f32>::from_vec(rows, cols, 1, data)
+    }
+
+    /// Sizes spanning below, at, and above `PARALLEL_MIN_PIXELS`, with odd
+    /// dimensions and small images. All `>= 5x5`.
+    #[cfg(not(target_arch = "wasm32"))]
+    const RAYON_PARITY_SIZES: &[(usize, usize)] = &[
+        (5, 5),
+        (33, 31),
+        (64, 64),
+        (256, 256),
+        (300, 301),
+        (480, 640),
+        (513, 511),
+    ];
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn assert_f32_bits_eq(a: &Matrix<f32>, b: &Matrix<f32>, what: &str) {
+        assert_eq!(a.as_slice().len(), b.as_slice().len(), "{what}: size");
+        for (i, (&x, &y)) in a.as_slice().iter().zip(b.as_slice().iter()).enumerate() {
+            assert_eq!(x.to_bits(), y.to_bits(), "{what}: bit mismatch at {i}");
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
+    #[test]
+    fn test_binomial_f32_rayon_matches_scalar() {
+        for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
+            let src = rng_f32(rows, cols, 0x00F3_2A00 + i as u64);
+            let scalar = binomial_4th_order_f32_to_f32_scalar(&src);
+            let rayon = binomial_4th_order_f32_to_f32_rayon(&src);
+            assert_f32_bits_eq(
+                &scalar,
+                &rayon,
+                &format!("binomial_f32 rayon {rows}x{cols}"),
+            );
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
+    #[test]
+    fn test_binomial_u8_rayon_matches_scalar() {
+        for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
+            let src = rng_u8(rows, cols, 0x00C8_2A00 + i as u64);
+            let scalar = binomial_4th_order_u8_to_f32_scalar(&src);
+            let rayon = binomial_4th_order_u8_to_f32_rayon(&src);
+            assert_f32_bits_eq(&scalar, &rayon, &format!("binomial_u8 rayon {rows}x{cols}"));
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
+    #[test]
+    fn test_bilinear_rayon_matches_scalar() {
+        for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
+            let src = rng_f32(rows, cols, 0x00B1_2A00 + i as u64);
+            let scalar = downsample_bilinear_f32_scalar(&src);
+            let rayon = downsample_bilinear_f32_rayon(&src);
+            assert_f32_bits_eq(&scalar, &rayon, &format!("bilinear rayon {rows}x{cols}"));
+        }
+    }
+
+    /// The dispatchers (which pick rayon above the threshold) must agree with
+    /// the scalar path, including for a large image that triggers rayon.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
+    #[test]
+    fn test_dispatchers_match_scalar() {
+        // 800×800 = 640k px > PARALLEL_MIN_PIXELS, so the dispatchers take the
+        // rayon path here.
+        let f = rng_f32(800, 800, 0x0D15_2A00);
+        assert_f32_bits_eq(
+            &binomial_4th_order_f32_to_f32_scalar(&f),
+            &binomial_4th_order_f32_to_f32(&f),
+            "binomial_f32 dispatch",
+        );
+        assert_f32_bits_eq(
+            &downsample_bilinear_f32_scalar(&f),
+            &downsample_bilinear_f32(&f),
+            "bilinear dispatch",
+        );
+        let u = rng_u8(800, 800, 0x0D15_2A01);
+        assert_f32_bits_eq(
+            &binomial_4th_order_u8_to_f32_scalar(&u),
+            &binomial_4th_order_u8_to_f32(&u),
+            "binomial_u8 dispatch",
+        );
     }
 
     // ── Configuration sanity ─────────────────────────────────────────────
