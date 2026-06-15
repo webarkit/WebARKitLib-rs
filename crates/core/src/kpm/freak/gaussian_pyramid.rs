@@ -312,7 +312,6 @@ fn binomial_h_row_f32(s: &[f32], t: &mut [f32], width: usize) {
 /// replicate edges; interior rows use the full 5-tap.
 #[inline]
 fn binomial_v_row_f32(tmp: &[f32], dst_row: &mut [f32], row: usize, width: usize, height: usize) {
-    let h = height;
     if row == 0 {
         for (col, d) in dst_row.iter_mut().enumerate() {
             let p = tmp[col];
@@ -328,19 +327,19 @@ fn binomial_v_row_f32(tmp: &[f32], dst_row: &mut [f32], row: usize, width: usize
             let pp2 = tmp[3 * width + col];
             *d = (6.0 * p + 4.0 * (pm + pp1) + pm + pp2) * INV_256;
         }
-    } else if row == h - 2 {
+    } else if row == height - 2 {
         for (col, d) in dst_row.iter_mut().enumerate() {
-            let pm2 = tmp[(h - 4) * width + col];
-            let pm1 = tmp[(h - 3) * width + col];
-            let p = tmp[(h - 2) * width + col];
-            let pp = tmp[(h - 1) * width + col];
+            let pm2 = tmp[(height - 4) * width + col];
+            let pm1 = tmp[(height - 3) * width + col];
+            let p = tmp[(height - 2) * width + col];
+            let pp = tmp[(height - 1) * width + col];
             *d = (6.0 * p + 4.0 * (pm1 + pp) + pm2 + pp) * INV_256;
         }
-    } else if row == h - 1 {
+    } else if row == height - 1 {
         for (col, d) in dst_row.iter_mut().enumerate() {
-            let pm2 = tmp[(h - 3) * width + col];
-            let pm1 = tmp[(h - 2) * width + col];
-            let p = tmp[(h - 1) * width + col];
+            let pm2 = tmp[(height - 3) * width + col];
+            let pm1 = tmp[(height - 2) * width + col];
+            let p = tmp[(height - 1) * width + col];
             *d = (6.0 * p + 4.0 * (pm1 + p) + pm2 + p) * INV_256;
         }
     } else {
@@ -379,7 +378,6 @@ fn binomial_h_row_u8(s: &[u8], t: &mut [u16], width: usize) {
 /// `* INV_256`).
 #[inline]
 fn binomial_v_row_u8(tmp: &[u16], dst_row: &mut [f32], row: usize, width: usize, height: usize) {
-    let h = height;
     if row == 0 {
         for (col, d) in dst_row.iter_mut().enumerate() {
             let p = tmp[col] as u32;
@@ -395,19 +393,19 @@ fn binomial_v_row_u8(tmp: &[u16], dst_row: &mut [f32], row: usize, width: usize,
             let pp2 = tmp[3 * width + col] as u32;
             *d = ((6 * p + 4 * (pm + pp1) + pm + pp2) as f32) * INV_256;
         }
-    } else if row == h - 2 {
+    } else if row == height - 2 {
         for (col, d) in dst_row.iter_mut().enumerate() {
-            let pm2 = tmp[(h - 4) * width + col] as u32;
-            let pm1 = tmp[(h - 3) * width + col] as u32;
-            let p = tmp[(h - 2) * width + col] as u32;
-            let pp = tmp[(h - 1) * width + col] as u32;
+            let pm2 = tmp[(height - 4) * width + col] as u32;
+            let pm1 = tmp[(height - 3) * width + col] as u32;
+            let p = tmp[(height - 2) * width + col] as u32;
+            let pp = tmp[(height - 1) * width + col] as u32;
             *d = ((6 * p + 4 * (pm1 + pp) + pm2 + pp) as f32) * INV_256;
         }
-    } else if row == h - 1 {
+    } else if row == height - 1 {
         for (col, d) in dst_row.iter_mut().enumerate() {
-            let pm2 = tmp[(h - 3) * width + col] as u32;
-            let pm1 = tmp[(h - 2) * width + col] as u32;
-            let p = tmp[(h - 1) * width + col] as u32;
+            let pm2 = tmp[(height - 3) * width + col] as u32;
+            let pm1 = tmp[(height - 2) * width + col] as u32;
+            let p = tmp[(height - 1) * width + col] as u32;
             *d = ((6 * p + 4 * (pm1 + p) + pm2 + p) as f32) * INV_256;
         }
     } else {
@@ -701,6 +699,7 @@ mod tests {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
     #[test]
     fn test_binomial_f32_rayon_matches_scalar() {
         for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
@@ -716,6 +715,7 @@ mod tests {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
     #[test]
     fn test_binomial_u8_rayon_matches_scalar() {
         for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
@@ -727,6 +727,7 @@ mod tests {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
     #[test]
     fn test_bilinear_rayon_matches_scalar() {
         for (i, &(rows, cols)) in RAYON_PARITY_SIZES.iter().enumerate() {
@@ -740,6 +741,7 @@ mod tests {
     /// The dispatchers (which pick rayon above the threshold) must agree with
     /// the scalar path, including for a large image that triggers rayon.
     #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // #207: rayon parity over large images — too slow under Miri
     #[test]
     fn test_dispatchers_match_scalar() {
         // 800×800 = 640k px > PARALLEL_MIN_PIXELS, so the dispatchers take the
