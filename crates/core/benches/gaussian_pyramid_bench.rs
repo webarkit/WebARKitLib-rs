@@ -65,6 +65,12 @@ use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
 };
 use webarkitlib_rs::kpm::freak::{num_octaves_for, GaussianScaleSpacePyramid};
 
+#[cfg(not(target_arch = "wasm32"))]
+use webarkitlib_rs::kpm::freak::gaussian_pyramid::{
+    binomial_4th_order_f32_to_f32_rayon, binomial_4th_order_u8_to_f32_rayon,
+    downsample_bilinear_f32_rayon,
+};
+
 /// Typical AR camera input resolutions as `(width, height)`.
 const SIZES: &[(usize, usize)] = &[(640, 480), (1280, 720), (1920, 1080)];
 
@@ -97,6 +103,13 @@ fn bench_binomial_u8(c: &mut Criterion) {
             &src,
             |bencher, src| bencher.iter(|| binomial_4th_order_u8_to_f32_scalar(black_box(src))),
         );
+
+        #[cfg(not(target_arch = "wasm32"))]
+        group.bench_with_input(
+            BenchmarkId::new("rayon", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| binomial_4th_order_u8_to_f32_rayon(black_box(src))),
+        );
     }
     group.finish();
 }
@@ -111,6 +124,13 @@ fn bench_binomial_f32(c: &mut Criterion) {
             &src,
             |bencher, src| bencher.iter(|| binomial_4th_order_f32_to_f32_scalar(black_box(src))),
         );
+
+        #[cfg(not(target_arch = "wasm32"))]
+        group.bench_with_input(
+            BenchmarkId::new("rayon", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| binomial_4th_order_f32_to_f32_rayon(black_box(src))),
+        );
     }
     group.finish();
 }
@@ -124,6 +144,13 @@ fn bench_bilinear(c: &mut Criterion) {
             BenchmarkId::new("scalar", format!("{w}x{h}")),
             &src,
             |bencher, src| bencher.iter(|| downsample_bilinear_f32_scalar(black_box(src))),
+        );
+
+        #[cfg(not(target_arch = "wasm32"))]
+        group.bench_with_input(
+            BenchmarkId::new("rayon", format!("{w}x{h}")),
+            &src,
+            |bencher, src| bencher.iter(|| downsample_bilinear_f32_rayon(black_box(src))),
         );
     }
     group.finish();
