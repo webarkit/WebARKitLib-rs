@@ -62,6 +62,12 @@ use webarkitlib_rs::types::{
 };
 use webarkitlib_rs::version;
 
+// KPM detection (the `simple_nft.rs` steps 3a + 4 surface).
+use std::sync::Arc;
+use webarkitlib_rs::kpm::ref_data_set::KPM_CHANGE_PAGE_NO_ALL_PAGES;
+use webarkitlib_rs::kpm::types::KpmRefDataSet;
+use webarkitlib_rs::kpm::{KpmHandle, RustFreakMatcher};
+
 /// Returns the current version string of the library.
 #[wasm_bindgen]
 pub fn get_version() -> String {
@@ -641,5 +647,124 @@ impl Drop for WasmNFTHandle {
                 self.ar2_handle.icp_handle = std::ptr::null_mut();
             }
         }
+    }
+}
+
+/// Result of [`WasmKpmHandle::detect`]: the detected 3×4 pose (row-major, 12
+/// floats), the matched page number, and the matching error.
+#[derive(serde::Serialize)]
+struct KpmDetectResult {
+    pose: [f32; 12],
+    page: i32,
+    error: f32,
+}
+
+/// KPM (Keypoint Matching) detection handle — the WASM equivalent of
+/// `simple_nft.rs` steps 3a + 4. Loads NFT reference data (`.fset3`) and
+/// detects the marker's initial 3×4 pose in a query frame using the pure-Rust
+/// [`RustFreakMatcher`].
+///
+/// Pair with [`WasmNFTHandle`] for AR2 tracking: feed `detect()`'s pose into
+/// [`WasmNFTHandle::set_initial_pose`].
+#[wasm_bindgen]
+pub struct WasmKpmHandle {
+    handle: KpmHandle,
+    width: i32,
+    height: i32,
+    loaded: bool,
+}
+
+#[wasm_bindgen]
+impl WasmKpmHandle {
+    /// Create a KPM detection handle.
+    ///
+    /// * `param_bytes` — `camera_para.dat` contents.
+    /// * `width` / `height` — query-frame size in pixels.
+    #[wasm_bindgen(constructor)]
+    pub fn new(param_bytes: &[u8], width: i32, height: i32) -> Result<WasmKpmHandle, JsValue> {
+        let cursor = Cursor::new(param_bytes);
+        let mut param = ARParam::load(cursor)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
+
+        // Scale camera params to the frame size (arParamChangeSize equivalent).
+        let sx = width as f64 / param.xsize as f64;
+        let sy = height as f64 / param.ysize as f64;
+        for col in 0..4 {
+            param.mat[0][col] *= sx;
+            param.mat[1][col] *= sy;
+        }
+        param.xsize = width;
+        param.ysize = height;
+
+        let param_lt = Arc::new(ARParamLT::new_basic(param));
+        let backend = RustFreakMatcher::new(width, height)
+            .map_err(|e| JsValue::from_str(&format!("Failed to create FREAK matcher: {:?}", e)))?;
+        let handle = KpmHandle::new(width, height, Some(param_lt), Box::new(backend));
+
+        Ok(WasmKpmHandle {
+            handle,
+            width,
+            height,
+            loaded: false,
+        })
+    }
+
+    /// Load NFT reference data from `.fset3` bytes (KPM reference keypoints).
+    /// All pages are remapped to page 0 (single-marker setup).
+    pub fn load_ref_data(&mut self, fset3_bytes: &[u8]) -> Result<(), JsValue> {
+        let mut ref_data = KpmRefDataSet::load_from_bytes(fset3_bytes)
+            .map_err(|e| JsValue::from_str(&format!("Failed to load .fset3: {}", e)))?;
+        ref_data.change_page_no(KPM_CHANGE_PAGE_NO_ALL_PAGES, 0);
+        self.handle
+            .set_ref_data_set(ref_data)
+            .map_err(|e| JsValue::from_str(&format!("Failed to set ref data: {:?}", e)))?;
+        self.loaded = true;
+        Ok(())
+    }
+
+    /// Run KPM detection on an RGBA frame (`width * height * 4` bytes, e.g. a
+    /// canvas `ImageData.data` buffer).
+    ///
+    /// Returns `{ pose: number[12], page, error }` on a match, or `null` if no
+    /// marker was found.
+    pub fn detect(&mut self, rgba_bytes: &[u8]) -> Result<JsValue, JsValue> {
+        if !self.loaded {
+            return Err(JsValue::from_str(
+                "reference data not loaded — call load_ref_data first",
+            ));
+        }
+        let expected = (self.width * self.height * 4) as usize;
+        if rgba_bytes.len() != expected {
+            return Err(JsValue::from_str(&format!(
+                "rgba length {} != expected {} ({}x{}x4)",
+                rgba_bytes.len(),
+                expected,
+                self.width,
+                self.height
+            )));
+        }
+
+        let luma = rgba_to_gray(rgba_bytes);
+        self.handle
+            .kpm_matching(&luma)
+            .map_err(|e| JsValue::from_str(&format!("kpm_matching failed: {:?}", e)))?;
+
+        match self.handle.get_pose() {
+            Some((cam_pose, page, error)) => {
+                let mut pose = [0f32; 12];
+                for (r, row) in cam_pose.iter().enumerate() {
+                    pose[r * 4..r * 4 + 4].copy_from_slice(row);
+                }
+                let result = KpmDetectResult { pose, page, error };
+                serde_wasm_bindgen::to_value(&result)
+                    .map_err(|e| JsValue::from_str(&format!("serialize failed: {}", e)))
+            }
+            None => Ok(JsValue::NULL),
+        }
+    }
+
+    /// Whether reference data has been loaded.
+    pub fn is_loaded(&self) -> bool {
+        self.loaded
     }
 }

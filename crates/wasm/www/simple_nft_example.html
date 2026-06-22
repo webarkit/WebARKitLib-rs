@@ -153,7 +153,7 @@
 
         <div class="controls">
             <button id="btn-init" disabled>Initialize NFT</button>
-            <button id="btn-set-pose" disabled>Set Test Pose</button>
+            <button id="btn-set-pose" disabled>Detect (KPM)</button>
             <button id="btn-track" disabled>Track Frame</button>
             <button id="btn-reset" disabled>Reset Tracking</button>
         </div>
@@ -180,16 +180,9 @@
         const resultsEl = document.getElementById('results');
 
         let nftHandle = null;
+        let kpmHandle = null;
         let testImage = new Image();
         let wasmModule = null;
-
-        // A known-good initial pose for the pinball marker
-        // (from the KPM detection step in the native example).
-        const TEST_POSE = [
-            0.9866, 0.1643, 0.0027, -181.9168,
-            0.1531, -0.9197, -0.3612, 64.6862,
-            -0.0563, 0.3568, -0.9325, 590.5905
-        ];
 
         async function run() {
             try {
@@ -236,40 +229,46 @@
                 const paramRes = await fetch('assets/camera_para.dat');
                 const paramData = new Uint8Array(await paramRes.arrayBuffer());
 
-                // Fetch NFT marker data.
-                const [isetRes, fsetRes] = await Promise.all([
+                // Fetch NFT marker data: .iset/.fset for AR2 tracking,
+                // .fset3 for KPM detection.
+                const [isetRes, fsetRes, fset3Res] = await Promise.all([
                     fetch('assets/pinball.iset'),
                     fetch('assets/pinball.fset'),
+                    fetch('assets/pinball.fset3'),
                 ]);
 
                 const isetData = new Uint8Array(await isetRes.arrayBuffer());
                 const fsetData = new Uint8Array(await fsetRes.arrayBuffer());
+                const fset3Data = new Uint8Array(await fset3Res.arrayBuffer());
 
                 console.log(`[NFT] Loaded: camera_para.dat (${paramData.length} bytes)`);
                 console.log(`[NFT] Loaded: pinball.iset (${isetData.length} bytes)`);
                 console.log(`[NFT] Loaded: pinball.fset (${fsetData.length} bytes)`);
+                console.log(`[NFT] Loaded: pinball.fset3 (${fset3Data.length} bytes)`);
 
-                // Create NFT handle.
+                // Create handles.
                 const width = canvas.width;
                 const height = canvas.height;
                 nftHandle = new wasmModule.WasmNFTHandle(paramData, width, height);
+                kpmHandle = new wasmModule.WasmKpmHandle(paramData, width, height);
 
-                // Load marker data.
+                // Load marker data: surface set (tracking) + KPM ref data (detection).
                 nftHandle.load_nft_marker(isetData, fsetData);
+                kpmHandle.load_ref_data(fset3Data);
 
                 const mw = nftHandle.get_marker_width();
                 const mh = nftHandle.get_marker_height();
                 const dpi = nftHandle.get_marker_dpi();
 
                 resultsEl.innerText =
-                    `NFT Handle initialized:\n` +
+                    `NFT + KPM handles initialized:\n` +
                     `  Frame size: ${width}x${height}\n` +
                     `  Marker: ${mw}x${mh} @ ${dpi} DPI\n` +
                     `  Loaded: ✓\n\n` +
-                    `Click "Set Test Pose" to provide an initial pose,\n` +
-                    `then "Track Frame" to run AR2 tracking.`;
+                    `Click "Detect (KPM)" to detect the marker pose,\n` +
+                    `then "Track Frame" to run AR2 tracking refinement.`;
 
-                statusEl.innerText = 'Status: NFT marker loaded. Set a pose to begin tracking.';
+                statusEl.innerText = 'Status: NFT marker loaded. Run KPM detection to begin.';
                 statusEl.className = 'status success';
                 btnInit.disabled = true;
                 btnSetPose.disabled = false;
@@ -283,18 +282,40 @@
         };
 
         btnSetPose.onclick = () => {
-            if (!nftHandle) return;
+            if (!nftHandle || !kpmHandle) return;
 
             try {
-                nftHandle.set_initial_pose(new Float32Array(TEST_POSE));
+                // Real KPM detection on the current frame (#161 goal 4):
+                // canvas RGBA -> WasmKpmHandle.detect() -> 3x4 pose.
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const rgba = new Uint8Array(imageData.data.buffer);
+
+                const t0 = performance.now();
+                const det = kpmHandle.detect(rgba);
+                const elapsed = performance.now() - t0;
+
+                if (!det) {
+                    resultsEl.innerText =
+                        `KPM detection: no marker found (${elapsed.toFixed(1)} ms).`;
+                    statusEl.innerText = 'Status: KPM found no match.';
+                    statusEl.className = 'status error';
+                    return;
+                }
+
+                console.log('[KPM] detected pose', det.pose, 'page', det.page, 'error', det.error);
+
+                // Feed the detected pose into the AR2 tracker.
+                nftHandle.set_initial_pose(new Float32Array(det.pose));
 
                 resultsEl.innerText =
-                    `Initial pose set (from KPM detection):\n\n` +
-                    formatMatrix(TEST_POSE) +
-                    `\nContinuity: ${nftHandle.get_cont_num()} frame(s)\n\n` +
-                    `Click "Track Frame" to run AR2 tracking refinement.`;
+                    `KPM detection (${elapsed.toFixed(1)} ms):\n` +
+                    `  Page:  ${det.page}\n` +
+                    `  Error: ${det.error.toFixed(4)}\n\n` +
+                    `Detected 3×4 pose:\n` +
+                    formatMatrix(det.pose) +
+                    `\nInitial pose set. Click "Track Frame" for AR2 refinement.`;
 
-                statusEl.innerText = 'Status: Initial pose set. Ready to track.';
+                statusEl.innerText = 'Status: KPM detected pose. Ready to track.';
                 statusEl.className = 'status success';
                 btnTrack.disabled = false;
 
