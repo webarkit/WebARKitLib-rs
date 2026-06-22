@@ -36,6 +36,12 @@
 
 //! Image pyramid built by repeated box-filter downsampling.
 //!
+//! **Not currently wired into any pipeline** (kept as reference — see #203).
+//! This is a faithful, SIMD-accelerated port of the C++ `BoxFilterPyramid8u`,
+//! which is itself unused in the original. The live KPM/FREAK detector builds
+//! its scale space with [`super::gaussian_pyramid::GaussianScaleSpacePyramid`]
+//! instead. Retained as a tested reference implementation.
+//!
 //! Ported from `WebARKitLib/lib/SRC/KPM/FreakMatcher/detectors/pyramid.{h,cpp}`
 //! (`BoxFilterPyramid8u` / `BoxFilterDecimate`).
 //!
