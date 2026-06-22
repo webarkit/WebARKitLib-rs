@@ -85,6 +85,9 @@ pub fn init_panic_hook() {
 #[wasm_bindgen]
 pub fn init_wasm() {
     console_error_panic_hook::set_once();
+    // Route arlog_*! output to the browser console (DevTools) via console_log.
+    #[cfg(all(feature = "log-helpers", target_arch = "wasm32"))]
+    webarkitlib_rs::arlog::ar_log_init_wasm();
     print_version();
 }
 

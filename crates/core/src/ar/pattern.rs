@@ -1062,6 +1062,9 @@ fn dot_product(a: &[i16], b: &[i16]) -> i64 {
         }
     }
 
+    // On wasm32+simd128 the block above always returns, making this fallback
+    // unreachable; it is the active path on every other target.
+    #[allow(unreachable_code)]
     dot_product_scalar(a, b)
 }
 
