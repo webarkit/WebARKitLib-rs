@@ -133,14 +133,16 @@
 
         <div class="description">
             <p>
-                This demo demonstrates <strong>AR2 Natural Feature Tracking</strong> running
-                entirely in Rust/WASM. The AR2 tracking engine uses template matching on
-                image pyramids to refine a camera pose.
+                This demo demonstrates the full <strong>NFT pipeline — KPM detection then
+                AR2 tracking</strong> — running entirely in Rust/WASM. KPM keypoint matching
+                finds the marker and its initial pose; the AR2 engine then refines that pose
+                via template matching on image pyramids.
             </p>
             <p>
-                The pipeline loads <code>.iset</code> (image pyramid) and <code>.fset</code>
-                (feature points) marker data, accepts an initial 3×4 camera pose, and runs
-                per-frame tracking to produce a refined pose.
+                The pipeline loads <code>.fset3</code> (KPM reference keypoints, used for
+                detection), plus <code>.iset</code> (image pyramid) and <code>.fset</code>
+                (feature points) for tracking. "Detect (KPM)" produces the initial 3×4 pose;
+                "Track Frame" then runs per-frame AR2 refinement.
             </p>
             <p>
                 <strong>Note:</strong> Full NFT detection (KPM) requires a pure-Rust FREAK
