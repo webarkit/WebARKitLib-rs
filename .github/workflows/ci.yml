@@ -232,24 +232,38 @@ jobs:
       working-directory: crates/core
       run: cargo run --example simple --features log-helpers -- ../../benchmarks/data/camera_para.dat ../../benchmarks/data/patt.hiro ../../benchmarks/data/img.jpg
 
-    - name: Run benchmarks
+    - name: Install C benchmark deps (svn for bootstrap)
+      run: sudo apt-get update && sudo apt-get install -y subversion
+
+    - name: Cache C benchmark downloaded sources
+      uses: actions/cache@v4
+      with:
+        path: benchmarks/c_benchmark/archives
+        key: c-bench-archives-${{ runner.os }}-${{ hashFiles('benchmarks/c_benchmark/libraries.json') }}
+
+    # The C baseline pulls external sources (jpeg-9f from ijg.org, WebARKitLib)
+    # whose download occasionally fails with TLS/network errors (#204). It only
+    # produces an optional comparison log, so keep it NON-BLOCKING: a flake must
+    # not fail the benchmarks gate. The required signal is the Rust bench below.
+    - name: Build & run C baseline benchmark (non-blocking)
+      continue-on-error: true
       run: |
-        # Download and Build C benchmark
+        set -e
         cd benchmarks/c_benchmark
-        python ../bootstrap.py --bootstrap-file libraries.json
-        
+        for attempt in 1 2 3; do
+          python ../bootstrap.py --bootstrap-file libraries.json && break
+          echo "bootstrap attempt $attempt failed; retrying in 15s..." >&2
+          sleep 15
+        done
         mkdir -p build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
         make
         cd ..
-        
-        # Run C benchmark for baseline
         mkdir -p ../../target/criterion
         ./build/c_benchmark ../data/camera_para.dat ../data/patt.hiro ../data/hiro.raw 429 317 > ../../target/criterion/c_benchmark.log
-        
-        # Run Rust benchmarks
-        cd ../..
-        cargo bench -p webarkitlib-rs --bench marker_bench
+
+    - name: Run Rust benchmarks
+      run: cargo bench -p webarkitlib-rs --bench marker_bench
     - name: Upload benchmark reports
       uses: actions/upload-artifact@v5
       with:
