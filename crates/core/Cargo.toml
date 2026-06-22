@@ -55,8 +55,10 @@ env_logger = { version = "0.11", optional = true }
 console_log = { version = "1", optional = true }
 
 [build-dependencies]
-cc = "1"
-bindgen = "0.72.1"
+# Only needed for the C++ FFI backend; gated behind `ffi-backend` so the
+# default (pure-Rust, incl. wasm32) build pulls no C/C++ toolchain crates.
+cc = { version = "1", optional = true }
+bindgen = { version = "0.72.1", optional = true }
 
 [features]
 # Default features intentionally empty (M9-3, #142): a plain `cargo build`
@@ -70,7 +72,7 @@ simd-pattern = []
 simd-wasm32 = []
 simd-x86-sse41 = []
 simd-x86-avx2 = []
-ffi-backend = []
+ffi-backend = ["dep:cc", "dep:bindgen"]
 # dual-mode validates pure-Rust implementations against the C++ baseline;
 # requires ffi-backend so the C++ comparison functions are compiled in.
 dual-mode = ["ffi-backend"]
