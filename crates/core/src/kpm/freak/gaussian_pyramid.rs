@@ -288,6 +288,10 @@ const INV_256: f32 = 1.0 / 256.0;
 /// 640×480 (~0.3 MPx) but scales ~1.5× at 1280×720 (~0.9 MPx); this
 /// conservative threshold keeps ≤480p serial and is a machine-dependent
 /// heuristic, not a hard tuning point.
+///
+/// Only referenced by the rayon dispatchers, which are gated off on wasm32
+/// (single-threaded), so the const is too.
+#[cfg(not(target_arch = "wasm32"))]
 const PARALLEL_MIN_PIXELS: usize = 600_000;
 
 // ── f32 → f32 per-row helpers ────────────────────────────────────────────
