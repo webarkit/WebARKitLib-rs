@@ -45,7 +45,7 @@
 //! [`merge`](KpmRefDataSet::merge), and
 //! [`change_page_no`](KpmRefDataSet::change_page_no).
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::Path;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -405,8 +405,18 @@ impl KpmRefDataSet {
     /// Load a data set from a binary file written by [`save`](Self::save).
     pub fn load(path: &Path) -> std::io::Result<Self> {
         let file = std::fs::File::open(path)?;
-        let mut r = std::io::BufReader::new(file);
+        Self::load_from_reader(std::io::BufReader::new(file))
+    }
 
+    /// Load a data set from in-memory bytes (e.g. a `.fset3` fetched in the
+    /// browser, where there is no filesystem). Same format as [`load`](Self::load).
+    pub fn load_from_bytes(bytes: &[u8]) -> std::io::Result<Self> {
+        Self::load_from_reader(std::io::Cursor::new(bytes))
+    }
+
+    /// Parse a data set from any reader. Shared by [`load`](Self::load) and
+    /// [`load_from_bytes`](Self::load_from_bytes).
+    fn load_from_reader<R: std::io::Read>(mut r: R) -> std::io::Result<Self> {
         let num = r.read_i32::<LittleEndian>()?;
         if num <= 0 {
             return Err(std::io::Error::new(
@@ -728,4 +738,28 @@ mod tests {
     // The test data lives in crates/kpm/examples/data/ and CARGO_MANIFEST_DIR
     // now points to crates/core/. The test is covered by
     // crates/kpm/tests/regression.rs::test_fset3_load_structure.
+
+    /// `load_from_bytes` (the wasm-friendly loader added for #161) must parse a
+    /// real `.fset3` identically to the path-based `load`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg_attr(miri, ignore)] // reads + parses a 625 KB .fset3 — too slow under Miri
+    #[test]
+    fn test_load_from_bytes_matches_load() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples")
+            .join("Data")
+            .join("pinball.fset3");
+        let from_path = KpmRefDataSet::load(&path).expect("load(path) failed");
+        let bytes = std::fs::read(&path).expect("read failed");
+        let from_bytes = KpmRefDataSet::load_from_bytes(&bytes).expect("load_from_bytes failed");
+
+        assert_eq!(from_path.num, from_bytes.num);
+        assert_eq!(from_path.page_num, from_bytes.page_num);
+        assert_eq!(from_path.ref_point.len(), from_bytes.ref_point.len());
+        // Spot-check the first ref point round-trips identically.
+        assert_eq!(
+            from_path.ref_point[0].feature_vec.v,
+            from_bytes.ref_point[0].feature_vec.v
+        );
+    }
 }
