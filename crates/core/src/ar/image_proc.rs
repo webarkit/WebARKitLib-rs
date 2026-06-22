@@ -397,6 +397,9 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
         }
     }
 
+    // On wasm32+simd128 the block above always returns, making this fallback
+    // unreachable; it is the active path on every other target.
+    #[allow(unreachable_code)]
     rgba_to_gray_scalar(rgba)
 }
 

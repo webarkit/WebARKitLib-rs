@@ -24,7 +24,10 @@ serde-wasm-bindgen = "0.6"
 webarkitlib-rs = { path = "../core" }
 
 [features]
-default = []
+default = ["log-helpers"]
+# Routes `arlog_*!` output to the browser console via `console_log`
+# (`ar_log_init_wasm()`), installed by `init_wasm()`.
+log-helpers = ["webarkitlib-rs/log-helpers"]
 simd = ["webarkitlib-rs/simd"]
 
 [dev-dependencies]
