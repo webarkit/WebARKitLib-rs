@@ -34,16 +34,23 @@
  *
  */
 
+#[cfg(feature = "ffi-backend")]
 use std::env;
+#[cfg(feature = "ffi-backend")]
 use std::path::PathBuf;
 
 fn main() {
-    if cfg!(feature = "ffi-backend") {
+    // `cc` / `bindgen` are optional build-dependencies enabled only by the
+    // `ffi-backend` feature, so the default (pure-Rust, incl. wasm) build pulls
+    // no C/C++ toolchain crates. The helpers below are gated to match.
+    #[cfg(feature = "ffi-backend")]
+    {
         build_freak_matcher();
         generate_bindings();
     }
 }
 
+#[cfg(feature = "ffi-backend")]
 fn build_freak_matcher() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
@@ -160,6 +167,7 @@ fn build_freak_matcher() {
     println!("cargo:rerun-if-changed=src/kpm/kpm_c_api.h");
 }
 
+#[cfg(feature = "ffi-backend")]
 fn generate_bindings() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let header = manifest_dir.join("src").join("kpm").join("kpm_c_api.h");
