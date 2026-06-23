@@ -354,10 +354,7 @@ impl VisualDatabase {
     ///
     /// C equivalent: `query(const Image&)` (`visual_database-inline.h:155`).
     pub fn query(&mut self, image: &Matrix<u8>) -> Result<bool, KpmError> {
-        // Reset per-query state (C++ `visual_database-inline.h:194-195`).
-        self.inliers.clear();
-        self.matched_db_id = -1;
-        self.matched_geometry = [0.0; 9];
+        self.reset_query_state();
 
         // Build the pyramid and the query keyframe.
         self.ensure_pyramid(image)?;
@@ -368,12 +365,45 @@ impl VisualDatabase {
             query_kf.store.num_features()
         );
 
-        // Iterate the database; the keyframe with the most inliers wins.
-        // Collect ids upfront because we need a `&mut self` for the matcher
-        // build inside the loop body.
+        let matched = self.match_against_database(&query_kf)?;
+        self.query_keyframe = Some(query_kf);
+        Ok(matched)
+    }
+
+    /// Query with a pre-extracted [`Keyframe`] instead of a raw image.
+    ///
+    /// Skips pyramid construction and feature extraction, running only the
+    /// matching loop against the database. Useful for deterministic testing
+    /// (feed a hand-built keyframe) and for callers that already hold a
+    /// `Keyframe`. The supplied keyframe becomes the stashed `query_keyframe`.
+    ///
+    /// C equivalent: `query(const keyframe_t*)` (`visual_database.h:193`).
+    pub fn query_from_keyframe(&mut self, query_kf: Keyframe) -> Result<bool, KpmError> {
+        self.reset_query_state();
+        let matched = self.match_against_database(&query_kf)?;
+        self.query_keyframe = Some(query_kf);
+        Ok(matched)
+    }
+
+    /// Reset per-query result state (C++ `visual_database-inline.h:194-195`).
+    fn reset_query_state(&mut self) {
+        self.inliers.clear();
+        self.matched_db_id = -1;
+        self.matched_geometry = [0.0; 9];
+    }
+
+    /// Run the matching loop against every stored keyframe; the keyframe with
+    /// the most inliers (above `min_num_inliers`) wins. Assumes per-query state
+    /// was already reset; does not touch `query_keyframe`.
+    ///
+    /// Shared inner loop of [`query`](Self::query) and
+    /// [`query_from_keyframe`](Self::query_from_keyframe)
+    /// (C++ `visual_database-inline.h:200-241`).
+    fn match_against_database(&mut self, query_kf: &Keyframe) -> Result<bool, KpmError> {
+        // Collect ids upfront because we need `&mut self` for try_match_one.
         let ids: Vec<usize> = self.keyframes.keys().copied().collect();
         for id in ids {
-            if let Some((inliers, h)) = self.try_match_one(&query_kf, id)? {
+            if let Some((inliers, h)) = self.try_match_one(query_kf, id)? {
                 if inliers.len() >= self.min_num_inliers && inliers.len() > self.inliers.len() {
                     self.matched_geometry = h;
                     self.inliers = inliers;
@@ -381,8 +411,6 @@ impl VisualDatabase {
                 }
             }
         }
-
-        self.query_keyframe = Some(query_kf);
         Ok(self.matched_db_id >= 0)
     }
 
@@ -1017,6 +1045,40 @@ mod tests {
         let mut db = VisualDatabase::new().expect("new");
         db.add_keyframe(kf, 0).expect("add_keyframe");
         assert!(db.keyframe(0).unwrap().index().is_some());
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // real-image pyramid + DoG + BHC pipeline — too slow under Miri
+    fn test_query_from_keyframe_self_matches() {
+        // #147: query_from_keyframe runs the matching loop on a pre-built
+        // keyframe. An identical keyframe must self-match the database entry.
+        let img = load_grayscale("../../benchmarks/data/found.jpg");
+        let build_kf = |img: &Matrix<u8>| -> Keyframe {
+            let mut pyr = crate::kpm::freak::gaussian_pyramid::GaussianScaleSpacePyramid::new(3);
+            pyr.build(img).unwrap();
+            let det =
+                crate::kpm::freak::detector::DoGScaleInvariantDetector::new(3.0, 4.0, 500, true);
+            let mut kf = Keyframe::new(img.cols as i32, img.rows as i32).unwrap();
+            find_features(&mut kf, &pyr, &det).expect("find_features");
+            kf
+        };
+
+        let mut db = VisualDatabase::new().expect("new");
+        db.add_keyframe(build_kf(&img), 0).expect("add_keyframe");
+
+        let matched = db
+            .query_from_keyframe(build_kf(&img))
+            .expect("query_from_keyframe");
+        assert!(matched, "an identical keyframe must self-match");
+        assert_eq!(db.matched_db_id(), 0);
+        assert!(
+            db.inliers().len() >= 8,
+            "self-match should be a strong match"
+        );
+        assert!(
+            db.query_keyframe().is_some(),
+            "query_from_keyframe must stash the query keyframe"
+        );
     }
 
     // -----------------------------------------------------------------
