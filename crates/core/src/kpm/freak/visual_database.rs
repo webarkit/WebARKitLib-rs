@@ -1081,6 +1081,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_query_from_keyframe_no_match() {
+        // Deterministic, no image: a db keyframe with all-0x00 descriptors vs a
+        // query keyframe with all-0xFF descriptors — maximally distant, so the
+        // ratio test rejects every candidate and try_match_one short-circuits
+        // (no-match path, #177).
+        let mk = |desc: u8, n: usize| -> Keyframe {
+            let mut kf = Keyframe::new(640, 480).unwrap();
+            for i in 0..n {
+                let p = FeaturePoint {
+                    x: i as f32,
+                    y: i as f32,
+                    angle: 0.0,
+                    scale: 1.0,
+                    maxima: true,
+                };
+                kf.store.add(p, &[desc; 96]).unwrap();
+            }
+            kf
+        };
+
+        let mut db = VisualDatabase::new().expect("new");
+        db.add_keyframe(mk(0x00, 12), 0).expect("add_keyframe");
+
+        let matched = db
+            .query_from_keyframe(mk(0xFF, 12))
+            .expect("query_from_keyframe");
+        assert!(!matched, "maximally-distant descriptors must not match");
+        assert_eq!(db.matched_db_id(), -1);
+        assert!(db.inliers().is_empty());
+    }
+
     // -----------------------------------------------------------------
     // Dual-mode parity test (M9-1 gate per #140, closed by M9 #146)
     // -----------------------------------------------------------------
