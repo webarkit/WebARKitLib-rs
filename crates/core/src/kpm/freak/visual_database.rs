@@ -667,6 +667,54 @@ impl VisualDatabase {
     pub fn keyframe(&self, id: usize) -> Option<&Keyframe> {
         self.keyframes.get(&id)
     }
+
+    // ── Facade-parity convenience accessors (#148, Group A) ──────────────
+    // Thin getters mirroring `VisualDatabaseFacade`, so callers don't have to
+    // reach through `keyframe(id).store` and loop element-by-element.
+
+    /// Feature points of the reference keyframe stored under `id`.
+    ///
+    /// C equivalent: `getFeaturePoints(id)`.
+    pub fn get_feature_points(&self, id: usize) -> Option<&[FeaturePoint]> {
+        self.keyframes.get(&id).map(|kf| kf.store.points())
+    }
+
+    /// Flat descriptor buffer of the reference keyframe stored under `id`.
+    ///
+    /// C equivalent: `getDescriptors(id)`.
+    pub fn get_descriptors(&self, id: usize) -> Option<&[u8]> {
+        self.keyframes.get(&id).map(|kf| kf.store.descriptors())
+    }
+
+    /// Feature points of the most recent query frame (see [`query`](Self::query)).
+    ///
+    /// C equivalent: `getQueryFeaturePoints()`.
+    pub fn get_query_feature_points(&self) -> Option<&[FeaturePoint]> {
+        self.query_keyframe.as_ref().map(|kf| kf.store.points())
+    }
+
+    /// Flat descriptor buffer of the most recent query frame.
+    ///
+    /// C equivalent: `getQueryDescriptors()`.
+    pub fn get_query_descriptors(&self) -> Option<&[u8]> {
+        self.query_keyframe
+            .as_ref()
+            .map(|kf| kf.store.descriptors())
+    }
+
+    /// Width of the reference image stored under `id`.
+    ///
+    /// C equivalent: `getWidth(id)`.
+    pub fn get_width(&self, id: usize) -> Option<i32> {
+        self.keyframes.get(&id).map(|kf| kf.width)
+    }
+
+    /// Height of the reference image stored under `id`.
+    ///
+    /// C equivalent: `getHeight(id)`.
+    pub fn get_height(&self, id: usize) -> Option<i32> {
+        self.keyframes.get(&id).map(|kf| kf.height)
+    }
 }
 
 impl Default for VisualDatabase {
@@ -1017,6 +1065,49 @@ mod tests {
         let mut db = VisualDatabase::new().expect("new");
         db.add_keyframe(kf, 0).expect("add_keyframe");
         assert!(db.keyframe(0).unwrap().index().is_some());
+    }
+
+    #[test]
+    fn test_facade_parity_accessors() {
+        // Build a tiny keyframe directly (no image pipeline) so the getters are
+        // exercised deterministically and fast (#148, Group A).
+        let mut kf = Keyframe::new(640, 480).unwrap();
+        let p0 = FeaturePoint {
+            x: 1.0,
+            y: 2.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: true,
+        };
+        let p1 = FeaturePoint {
+            x: 3.0,
+            y: 4.0,
+            angle: 0.0,
+            scale: 1.0,
+            maxima: false,
+        };
+        kf.store.add(p0, &[7u8; 96]).unwrap();
+        kf.store.add(p1, &[9u8; 96]).unwrap();
+
+        let mut db = VisualDatabase::new().expect("new");
+        db.add_keyframe(kf, 0).expect("add_keyframe");
+
+        // Reference accessors for the stored id.
+        assert_eq!(db.get_width(0), Some(640));
+        assert_eq!(db.get_height(0), Some(480));
+        assert_eq!(db.get_feature_points(0).unwrap().len(), 2);
+        assert_eq!(db.get_feature_points(0).unwrap()[0].x, 1.0);
+        let descs = db.get_descriptors(0).unwrap();
+        assert_eq!(descs.len(), 2 * 96);
+        assert_eq!(&descs[0..96], &[7u8; 96]);
+
+        // Missing id → None.
+        assert!(db.get_feature_points(99).is_none());
+        assert!(db.get_width(99).is_none());
+
+        // No query run yet → query accessors are None.
+        assert!(db.get_query_feature_points().is_none());
+        assert!(db.get_query_descriptors().is_none());
     }
 
     // -----------------------------------------------------------------
