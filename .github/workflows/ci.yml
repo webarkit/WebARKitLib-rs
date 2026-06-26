@@ -115,6 +115,28 @@ jobs:
     - name: Build kpm backend (FFI backend)
       run: cargo build -p webarkitlib-rs --features ffi-backend
 
+    # macOS ffi-backend link verification (#119). PR #117 fixed build.rs to
+    # link libc++ (not libstdc++) on Apple targets, but the dual-mode CI step
+    # was scoped to --lib, so the integration tests and the generate_patt
+    # example were never re-built on macOS after the fix. Build them here to
+    # confirm they link against libc++.
+    #
+    # --no-run (not a full run): this verifies the linker fix only. Actually
+    # executing the pose-sensitive integration tests cross-platform is out of
+    # scope — that float-drift question is tracked separately in #118, which
+    # keeps test_full_pipeline_pose gated to Linux.
+    - name: Verify ffi-backend tests + example link (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        cargo test -p webarkitlib-rs \
+          --test kpm_regression \
+          --test nft_pipeline \
+          --test ar2_pinball_io \
+          --test cross_stack_parity \
+          --features ffi-backend --no-run
+        cargo build -p webarkitlib-rs \
+          --example generate_patt --features log-helpers,ffi-backend
+
     # Dual-mode tests run pure-Rust ports against the C++ baseline via the
     # FFI backend (webarkit_cpp_* shims) and assert byte-level parity.
     # Catches regressions that would otherwise only surface in local runs.
