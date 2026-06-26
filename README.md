@@ -14,7 +14,7 @@
 This project aims to provide a pure-Rust implementation of the core ARToolKit algorithms, targeting both **native** systems and **WebAssembly (WASM)** for high-performance augmented reality in the browser.
 
 > [!NOTE]
-> This project is currently a **Work in Progress**. Core marker detection and pose estimation are functional. KPM/NFT (Natural Feature Tracking) is in an early stage with partial Rust porting -- a fully idiomatic Rust KPM pipeline with a working example is the primary goal for v1.0.0.
+> Core marker detection and pose estimation are functional, and as of **v0.8.0** the **KPM/NFT (Natural Feature Tracking) pipeline is fully ported to pure Rust** — end-to-end keypoint matching, marker generation (`.iset`/`.fset`/`.fset3`), and runtime tracking all run with **no C++ toolchain**, natively and in the browser via WebAssembly. The project remains a **Work in Progress** toward v1.0.0 (broader API docs, multi-marker support, and a dedicated KPM benchmark are the remaining focus areas).
 
 ## 🌟 Key Features
 
@@ -40,7 +40,7 @@ Add `webarkitlib-rs` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.7"
+webarkitlib-rs = "0.8"
 ```
 
 ### Pure Rust tracking (no C++ compiler required)
@@ -66,7 +66,7 @@ need to do anything special:
 
 ```toml
 [dependencies]
-webarkitlib-rs = "0.7"  # default backend is pure Rust
+webarkitlib-rs = "0.8"  # default backend is pure Rust
 ```
 
 ```bash
@@ -83,7 +83,7 @@ NFT tracking**:
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.7", features = ["ffi-backend"] }
+webarkitlib-rs = { version = "0.8", features = ["ffi-backend"] }
 ```
 
 > When installing from crates.io, no extra setup is required — the C++
@@ -248,7 +248,7 @@ Enable the `log-helpers` feature and call the bundled initializer once in your b
 
 ```toml
 [dependencies]
-webarkitlib-rs = { version = "0.7", features = ["log-helpers"] }
+webarkitlib-rs = { version = "0.8", features = ["log-helpers"] }
 ```
 
 ```rust
@@ -429,12 +429,16 @@ The workspace contains two crates:
     - Cross-platform / cross-stack matcher determinism — Rust `HashMap` → `BTreeMap` and upstream C++ `unordered_map` → `std::map` ([WebARKitLib#39](https://github.com/webarkit/WebARKitLib/pull/39)).
     - Hand-annotated absolute corner-error regression gate (browser-based annotation tool + 5 fixtures + Linux CI gate). Finding: pure-Rust backend is more accurate than C++ on `pinball-demo` (5.27 px vs 18.79 px max corner error).
     - Cross-stack parity gate against `@webarkit/jsartoolkit-nft@1.10.0` ([jsartoolkitNFT#584](https://github.com/webarkit/jsartoolkitNFT/pull/584)) — guarantees native Rust pose matches what production WASM consumers see.
+- **v0.8.0 — Pure-Rust completeness, validation & polish**: Closed out the remaining gaps on top of M9:
+  - **Full WASM/NFT support** ([#161](https://github.com/webarkit/WebARKitLib-rs/issues/161)): `WasmKpmHandle` KPM-detection bindings, `console_log` wiring, clean dual (standard + SIMD) wasm builds, and an end-to-end **browser NFT demo** of the pure-Rust pipeline.
+  - **Pure-Rust `.fset3` marker generation** ([#179](https://github.com/webarkit/WebARKitLib-rs/issues/179)): `nft_marker_gen` now produces `.iset` + `.fset` + `.fset3` entirely via `RustFreakMatcher` — the `ffi-backend` is no longer needed for marker creation.
+  - **`VisualDatabase` ergonomics** ([#147](https://github.com/webarkit/WebARKitLib-rs/issues/147), [#148](https://github.com/webarkit/WebARKitLib-rs/issues/148)): factored the per-frame query loop, added `query_from_keyframe`, and facade-parity accessors on `VisualDatabase` + `FeatureStore` slices.
+  - **Gaussian scale-space pyramid performance** ([#200](https://github.com/webarkit/WebARKitLib-rs/issues/200)/[#201](https://github.com/webarkit/WebARKitLib-rs/issues/201)/[#207](https://github.com/webarkit/WebARKitLib-rs/issues/207)): criterion benchmark, NO-FMA SSE4.1/AVX2/wasm SIMD binomial filter with bit-exact scalar parity, and rayon-parallelized filter passes.
+  - **Validation & CI hardening**: raised M9 patch coverage ≥90% ([#177](https://github.com/webarkit/WebARKitLib-rs/issues/177)), Miri UB gate ([#182](https://github.com/webarkit/WebARKitLib-rs/issues/182)), strict `--all-targets --all-features` clippy gate ([#180](https://github.com/webarkit/WebARKitLib-rs/issues/180)), benchmark download hardening ([#204](https://github.com/webarkit/WebARKitLib-rs/issues/204)), and macOS/Windows build + cache fixes ([#134](https://github.com/webarkit/WebARKitLib-rs/issues/134), [#119](https://github.com/webarkit/WebARKitLib-rs/issues/119)).
 
 ### 🎯 Short-term Goals (toward v1.0.0)
 - **KPM-specific benchmark** ([deferred from #142](https://github.com/webarkit/WebARKitLib-rs/issues/142)): Add a dedicated `kpm_bench.rs` Criterion bench so we can verify the pure-Rust backend stays within 20% of C++ on `pinball-demo`. The existing `marker_bench` only measures barcode marker detection.
-- **WASM browser examples for KPM/NFT** ([#161](https://github.com/webarkit/WebARKitLib-rs/issues/161)): End-to-end runnable browser demo of the pure-Rust NFT pipeline.
-- **Raise M9 patch coverage** ([#177](https://github.com/webarkit/WebARKitLib-rs/issues/177)): Lift M9 modules from 84.76% → ≥90% patch coverage with no file under 85%.
-- **Dependency upgrades**: Criterion 0.5 → 0.8 ([#174](https://github.com/webarkit/WebARKitLib-rs/issues/174)).
+- **Live-camera WASM demo + pose parity** ([#215](https://github.com/webarkit/WebARKitLib-rs/issues/215)): Extend the browser NFT demo with a live camera feed and jsartoolkitNFT pose parity.
 - **Enhanced Documentation**: Expand API reference with complete module-level docs, integration walkthroughs for JS/TS, and detailed usage examples.
 - **WASM Memory Management**: Improve resource cleanup when switching engines or markers in long-running browser sessions.
 

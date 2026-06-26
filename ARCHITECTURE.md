@@ -36,12 +36,14 @@ The unified core library containing all AR functionality:
     -   `kpm::ref_data_set` — `.fset3` reference data I/O and compression modes.
     -   `kpm::types` — KPM data structures and constants.
     -   `kpm::freak` — FREAK descriptor math, homography, and matching utilities (pure Rust port of `WebARKitLib/lib/SRC/KPM/FreakMatcher`):
+        -   `freak::visual_database` — top-level per-frame query orchestrator (M9-1): builds the query keyframe, then runs the two-pass pipeline (feature match → Hough voting → homography → inlier filter, then a homography-guided re-match) across stored reference keyframes. Exposes `query` / `query_from_keyframe` and facade-parity accessors on the database + `FeatureStore` slices (#147, #148).
         -   `freak::math` — linear algebra (matrix operations, linear solvers) and Padé matrix exponential.
         -   `freak::homography` — homography estimation and refinement pipeline.
         -   `freak::hough` — Hough similarity voting (4D bin discretization over translation × angle × scale) for filtering matches by transformation consistency.
         -   `freak::clustering` — K-Medoids partitioning + Binary Hierarchical Clustering (BHC) vocabulary tree for fast approximate-NN search on 96-byte FREAK descriptors. Hamming distance via 24×32-bit bit-magic. Includes a byte-identical port of C++ `vision::FastRandom` / `vision::ArrayShuffle` so the BHC tree topology matches the C++ baseline given the same seed.
         -   `freak::matcher` — `FeatureStore` (points + flat descriptor buffer) and `FeatureMatcher` with three match variants: brute force, BHC-indexed (fast path), and homography-guided (spatial filter via 3×3 inverse + `tr` radius). All three apply the C++ ratio test (default 0.7) and filter by `FeaturePoint::maxima`.
         -   `freak::image_pyramid` — image pyramid construction via `BoxFilterPyramid8u` (box filtering for 8-bit grayscale) and `BinomialPyramid32f` (32-bit floating-point binomial pyramid with scale-space interpolation).
+        -   `freak::gaussian_pyramid` — Gaussian scale-space pyramid driving the DoG detector. Hot binomial-filter passes have NO-FMA SSE4.1 / AVX2 / wasm SIMD paths (runtime-detected, bit-exact against the scalar fallback for dual-mode parity) and rayon-parallelized rows (v0.8.0, #200–#207).
         -   `freak::feature_extraction` — keypoint detection via Difference-of-Gaussians (DoG), dominant orientation assignment via circular gradient voting, and FREAK descriptor computation with native Rust implementation of the FREAK binary pattern and bit-pair comparison.
 -   **Types** (`types`): core data structures (`ARHandle`, `ARParam`, etc.).
 
@@ -49,6 +51,13 @@ The unified core library containing all AR functionality:
 
 WASM wrapper and JavaScript/TypeScript glue code for browser targets.
 Depends only on `webarkitlib-rs` (the core crate).
+
+Since **v0.8.0 (#161)** it exposes the pure-Rust NFT pipeline to the
+browser: a `WasmKpmHandle` binding for KPM detection (load reference data
+from bytes, detect), `console_log` wiring via `ar_log_init_wasm()`, a dual
+**standard + SIMD** build pipeline (`npm run build:wasm`), and an
+end-to-end browser NFT demo under `crates/wasm/www`. The `cc`/`bindgen`
+build dependencies are optional so the wasm target builds pure-Rust.
 
 ## Feature Flags
 
@@ -58,6 +67,7 @@ Depends only on `webarkitlib-rs` (the core crate).
 | `simd`         | Umbrella: enables all SIMD sub-features |
 | `simd-wasm32`  | WASM SIMD128 intrinsics |
 | `simd-x86-sse41` | x86 SSE4.1 intrinsics |
+| `simd-x86-avx2` | x86 AVX2 intrinsics (runtime-detected; NO-FMA for bit-exact scalar parity) |
 | `log-helpers`  | Enable logging infrastructure (installs `env_logger` for desktop/tests, `console_log` for WASM) |
 | `ffi-backend`  | **Opt-in** — compile the C++ FreakMatcher library and generate FFI bindings. Used for cross-validation and the regression-test suite; not required for production tracking. |
 | `dual-mode`    | Enables FFI-based parity tests that validate pure-Rust ports against the live C++ baseline (M6 math/solvers/homography, M7 BHC/matcher, PRNG). Transitively enables `ffi-backend`. Run in CI on Linux/macOS/Windows. |
