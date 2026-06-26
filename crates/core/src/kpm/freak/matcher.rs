@@ -133,6 +133,22 @@ impl FeatureStore {
     pub fn bytes_per_feature(&self) -> usize {
         self.bytes_per_feature
     }
+
+    /// Returns all feature points as a slice.
+    ///
+    /// Slice counterpart to [`point`](Self::point) — avoids forcing callers to
+    /// loop `0..num_features()` element-by-element (facade parity, #148).
+    pub fn points(&self) -> &[FeaturePoint] {
+        &self.points
+    }
+
+    /// Returns the flat descriptor buffer (`num_features() * bytes_per_feature()`
+    /// bytes, descriptor `i` at `[i * bpf .. (i+1) * bpf]`).
+    ///
+    /// Slice counterpart to [`descriptor`](Self::descriptor) (#148).
+    pub fn descriptors(&self) -> &[u8] {
+        &self.descriptors
+    }
 }
 
 // ============================================================================
@@ -581,6 +597,27 @@ mod tests {
         assert_eq!(s.num_features(), 3);
         assert_eq!(s.descriptor(1), &d1[..]);
         assert!(!s.point(2).maxima);
+    }
+
+    #[test]
+    fn test_feature_store_slice_accessors() {
+        let mut s = FeatureStore::new(96).unwrap();
+        let d0 = make_descriptor(0);
+        let d1 = make_descriptor(1);
+        s.add(fp(0.0, 0.0, true), &d0).unwrap();
+        s.add(fp(1.0, 1.0, false), &d1).unwrap();
+
+        // points() slice agrees with per-element point(i).
+        let pts = s.points();
+        assert_eq!(pts.len(), 2);
+        assert_eq!(pts[0].x, s.point(0).x);
+        assert!(!pts[1].maxima);
+
+        // descriptors() flat buffer agrees with per-element descriptor(i).
+        let descs = s.descriptors();
+        assert_eq!(descs.len(), 2 * 96);
+        assert_eq!(&descs[0..96], s.descriptor(0));
+        assert_eq!(&descs[96..192], s.descriptor(1));
     }
 
     #[test]
