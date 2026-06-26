@@ -1,8 +1,76 @@
-﻿# Changelog - webarkit/webarkitlib-rs
+# Changelog - webarkit/webarkitlib-rs
 
 All notable changes to this project will be documented in this file.
 
-## [0.7.0] - 2026-06-05
+## [0.8.0] - 2026-06-26
+
+## Milestone — Pure-Rust completeness, validation & polish
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ar2)* Allow too_many_arguments on SIMD get_similarity variants (#180)
+- Clear strict clippy lints in examples/tests/benches (#180)
+- *(codecov)* Exclude examples/benches from coverage targets (#180)
+- *(coverage)* Fix tarpaulin tests/ glob and mirror in codecov (#180)
+- Tighten clippy gate to --all-targets --all-features (#180)
+- Relocate strict clippy gate to kpm-build (ubuntu) job (#180)
+- *(miri)* Add Miri UB validation for pure-Rust code paths (#182)
+- *(miri)* Drop -Zmiri-strict-provenance (trips on third-party deps) (#182)
+- *(miri)* Switch to Tree Borrows to avoid crossbeam-epoch false positive (#182)
+- *(miri)* Enable -Zmiri-disable-isolation for tempfile-using tests (#182)
+- *(miri)* Enable -Zmiri-ignore-leaks for rayon thread pool (#194)
+- *(miri)* Promote to required gate, split workflow, add README badge (#182)
+- *(miri)* Skip docs-only changes via paths-ignore + same-name shim
+- *(benchmarks)* Harden against flaky external C-library downloads (#204)
+
+### ⚡ Performance
+
+- *(ci)* Scope Miri job to unsafe boundaries via cfg_attr(miri, ignore) (#194)
+- *(ci)* Annotate remaining real-image tests (#194 follow-up)
+- *(kpm)* Gaussian scale-space pyramid — benchmark + rayon parallelization (#209)
+- *(kpm)* Box-filter Pyramid downsample — criterion benchmark + SIMD (#211)
+
+### 🐛 Bug Fixes
+
+- *(core)* Clean up trivial clippy lints under --all-targets --all-features (#180)
+- *(kpm)* Tighten dual-mode FFI extern cfg to match caller cfg (#180)
+- *(kpm)* Replace unaligned transmute in hamming_distance_96 (#192)
+- *(ci)* Disable cargo-bin cache on kpm-build to stop stale rustup-init shim (#134)
+
+### 💼 Other
+
+- *(wasm)* Make cc/bindgen optional, fix wasm dead-code (#161 goal 1)
+
+### 📚 Documentation
+
+- *(benches)* Refresh BENCHMARKS.md for criterion 0.8
+- *(agents)* Codify #180 clippy conventions and un-ignore .agents/
+- *(kpm)* Mark box-filter Pyramid as kept-but-unused reference (#203)
+- *(wasm)* Note .fset3 / KPM detection in the NFT demo description (#161)
+- Update README + ARCHITECTURE for the v0.8.0 milestone
+
+### 🕸️ WebAssembly & Emscripten
+
+- *(wasm)* Wire console logger + clean SIMD wasm build; add .fset3 asset (#161 goals 2,3)
+- *(wasm)* KPM detection binding + browser NFT demo (#161 goal 4)
+
+### 🚀 Features
+
+- *(kpm)* Facade-parity convenience accessors on VisualDatabase + FeatureStore slices (#148)
+- *(example)* Nft_marker_gen .fset3 via RustFreakMatcher — drop ffi-backend (#179)
+
+### 🚜 Refactor
+
+- *(ar)* Convert Default::default() + field reassign to struct-init (#180)
+- *(kpm)* Factor VisualDatabase::query matching loop + add query_from_keyframe (#147) (#217)
+
+### 🧪 Testing
+
+- *(core)* Add unit tests for relocated math/pattern helpers (#180)
+- *(homography)* Widen cauchy_cost tolerance to 1e-5 for Miri (#194)
+- *(kpm)* Raise M9 coverage — exclude examples + edge tests (#177) (#218)
+- *(ci)* Verify ffi-backend tests + example link on macOS (#119)
+﻿## [0.7.0] - 2026-06-05
 
 ## Milestone 9 — VisualDatabase & pure Rust backend
 

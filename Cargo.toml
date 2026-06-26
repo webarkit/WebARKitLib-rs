@@ -9,7 +9,7 @@ exclude = [
 resolver = "2"
 
 [workspace.package]
-version = "0.7.0"
+version = "0.8.0"
 authors = ["kalwalt <github@kalwaltart.it>"]
 edition = "2021"
 description = "A high-performance, memory-safe Rust port of WebARKitLib (ARToolKit) for native and WASM."
