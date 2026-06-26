@@ -877,6 +877,22 @@ mod tests {
     }
 
     #[test]
+    fn test_bhc_build_all_identical() {
+        // Degenerate input: many identical descriptors. k-medoids distances are
+        // all zero, so the split is degenerate — exercise that path (#177).
+        let feat = [42u8; 96];
+        let owned: Vec<[u8; 96]> = (0..20).map(|_| feat).collect();
+        let features: Vec<&[u8; 96]> = owned.iter().collect();
+        let mut bhc = BinaryHierarchicalClustering::new().unwrap();
+        bhc.build(&features).expect("build over identical features");
+        let res = bhc.query(&feat).expect("query");
+        assert!(
+            !res.is_empty(),
+            "query of an identical feature must return the leaf members"
+        );
+    }
+
+    #[test]
     fn test_bhc_roundtrip() {
         let mut bhc = BinaryHierarchicalClustering::new().unwrap();
         let feat1 = [1u8; 96];

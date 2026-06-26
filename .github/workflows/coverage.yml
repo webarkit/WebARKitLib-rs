@@ -33,6 +33,7 @@ jobs:
             --output-dir coverage \
             --timeout 300 \
             --exclude-files "**/tests/*" \
+            --exclude-files "**/examples/*" \
             --ignore-panics
 
       - name: Upload coverage reports to Codecov
