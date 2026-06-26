@@ -93,8 +93,15 @@ jobs:
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y libclang-dev
 
+    # cache-bin: false avoids caching ~/.cargo/bin. On macOS this job
+    # intermittently restored a stale `cargo` shim resolving to
+    # `rustup-init`, so `cargo build` was parsed as `rustup-init build`
+    # and failed (#134). This job installs no cargo-managed binaries, so
+    # disabling bin caching costs nothing while removing the flake.
     - name: Rust Cache
       uses: Swatinem/rust-cache@v2
+      with:
+        cache-bin: false
 
     # Strict clippy gate (#180): --all-targets covers examples/tests/benches;
     # --all-features exercises ffi-backend, dual-mode, simd-* paths the
