@@ -536,6 +536,37 @@ mod tests {
     }
 
     #[test]
+    fn test_build_rejects_invalid_config() {
+        // num_levels == 0.
+        let mut p = Pyramid::new(0, 2.0);
+        assert!(matches!(
+            p.build(&gradient(8, 8)),
+            Err(PyramidError::ZeroLevels)
+        ));
+
+        // scale_factor other than 2.0 is unsupported.
+        let mut p = Pyramid::new(3, 1.5);
+        assert!(matches!(
+            p.build(&gradient(8, 8)),
+            Err(PyramidError::InvalidScaleFactor(s)) if (s - 1.5).abs() < f32::EPSILON
+        ));
+
+        // Empty input image (0 rows / 0 cols).
+        let mut p = Pyramid::new(3, 2.0);
+        assert!(matches!(
+            p.build(&gradient(0, 0)),
+            Err(PyramidError::EmptyImage)
+        ));
+
+        // Pyramid too deep for a tiny image: level 2 would be 0-sized.
+        let mut p = Pyramid::new(3, 2.0);
+        assert!(matches!(
+            p.build(&gradient(2, 2)),
+            Err(PyramidError::LevelTooSmall { level: 2 })
+        ));
+    }
+
+    #[test]
     fn test_pyramid_level_dimensions_shrink() {
         let img = gradient(64, 64);
         let mut p = Pyramid::new(3, 2.0);
