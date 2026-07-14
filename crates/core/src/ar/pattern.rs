@@ -1203,6 +1203,79 @@ mod tests {
     }
 
     #[test]
+    fn test_ar_patt_activate_deactivate_free() {
+        let mut handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
+
+        // Load one pattern into slot 0.
+        let mut buf = String::new();
+        for _ in 0..(4 * AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) {
+            buf.push_str("128 ");
+        }
+        assert_eq!(ar_patt_load_from_buffer(&mut handle, &buf).unwrap(), 0);
+
+        // Happy path: activate then deactivate the loaded pattern.
+        assert!(ar_patt_activate(&mut handle, 0).is_ok());
+        assert!(handle.active[0]);
+        assert!(ar_patt_deactivate(&mut handle, 0).is_ok());
+        assert!(!handle.active[0]);
+
+        // Invalid index (negative and out of range).
+        assert_eq!(
+            ar_patt_activate(&mut handle, -1),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(
+            ar_patt_activate(&mut handle, AR_PATT_NUM_MAX),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(
+            ar_patt_deactivate(&mut handle, -1),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(ar_patt_free(&mut handle, -1), Err("Invalid pattern index"));
+
+        // Not-loaded slot (slot 1 was never populated).
+        assert_eq!(ar_patt_activate(&mut handle, 1), Err("Pattern not loaded"));
+        assert_eq!(
+            ar_patt_deactivate(&mut handle, 1),
+            Err("Pattern not loaded")
+        );
+
+        // free() on an empty slot is a no-op Ok; on a loaded slot it decrements.
+        assert!(ar_patt_free(&mut handle, 1).is_ok());
+        assert_eq!(handle.patt_num, 1);
+        assert!(ar_patt_free(&mut handle, 0).is_ok());
+        assert_eq!(handle.patt_num, 0);
+    }
+
+    #[test]
+    fn test_pattern_match_input_errors() {
+        use crate::types::MatchError;
+        let handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
+
+        // size <= 0 is rejected up front.
+        assert!(matches!(
+            pattern_match(&handle, AR_TEMPLATE_MATCHING_COLOR, &[], 0),
+            Err(MatchError::PatternExtraction)
+        ));
+
+        // Buffer smaller than size*size*3 (color) is rejected.
+        assert!(matches!(
+            pattern_match(
+                &handle,
+                AR_TEMPLATE_MATCHING_COLOR,
+                &[0u8; 3],
+                AR_PATT_SIZE1
+            ),
+            Err(MatchError::PatternExtraction)
+        ));
+
+        // Unsupported matching mode is rejected.
+        let big = vec![0u8; (AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) as usize];
+        assert!(pattern_match(&handle, 999, &big, AR_PATT_SIZE1).is_err());
+    }
+
+    #[test]
     fn test_ar_patt_save_and_load() {
         use image::ImageReader;
         use std::fs;
