@@ -105,13 +105,11 @@ fn extraction_params(level: u8) -> ExtractionParams {
 // Template helpers (ported from featureMap.c static functions)
 // ---------------------------------------------------------------------------
 
-/// Create a zero-mean template patch centred at `(cx, cy)`.
-///
-/// Returns `Some(vlen)` on success, `None` if the patch is out of bounds or
-/// has insufficient variance.
-#[allow(clippy::too_many_arguments)]
-fn make_template(
-    image: &[u8],
+/// The source image plus the centre and radii describing a template patch.
+/// Grouped into a struct to keep [`make_template`] within clippy's argument
+/// limit (#83).
+struct TemplatePatch<'a> {
+    image: &'a [u8],
     xsize: i32,
     ysize: i32,
     cx: i32,
@@ -119,8 +117,23 @@ fn make_template(
     ts1: i32,
     ts2: i32,
     sd_thresh: f32,
-    template: &mut [f32],
-) -> Option<f32> {
+}
+
+/// Create a zero-mean template patch centred at `(cx, cy)`.
+///
+/// Returns `Some(vlen)` on success, `None` if the patch is out of bounds or
+/// has insufficient variance.
+fn make_template(p: &TemplatePatch<'_>, template: &mut [f32]) -> Option<f32> {
+    let TemplatePatch {
+        image,
+        xsize,
+        ysize,
+        cx,
+        cy,
+        ts1,
+        ts2,
+        sd_thresh,
+    } = *p;
     if cy - ts1 < 0 || cy + ts2 >= ysize || cx - ts1 < 0 || cx + ts2 >= xsize {
         return None;
     }
@@ -175,6 +188,9 @@ fn make_template(
 /// `sx` (sum of u8 values) and `sxx` (sum of squared u8 values) are
 /// accumulated as `u64` integers in all paths — no FP drift on those.
 #[inline]
+// rationale: runtime dispatcher whose signature is locked to match
+// get_similarity_scalar and the SIMD variants (get_similarity_sse41/avx2)
+// for is_x86_feature_detected! dispatch (#83).
 #[allow(clippy::too_many_arguments)]
 fn get_similarity(
     image: &[u8],
@@ -211,6 +227,8 @@ fn get_similarity(
 /// `sx`/`sxx` use `u64` integer accumulation to avoid f32 rounding past
 /// 2^24. `sxy` is accumulated left-to-right in row-major order.
 #[inline]
+// rationale: scalar fallback whose signature is locked to match the SIMD
+// variants (get_similarity_sse41/avx2) for runtime dispatch (#83).
 #[allow(clippy::too_many_arguments)]
 fn get_similarity_scalar(
     image: &[u8],
@@ -615,11 +633,22 @@ fn gen_feature_map_for_level(
             let ci = i as i32;
             let cj = j as i32;
 
-            let vlen =
-                match make_template(image, xsize, ysize, ci, cj, ts1, ts2, sd_thresh, &mut tmpl) {
-                    Some(v) => v,
-                    None => continue,
-                };
+            let vlen = match make_template(
+                &TemplatePatch {
+                    image,
+                    xsize,
+                    ysize,
+                    cx: ci,
+                    cy: cj,
+                    ts1,
+                    ts2,
+                    sd_thresh,
+                },
+                &mut tmpl,
+            ) {
+                Some(v) => v,
+                None => continue,
+            };
 
             let mut max = -1.0f32;
             let mut early_exit = false;
@@ -655,22 +684,39 @@ fn gen_feature_map_for_level(
 // Feature selection
 // ---------------------------------------------------------------------------
 
-/// Greedily select features from a feature map.
-///
-/// Ported from `ar2SelectFeature` in the C source.
-#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
-fn select_features(
-    image: &[u8],
+/// Inputs to [`select_features`]: the source image, its feature map, and the
+/// selection thresholds. Grouped into a struct to keep the selector within
+/// clippy's argument limit (#83).
+struct FeatureSelection<'a> {
+    image: &'a [u8],
     xsize: i32,
     ysize: i32,
     dpi: f32,
-    fmap: &[f32],
+    fmap: &'a [f32],
     max_feature_num: i32,
     max_sim_thresh: f32,
     min_sim_thresh: f32,
     sd_thresh: f32,
     occ_size: i32,
-) -> Vec<AR2FeatureCoordT> {
+}
+
+/// Greedily select features from a feature map.
+///
+/// Ported from `ar2SelectFeature` in the C source.
+#[allow(clippy::needless_range_loop)]
+fn select_features(s: &FeatureSelection<'_>) -> Vec<AR2FeatureCoordT> {
+    let FeatureSelection {
+        image,
+        xsize,
+        ysize,
+        dpi,
+        fmap,
+        max_feature_num,
+        max_sim_thresh,
+        min_sim_thresh,
+        sd_thresh,
+        occ_size,
+    } = *s;
     let w = xsize as usize;
     let h = ysize as usize;
     let ts1 = AR2_DEFAULT_TS1;
@@ -704,7 +750,19 @@ fn select_features(
         }
 
         // Validate: re-create template and check variance
-        let vlen = match make_template(image, xsize, ysize, cx, cy, ts1, ts2, 0.0, &mut tmpl) {
+        let vlen = match make_template(
+            &TemplatePatch {
+                image,
+                xsize,
+                ysize,
+                cx,
+                cy,
+                ts1,
+                ts2,
+                sd_thresh: 0.0,
+            },
+            &mut tmpl,
+        ) {
             Some(v) => v,
             None => {
                 work[(cy as usize) * w + (cx as usize)] = 1.0;
@@ -838,18 +896,18 @@ pub fn ar2_gen_feature_map(
         );
 
         // Greedily select features using level-dependent thresholds.
-        let coords = select_features(
-            &img.img_bw,
-            img.xsize,
-            img.ysize,
-            img.dpi,
-            &fmap,
-            search_feature_num,
-            params.max_sim_thresh,
-            params.min_sim_thresh,
-            params.sd_thresh,
-            params.occ_size,
-        );
+        let coords = select_features(&FeatureSelection {
+            image: &img.img_bw,
+            xsize: img.xsize,
+            ysize: img.ysize,
+            dpi: img.dpi,
+            fmap: &fmap,
+            max_feature_num: search_feature_num,
+            max_sim_thresh: params.max_sim_thresh,
+            min_sim_thresh: params.min_sim_thresh,
+            sd_thresh: params.sd_thresh,
+            occ_size: params.occ_size,
+        });
 
         // Compute mindpi: next lower DPI in the set, or current × 0.5.
         // Ports the scale1 loop in markerCreator.cpp.
@@ -995,7 +1053,20 @@ mod tests {
         let data = vec![100u8; 10 * 10];
         let mut tmpl = vec![0.0f32; 529]; // (11+11+1)^2 = 529
                                           // Centre at (0,0) with ts1=11 → out of bounds
-        assert!(make_template(&data, 10, 10, 0, 0, 11, 11, 0.0, &mut tmpl).is_none());
+        assert!(make_template(
+            &TemplatePatch {
+                image: &data,
+                xsize: 10,
+                ysize: 10,
+                cx: 0,
+                cy: 0,
+                ts1: 11,
+                ts2: 11,
+                sd_thresh: 0.0,
+            },
+            &mut tmpl
+        )
+        .is_none());
     }
 
     /// Helper: build a deterministic 64×64 pseudo-random image and template

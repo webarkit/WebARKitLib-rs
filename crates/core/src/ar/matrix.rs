@@ -122,13 +122,15 @@ pub fn ar_matrix_code_get_id(
     let mut bits = vec![0u8; (grid_size * grid_size) as usize];
 
     sample_grid(
-        image,
-        xsize,
-        ysize,
-        vertex,
-        grid_size,
-        pixel_format,
-        patt_ratio,
+        &GridSample {
+            image,
+            xsize,
+            ysize,
+            vertex,
+            grid_size,
+            pixel_format,
+            patt_ratio,
+        },
         &mut bits,
     )
     .map_err(|_| MatchError::PatternExtraction)?;
@@ -379,6 +381,19 @@ pub fn ar_get_barcode_marker(
     Ok(marker_info)
 }
 
+/// Inputs to [`sample_grid`]: the source image plus the geometry of the
+/// square to project onto a regular grid. Grouped into a struct to keep the
+/// sampler within clippy's argument limit (#83).
+struct GridSample<'a> {
+    image: &'a [u8],
+    xsize: i32,
+    ysize: i32,
+    vertex: &'a [[ARdouble; 2]; 4],
+    grid_size: i32,
+    pixel_format: crate::types::ARPixelFormat,
+    patt_ratio: f64,
+}
+
 /// Project image pixels onto a regular grid using a homography.
 ///
 /// Samples `grid_size × grid_size` evenly-spaced points inside the square
@@ -395,17 +410,16 @@ pub fn ar_get_barcode_marker(
 ///   equal to `dim + 2` where `dim = code_type & 0xFF`.
 /// - `patt_ratio` — fraction of the square covered by data cells (0.5–0.9).
 /// - `bits` — output: `grid_size * grid_size` raw intensity values.
-#[allow(clippy::too_many_arguments)]
-fn sample_grid(
-    image: &[u8],
-    xsize: i32,
-    ysize: i32,
-    vertex: &[[ARdouble; 2]; 4],
-    grid_size: i32,
-    pixel_format: crate::types::ARPixelFormat,
-    patt_ratio: f64,
-    bits: &mut [u8],
-) -> Result<(), &'static str> {
+fn sample_grid(g: &GridSample<'_>, bits: &mut [u8]) -> Result<(), &'static str> {
+    let GridSample {
+        image,
+        xsize,
+        ysize,
+        vertex,
+        grid_size,
+        pixel_format,
+        patt_ratio,
+    } = *g;
     let nc = match pixel_format {
         crate::types::ARPixelFormat::MONO => 1,
         crate::types::ARPixelFormat::RGB | crate::types::ARPixelFormat::BGR => 3,
@@ -568,13 +582,15 @@ fn ar_matrix_code_get_id_global(
     let mut grid = vec![0u8; AR_GLOBAL_ID_OUTER_SIZE * AR_GLOBAL_ID_OUTER_SIZE];
     let patt_ratio = AR_GLOBAL_ID_OUTER_SIZE as f64 / (AR_GLOBAL_ID_OUTER_SIZE as f64 + 2.0);
     sample_grid(
-        image,
-        xsize,
-        ysize,
-        vertex,
-        AR_GLOBAL_ID_OUTER_SIZE as i32,
-        pixel_format,
-        patt_ratio,
+        &GridSample {
+            image,
+            xsize,
+            ysize,
+            vertex,
+            grid_size: AR_GLOBAL_ID_OUTER_SIZE as i32,
+            pixel_format,
+            patt_ratio,
+        },
         &mut grid,
     )
     .map_err(|_| {

@@ -1008,6 +1008,9 @@ pub struct AR2Tracking2DResult {
     pub pos3d: [f32; 3],
 }
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2Tracking internals); struct-grouping is a breaking change deferred to
+// a pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar2_tracking_2d_sub(
     cparam_lt: Option<&ARParamLT>,
@@ -1426,6 +1429,9 @@ pub fn ar2_get_trans_mat(
 pub const KEEP_NUM: usize = 3;
 pub const SKIP_INTERVAL: i32 = 3;
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2GetBestMatching); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching(
     img: &[u8],
@@ -1554,6 +1560,9 @@ pub fn ar2_get_best_matching(
     final_ret
 }
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2GetBestMatchingSubFine); struct-grouping is a breaking change deferred
+// to a pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar2_get_best_matching_sub_fine(
     img: &[u8],

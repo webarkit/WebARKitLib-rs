@@ -611,6 +611,9 @@ pub(crate) fn history_resurrect(ar_handle: &mut crate::types::ARHandle) {
 /// - `label_info` — labeling output produced by [`crate::labeling::ar_labeling`].
 /// - `marker_info2` — output slice (length ≥ `AR_SQUARE_MAX`) to write candidates into.
 /// - `marker2_num` — number of candidates written on return.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arDetectMarker2); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_detect_marker2(
     xsize: i32,
@@ -1175,6 +1178,9 @@ pub fn ar_get_line(
 /// - `patt_handle_opt` — loaded pattern database (required for template modes;
 ///   pass `None` for pure matrix-code mode).
 /// - `matrix_code_type` — dimension/ECC variant used by [`crate::matrix::ar_matrix_code_get_id`].
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arGetMarkerInfo); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_get_marker_info(
     image: &[u8],
