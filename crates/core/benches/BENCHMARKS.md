@@ -76,7 +76,24 @@ metric we measure, and #142 explicitly permits deferring the
 quantitative perf check to a follow-up: *"If slower, open a follow-up
 performance issue rather than blocking this PR."*
 
-A future PR will add a KPM-specific Criterion bench (`kpm_bench.rs`)
-that loads `pinball.fset3` + `pinball-demo.jpg` and times
-`kpm_matching` with each backend, producing the dedicated wall-clock
-comparison.
+### `kpm_bench.rs` — dedicated KPM wall-clock (#225)
+
+`kpm_bench.rs` loads `pinball.fset3` + `pinball-demo.jpg` and times a
+single `KpmHandle::kpm_matching` query (setup — ref-data load + handle
+build — is done once outside the measured loop). Run it with:
+
+```sh
+cargo bench -p webarkitlib-rs --bench kpm_bench
+```
+
+Baseline (pure-Rust `RustFreakMatcher`, `pinball-demo.jpg` at
+2000×1500, release build):
+
+| Backend | Query time (median) |
+|---------|---------------------|
+| Rust (`RustFreakMatcher`) | ~0.30 s |
+
+The within-20% comparison against the C++ `CppFreakMatcher` is wired
+by building with `--features ffi-backend` and swapping the backend in
+the bench; numbers are hardware-dependent, so treat the committed
+figure as an order-of-magnitude reference, not a hard CI gate.
