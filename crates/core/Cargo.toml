@@ -163,3 +163,7 @@ harness = false
 [[bench]]
 name = "gaussian_pyramid_bench"
 harness = false
+
+[[bench]]
+name = "kpm_bench"
+harness = false
