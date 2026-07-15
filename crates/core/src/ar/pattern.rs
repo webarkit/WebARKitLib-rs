@@ -199,6 +199,9 @@ pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i3
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `patt_size` - Size of the pattern grid.
 /// * `filename` - Destination path for the saved pattern file.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattSave); struct-grouping is a breaking change deferred to a pre-1.0
+// API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 pub fn ar_patt_save(
     image: &[u8],
@@ -567,6 +570,9 @@ pub fn get_cpara(
 /// * `vertex` - Array of 4 indices pointing to the corners in the coord arrays.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattGetImage); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image(
     image_proc_mode: i32,
@@ -806,6 +812,9 @@ pub fn ar_patt_get_image(
 /// * `vertex` - 4 corners of the detected marker.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattGetImage2); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image2(
     image_proc_mode: i32,

@@ -95,6 +95,9 @@ pub enum ImageProcMode {
 ///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
 /// arlog_i!("{} regions found", label_info.label_num);
 /// ```
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arLabeling); struct-grouping is a breaking change deferred to a pre-1.0
+// API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_labeling(
     image: &[u8],
