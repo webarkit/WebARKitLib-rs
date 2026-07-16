@@ -209,14 +209,18 @@ pub struct KpmResult {
 /// 2D point with `f32` coordinates.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Point2f {
+    /// Horizontal position in pixels.
     pub x: f32,
+    /// Vertical position in pixels.
     pub y: f32,
 }
 
 /// 2D point with integer coordinates, used for corner detection.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Point2i {
+    /// Horizontal position in pixels.
     pub x: i32,
+    /// Vertical position in pixels.
     pub y: i32,
 }
 
