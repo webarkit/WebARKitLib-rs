@@ -49,6 +49,12 @@
 #[cfg(feature = "ffi-backend")]
 mod bindings {
     #![allow(non_upper_case_globals, non_camel_case_types, non_snake_case)]
+    // rationale: the contents are generated verbatim by bindgen in build.rs
+    // from kpm_c_api.h, so there is no source to attach rustdoc to. The
+    // module-level docs above describe the surface instead; the safe wrapper
+    // (CppFreakMatcher) is what consumers should use. Needed because the kpm
+    // tree opts into `#![warn(missing_docs)]` (#226).
+    #![allow(missing_docs)]
     include!(concat!(env!("OUT_DIR"), "/kpm_bindings.rs"));
 }
 
