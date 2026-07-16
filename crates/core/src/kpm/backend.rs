@@ -74,8 +74,11 @@ pub struct FeaturePoint {
 /// Z coordinate is always `0.0` for planar targets.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Point3d {
+    /// X coordinate in millimetres.
     pub x: f32,
+    /// Y coordinate in millimetres.
     pub y: f32,
+    /// Z coordinate in millimetres. Always `0.0` for planar targets.
     pub z: f32,
 }
 

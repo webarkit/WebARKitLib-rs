@@ -67,7 +67,10 @@ pub enum PyramidError {
     /// Downsampling at this level would produce a 0-sized image.
     /// Returned when the input image is too small for the requested
     /// number of levels.
-    LevelTooSmall { level: usize },
+    LevelTooSmall {
+        /// Index of the level that could not be built.
+        level: usize,
+    },
 }
 
 impl std::fmt::Display for PyramidError {

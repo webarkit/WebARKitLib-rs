@@ -306,11 +306,13 @@ impl BinParams {
 /// Accumulates votes for similarity transformations in discretized 4D space.
 pub struct HoughSimilarityVoting {
     params: BinParams,
-    /// Object center in reference image.
+    /// Object center in the reference image (x, in pixels).
     pub center_x: f32,
+    /// Object center in the reference image (y, in pixels).
     pub center_y: f32,
-    /// Reference image dimensions.
+    /// Reference image width in pixels.
     pub ref_image_width: i32,
+    /// Reference image height in pixels.
     pub ref_image_height: i32,
     /// Vote map: bin_index → vote count.
     ///
@@ -537,9 +539,13 @@ impl HoughSimilarityVoting {
 /// C equivalent: vision::FeaturePoint
 #[derive(Clone, Debug, Copy)]
 pub struct FeaturePoint {
+    /// Horizontal position in pixels.
     pub x: f32,
+    /// Vertical position in pixels.
     pub y: f32,
+    /// Dominant orientation in radians.
     pub angle: f32,
+    /// Scale (pyramid octave level) at which the keypoint was detected.
     pub scale: f32,
     /// True if this is a maxima, false if a minima (used to filter matches).
     pub maxima: bool,
@@ -570,8 +576,11 @@ pub struct Match {
 /// A scored match used internally by Hough voting (carries distance for ranking).
 #[derive(Clone, Copy, Debug)]
 pub struct HoughMatch {
+    /// Index into the query image's feature-point list.
     pub query_idx: u32,
+    /// Index into the reference database's feature-point list.
     pub ref_idx: u32,
+    /// Descriptor distance for this match; lower is a closer match.
     pub distance: f32,
 }
 
