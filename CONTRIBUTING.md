@@ -41,6 +41,58 @@ Run the following commands in the project root:
 
 If you add a new feature, make sure to include appropriate tests in `src/**/tests.rs` or as integration tests.
 
+## Troubleshooting the build
+
+### `ffi-backend` / `--all-features` fails in `build.rs` with a bindgen panic
+
+The default build is **pure Rust and needs no C++ toolchain** — you only hit
+this when you opt into the C++ FreakMatcher via `--features ffi-backend`
+(or `--all-features`, or `dual-mode`, which implies it).
+
+**Symptom**
+
+```text
+error: failed to run custom build command for `webarkitlib-rs`
+  thread 'main' panicked at .../bindgen-0.72.1/lib.rs:917:13:
+  assertion `left == right` failed: "x86_64-pc-windows-msvc" "x86_64-pc-windows-msvc"
+    left: 4
+   right: 8
+```
+
+**Cause** — `LIBCLANG_PATH` points at a `libclang` built for a **32-bit**
+target, so bindgen sees a pointer width of `4` while the host target
+(`x86_64`) expects `8`. The confusing part is that both sides of the
+assertion print the same triple; only the widths differ.
+
+A common way to end up here on Windows is having a cross-compilation
+toolchain's `libclang` on `LIBCLANG_PATH` — for example the Xtensa clang
+that ships with the [esp-rs](https://github.com/esp-rs) toolchain
+(`~/.rustup/toolchains/esp/xtensa-esp32-elf-clang/...`), which targets the
+32-bit ESP32.
+
+**Fix** — point `LIBCLANG_PATH` at an `x86_64` `libclang` for the shell you
+build this repo in:
+
+```powershell
+$env:LIBCLANG_PATH = "C:\Program Files\LLVM\bin"
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+The `x64` libclang bundled with Visual Studio works too:
+`C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\Llvm\x64\bin`.
+
+**Set it per-session, not globally**, if you also do embedded work — the
+cross-toolchain needs its own `LIBCLANG_PATH`. For the same reason we do
+**not** ship a `.cargo/config.toml` `[env]` override: it would need
+`force = true` to beat an already-set variable, and cargo's `[env]` has no
+per-OS conditionals, so it would push a Windows path onto Linux CI and
+override its `libclang-dev`.
+
+> Worth fixing rather than ignoring: without it you cannot run the
+> `--all-features` gate locally, so breakage that only exists behind
+> `ffi-backend` (e.g. lints firing on bindgen-generated code) reaches CI
+> instead of your machine.
+
 ## Commit Message Conventions
 
 To maintain a clean and automated release history, this project strictly adheres to the [Conventional Commits](https://www.conventionalcommits.org/) specification.
