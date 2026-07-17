@@ -209,7 +209,9 @@ For integration into your own project, install the pre-built package from npm �
 npm install @webarkit/webarkitlib-wasm
 ```
 
-See [@webarkit/webarkitlib-wasm](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm) for API documentation and usage examples.
+📖 **[WebAssembly (JS/TS) integration guide](https://github.com/webarkit/WebARKitLib-rs/blob/main/docs/wasm-js-integration.md)** — a full walkthrough: loading and initializing the module, the standard vs SIMD engines, the three handles (`WasmARHandle` / `WasmKpmHandle` / `WasmNFTHandle`), the NFT detect-then-track loop, the pose-matrix layout, TypeScript usage, and memory management.
+
+See also [@webarkit/webarkitlib-wasm](https://www.npmjs.com/package/@webarkit/webarkitlib-wasm) on npm.
 
 #### Running the bundled demos
 
