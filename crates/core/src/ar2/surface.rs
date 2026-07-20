@@ -51,21 +51,35 @@ use std::path::Path;
 // MarkerSet is ignored for now per user rules (no multi-marker / complex markers yet)
 // but we might need a placeholder if it's tightly coupled.
 
+/// One trackable surface of an NFT marker: its image pyramid, feature set,
+/// and the pose transforms relating the surface to the marker.
 #[derive(Debug, Default, Clone)]
 pub struct AR2Surface {
+    /// Multi-resolution image pyramid (`.iset`), if loaded.
     pub image_set: Option<AR2ImageSet>,
+    /// Tracking feature set (`.fset`), if loaded.
     pub feature_set: Option<AR2FeatureSet>,
+    /// Surface → marker transform (3×4).
     pub trans: [[f32; 4]; 3],
+    /// Inverse of [`trans`](Self::trans) (marker → surface).
     pub itrans: [[f32; 4]; 3],
 }
 
+/// A set of trackable surfaces plus the per-frame AR2 tracking state
+/// (recent pose history and previously matched features).
 #[derive(Debug, Clone)]
 pub struct AR2SurfaceSet {
+    /// The individual trackable surfaces.
     pub surface: Vec<AR2Surface>,
+    /// Most recent pose (3×4); the current tracking estimate.
     pub trans1: [[f32; 4]; 3],
+    /// Pose from one frame ago.
     pub trans2: [[f32; 4]; 3],
+    /// Pose from two frames ago.
     pub trans3: [[f32; 4]; 3],
+    /// Number of consecutive frames tracked so far (0 = not currently tracked).
     pub cont_num: i32,
+    /// Feature candidates carried over from the previous frame.
     pub prev_feature: Vec<AR2TemplateCandidate>,
 }
 
