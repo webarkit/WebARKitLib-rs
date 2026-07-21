@@ -84,6 +84,7 @@ const BCH_127_INDEX_OF: [i32; 128] = [
 // Public decoders for short codes (parity-65, hamming-63).
 // =====================================================================
 
+/// Decode a 3×3 parity(6,5) matrix code, returning the marker ID.
 pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
     const PARITY65_DECODER_TABLE: [i8; 64] = [
         0, -1, -1, 3, -1, 5, 6, -1, -1, 9, 10, -1, 12, -1, -1, 15, -1, 17, 18, -1, 20, -1, -1, 23,
@@ -106,6 +107,7 @@ pub fn decode_parity65(code_raw: u64) -> Result<u64, &'static str> {
     }
 }
 
+/// Decode a 3×3 Hamming(6,3) matrix code, returning the ID and corrected-error count.
 pub fn decode_hamming63(code_raw: u64) -> Result<(u64, i32), &'static str> {
     const HAMMING63_DECODER_TABLE: [i8; 64] = [
         0, 0, 0, 1, 0, 1, 1, 1, 0, 2, 4, -1, -1, 5, 3, 1, 0, 2, -1, 6, 7, -1, 3, 1, 2, 2, 3, 2, 3,

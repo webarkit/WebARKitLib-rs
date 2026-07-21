@@ -318,6 +318,7 @@ impl ARImageProcInfo {
     }
 }
 
+/// Scalar horizontal box-blur pass over a grayscale image.
 pub fn box_filter_h_scalar(
     data: &[u8],
     image_temp_u16: &mut [u16],
@@ -340,6 +341,7 @@ pub fn box_filter_h_scalar(
     }
 }
 
+/// Scalar vertical box-blur pass over a grayscale image.
 pub fn box_filter_v_scalar(
     image_temp_u16: &[u16],
     image2: &mut [u8],
@@ -403,6 +405,7 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
     rgba_to_gray_scalar(rgba)
 }
 
+/// Scalar RGBA → grayscale (luminance) conversion.
 pub fn rgba_to_gray_scalar(rgba: &[u8]) -> Vec<u8> {
     let mut gray = Vec::with_capacity(rgba.len() / 4);
     for chunk in rgba.chunks_exact(4) {

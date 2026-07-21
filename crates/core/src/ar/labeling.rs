@@ -41,17 +41,24 @@ use crate::arlog_e;
 use crate::types::{ARLabelInfo, ARdouble};
 use log::trace;
 
+/// Size of the labeling pass scratch work buffer.
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// Which luminance polarity to trace during connected-component labeling.
 pub enum LabelingMode {
+    /// Trace dark regions on a lighter background.
     BlackRegion,
+    /// Trace light regions on a darker background.
     WhiteRegion,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// Whether to process the full frame or a half-resolution field.
 pub enum ImageProcMode {
+    /// Process the full-resolution frame.
     FrameImage,
+    /// Process a single interlaced half-resolution field.
     FieldImage, // Handles interlaced half-resolution fields
 }
 

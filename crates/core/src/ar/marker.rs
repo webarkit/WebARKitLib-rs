@@ -40,16 +40,25 @@
 use crate::types::{ARLabelInfo, ARMarkerInfo2, ARPixelFormat, ARdouble};
 use crate::{arlog_d, arlog_e};
 
+/// Maximum area in pixels for a candidate marker region.
 pub const AR_AREA_MAX: i32 = 100000;
+/// Minimum area in pixels for a candidate marker region.
 pub const AR_AREA_MIN: i32 = 70;
+/// Maximum line-fitting error for accepting a region as a square.
 pub const AR_SQUARE_FIT_THRESH: f64 = 0.05;
+/// Maximum contour chain length traced per region.
 pub const AR_CHAIN_MAX: usize = 10000;
+/// Maximum number of square candidates per frame.
 pub const AR_SQUARE_MAX: usize = 30;
+/// Default confidence threshold for accepting a pattern match.
 pub const AR_CONFIDENCE_CUTOFF_DEFAULT: f64 = 0.5;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// Whether to process the full frame or a half-resolution field.
 pub enum ImageProcMode {
+    /// Process the full-resolution frame.
     FrameImage = 0,
+    /// Process a single interlaced half-resolution field.
     FieldImage = 1,
 }
 
