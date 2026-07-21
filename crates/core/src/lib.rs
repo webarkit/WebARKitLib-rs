@@ -109,6 +109,12 @@
 //! use webarkitlib_rs::marker::ar_detect_marker as ar_detect_marker_compat;
 //! ```
 
+// Every `pub` item in the crate is documented (#226). CI's
+// `clippy -D warnings` escalates this lint, so a new undocumented public
+// item fails the build. Bindgen-generated FFI bindings opt out locally with
+// their own `#![allow(missing_docs)]` (see `kpm::kpm_ffi`).
+#![warn(missing_docs)]
+
 pub mod ar;
 pub mod ar2;
 pub mod arlog;

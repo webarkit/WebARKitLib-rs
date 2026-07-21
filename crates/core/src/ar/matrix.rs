@@ -45,9 +45,13 @@ pub(crate) const AR_GLOBAL_ID_INNER_SIZE: usize = 3;
 /// Results of a matrix code decoding attempt.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MatrixCodeResult {
+    /// Decoded marker ID.
     pub id: i32,
+    /// Orientation (0–3) at which the code matched.
     pub dir: i32,
+    /// Confidence factor of the match (0.0–1.0).
     pub cf: f64,
+    /// Number of bit errors corrected during decoding.
     pub error_corrected: i32,
 }
 

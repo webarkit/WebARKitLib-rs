@@ -126,9 +126,13 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(i32)]
 pub enum ArLogLevel {
+    /// Debug level — per-frame rejections and trace detail.
     Debug = 0,
+    /// Info level — one-shot informational events.
     Info = 1,
+    /// Warn level — recoverable anomalies.
     Warn = 2,
+    /// Error level — misconfiguration / wiring errors.
     Error = 3,
     /// Release-info: unconditional informational output with no `[level]` prefix.
     /// Routed through target `"arlog::rel"`.
@@ -178,21 +182,25 @@ pub fn ar_log_level() -> ArLogLevel {
 pub const AR_LOG_REL_TARGET: &str = "arlog::rel";
 
 #[macro_export]
+/// Log a debug-level message (per-frame trace detail).
 macro_rules! arlog_d {
     ($($arg:tt)*) => { ::log::debug!($($arg)*); };
 }
 
 #[macro_export]
+/// Log an info-level message (one-shot events).
 macro_rules! arlog_i {
     ($($arg:tt)*) => { ::log::info!($($arg)*); };
 }
 
 #[macro_export]
+/// Log a warning-level message (recoverable anomalies).
 macro_rules! arlog_w {
     ($($arg:tt)*) => { ::log::warn!($($arg)*); };
 }
 
 #[macro_export]
+/// Log an error-level message (misconfiguration / wiring errors).
 macro_rules! arlog_e {
     ($($arg:tt)*) => { ::log::error!($($arg)*); };
 }

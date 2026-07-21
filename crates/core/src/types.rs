@@ -37,17 +37,29 @@
 //! Core Data Structures for WebARKitLib
 //! Translated from ARToolKit C headers (ar.h, param.h, etc.)
 
+/// Floating-point type used throughout the AR pipeline.
+///
+/// C equivalent: `ARdouble` (this port always uses 64-bit precision).
 pub type ARdouble = f64;
 
+/// Maximum number of camera lens-distortion factors.
 pub const AR_DIST_FACTOR_NUM_MAX: usize = 9;
+/// Maximum number of contour chain points traced during labeling.
 pub const AR_CHAIN_MAX: usize = 40000;
+/// Maximum number of candidate squares detected per frame.
 pub const AR_SQUARE_MAX: usize = 30;
+/// Size of the scratch work buffer used by the labeling pass.
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
+/// Pattern detection mode: colour template matching.
 pub const AR_TEMPLATE_MATCHING_COLOR: i32 = 0;
+/// Pattern detection mode: mono (luminance) template matching.
 pub const AR_TEMPLATE_MATCHING_MONO: i32 = 1;
+/// Pattern detection mode: matrix (barcode) code detection.
 pub const AR_MATRIX_CODE_DETECTION: i32 = 2;
+/// Pattern detection mode: colour template matching **and** matrix codes.
 pub const AR_TEMPLATE_MATCHING_COLOR_AND_MATRIX_CODE_DETECTION: i32 = 3;
+/// Pattern detection mode: mono template matching **and** matrix codes.
 pub const AR_TEMPLATE_MATCHING_MONO_AND_MATRIX_CODE_DETECTION: i32 = 4;
 
 /// C equivalent: AR_NOUSE_TRACKING_HISTORY
@@ -64,7 +76,9 @@ pub const AR_USE_TRACKING_HISTORY_V2: i32 = 2;
 #[derive(Debug, Clone, PartialEq, Default)]
 #[repr(C)]
 pub struct AR2VideoTimestampT {
+    /// Whole seconds since the (arbitrary) epoch.
     pub sec: u64,
+    /// Microseconds within the current second.
     pub usec: u32,
 }
 
@@ -142,16 +156,26 @@ impl Default for ARMarkerInfo2 {
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMarkerInfoCutoffPhase {
+    /// Not cut off — the region was accepted as a valid marker.
     #[default]
     None = 0,
+    /// Rejected while extracting the pattern image from the region.
     PatternExtraction,
+    /// Rejected by a generic matching failure.
     MatchGeneric,
+    /// Rejected for insufficient contrast in the extracted pattern.
     MatchContrast,
+    /// Matrix-code mode: no barcode was found in the region.
     MatchBarcodeNotFound,
+    /// Matrix-code mode: the barcode failed its error-detection check.
     MatchBarcodeEdcFail,
+    /// Rejected because the match confidence was below the cutoff.
     MatchConfidence,
+    /// Rejected because pose estimation failed.
     PoseError,
+    /// Rejected because multi-marker pose estimation failed.
     PoseErrorMulti,
+    /// Rejected by the heuristic that filters troublesome matrix codes.
     HeuristicTroublesomeMatrixCodes,
 }
 
@@ -271,18 +295,26 @@ impl Default for ARMarkerInfo {
     }
 }
 
-// Opaque/dummy types for ARHandle dependencies
+/// Camera lens-distortion lookup tables, mapping between ideal (undistorted)
+/// and observed (distorted) image coordinates.
 #[derive(Debug, Clone, Default)]
 pub struct ARParamLTf {
+    /// Ideal → observed lookup table (interleaved `x, y` pairs).
     pub i2o: Vec<f32>,
+    /// Observed → ideal lookup table (interleaved `x, y` pairs).
     pub o2i: Vec<f32>,
+    /// Table width in pixels.
     pub xsize: i32,
+    /// Table height in pixels.
     pub ysize: i32,
+    /// Horizontal offset applied when indexing the tables.
     pub x_off: i32,
+    /// Vertical offset applied when indexing the tables.
     pub y_off: i32,
 }
 
 impl ARParamLTf {
+    /// Build identity lookup tables of the given size (no distortion applied).
     pub fn new_basic(xsize: i32, ysize: i32) -> Self {
         let i2o = vec![0.0f32; (xsize * ysize * 2) as usize];
         let mut o2i = vec![0.0f32; (xsize * ysize * 2) as usize];
@@ -325,40 +357,60 @@ impl ARParamLTf {
     }
 }
 
+/// Camera parameters bundled with their precomputed distortion lookup tables.
 #[derive(Debug, Clone, Default)]
 pub struct ARParamLT {
+    /// The camera intrinsics and distortion factors.
     pub param: ARParam,
+    /// Precomputed ideal↔observed lookup tables for [`param`](Self::param).
     pub param_ltf: ARParamLTf,
 }
 
 impl ARParamLT {
+    /// Bundle camera parameters with an existing lookup table.
     pub fn new(param: ARParam, param_ltf: ARParamLTf) -> Self {
         Self { param, param_ltf }
     }
 
+    /// Bundle camera parameters with identity lookup tables sized to the
+    /// parameters' image dimensions.
     pub fn new_basic(param: ARParam) -> Self {
         let param_ltf = ARParamLTf::new_basic(param.xsize, param.ysize);
         Self { param, param_ltf }
     }
 }
 
+/// A marker carried across frames by the tracking-history heuristic, with the
+/// number of consecutive frames it has been seen.
 #[repr(C)]
 #[derive(Debug, Clone, Default)]
 pub struct ARTrackingHistory {
+    /// The remembered marker.
     pub marker: ARMarkerInfo,
+    /// Consecutive-frame count for this marker.
     pub count: i32,
 }
 
+/// Integer type used for connected-component labels.
 pub type ARLabelingLabelType = i16;
 
+/// Output of the connected-component labeling pass: the label image plus
+/// per-label statistics.
 #[derive(Debug, Clone)]
 pub struct ARLabelInfo {
+    /// Per-pixel label image (0 = background).
     pub label_image: Vec<ARLabelingLabelType>,
+    /// Number of labels found.
     pub label_num: i32,
+    /// Pixel area of each label.
     pub area: Vec<i32>,
+    /// Clipping box of each label as `[x_min, x_max, y_min, y_max]`.
     pub clip: Vec<[i32; 4]>,
+    /// Centroid position of each label.
     pub pos: Vec<[ARdouble; 2]>,
+    /// Scratch buffer used during labeling.
     pub work: Vec<i32>,
+    /// Secondary scratch buffer used during labeling.
     pub work2: Vec<i32>,
 }
 
@@ -376,58 +428,99 @@ impl Default for ARLabelInfo {
     }
 }
 
+/// Storage for loaded template patterns and their precomputed norms.
+///
+/// Each pattern is stored in four orientations, in both colour and
+/// mono (black-and-white) form.
 #[derive(Debug, Clone, Default)]
 pub struct ARPattHandle {
+    /// Number of patterns currently loaded.
     pub patt_num: i32,
+    /// Maximum number of patterns this handle can hold.
     pub patt_num_max: i32,
+    /// Per-slot occupancy flags (`0` = free, non-zero = loaded).
     pub pattf: Vec<i32>,
+    /// Zero-mean colour pattern data, four orientations per pattern.
     pub patt: Vec<Vec<i16>>,
+    /// Vector norm of each colour pattern, for correlation normalization.
     pub pattpow: Vec<ARdouble>,
+    /// Zero-mean mono pattern data, four orientations per pattern.
     pub patt_bw: Vec<Vec<i16>>,
+    /// Vector norm of each mono pattern.
     pub pattpow_bw: Vec<ARdouble>,
+    /// Pattern edge length in samples (typically 16).
     pub patt_size: i32,
+    /// Per-slot active flags — only active patterns are matched.
     pub active: Vec<bool>,
 }
 
+/// Opaque image-processing state (placeholder for the C `ARImageProcInfo`).
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct ARImageProcInfo {
     _dummy: u8,
 }
 
+/// Pixel layout of an input video frame.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARPixelFormat {
+    /// Unset / unrecognised format.
     #[default]
     Invalid = -1,
+    /// 24-bit red, green, blue.
     RGB = 0,
+    /// 24-bit blue, green, red.
     BGR,
+    /// 32-bit red, green, blue, alpha.
     RGBA,
+    /// 32-bit blue, green, red, alpha.
     BGRA,
+    /// 32-bit alpha, blue, green, red.
     ABGR,
+    /// 8-bit luminance only.
     MONO,
+    /// 32-bit alpha, red, green, blue.
     ARGB,
+    /// Packed YUV 4:2:2 (`2vuy` / UYVY).
     TwoVuy,
+    /// Packed YUV 4:2:2 (`yuvs` / YUY2).
     Yuvs,
+    /// 16-bit 5:6:5 RGB.
     Rgb565,
+    /// 16-bit 5:5:5:1 RGBA.
     Rgba5551,
+    /// 16-bit 4:4:4:4 RGBA.
     Rgba4444,
+    /// Planar YUV 4:2:0 (video range).
     FourTwoZeroV,
+    /// Planar YUV 4:2:0 (full range).
     FourTwoZeroF,
+    /// Android NV21 (YUV 4:2:0 semi-planar).
     NV21,
 }
 
+/// Strategy used to pick the binarization threshold during labeling.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARLabelingThreshMode {
+    /// Use the threshold supplied by the caller.
     #[default]
     Manual = 0,
+    /// Derive the threshold from the image median.
     AutoMedian,
+    /// Derive the threshold via Otsu's method.
     AutoOtsu,
+    /// Adaptive local thresholding.
     AutoAdaptive,
+    /// Sweep a bracket of thresholds until markers are found.
     AutoBracketing,
 }
 
+/// Matrix (barcode) code family used for marker-ID decoding.
+///
+/// The low byte encodes the grid size; the high bits select the
+/// error-detection/correction scheme.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ARMatrixCodeType {
@@ -461,36 +554,64 @@ pub enum ARMatrixCodeType {
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct ARHandle {
+    /// Debug flag; when non-zero the debug label image is produced.
     pub ar_debug: i32,
+    /// Pixel format of incoming frames.
     pub ar_pixel_format: ARPixelFormat,
+    /// Bytes per pixel implied by [`ar_pixel_format`](Self::ar_pixel_format).
     pub ar_pixel_size: i32,
+    /// Labeling mode (which luminance polarity to trace).
     pub ar_labeling_mode: i32,
+    /// Current binarization threshold (0–255).
     pub ar_labeling_thresh: i32,
+    /// Image-processing mode (full frame vs field/half resolution).
     pub ar_image_proc_mode: i32,
+    /// Pattern detection mode (template, matrix code, or both).
     pub ar_pattern_detection_mode: i32,
+    /// Marker extraction mode.
     pub ar_marker_extraction_mode: i32,
+    /// Camera parameters + distortion lookup tables.
     pub ar_param_lt: *mut ARParamLT,
+    /// Frame width in pixels.
     pub xsize: i32,
+    /// Frame height in pixels.
     pub ysize: i32,
+    /// Number of valid entries in [`marker_info`](Self::marker_info).
     pub marker_num: i32,
+    /// Markers detected in the current frame.
     pub marker_info: Box<[ARMarkerInfo; AR_SQUARE_MAX]>,
+    /// Number of valid entries in [`marker_info2`](Self::marker_info2).
     pub marker2_num: i32,
+    /// Intermediate (pre-filtering) square candidates.
     pub marker_info2: Box<[ARMarkerInfo2; AR_SQUARE_MAX]>,
+    /// Number of valid entries in [`history`](Self::history).
     pub history_num: i32,
+    /// Tracking history used to resurrect briefly-lost markers.
     pub history: Box<[ARTrackingHistory; AR_SQUARE_MAX]>,
+    /// Connected-component labeling results for the current frame.
     pub label_info: ARLabelInfo,
+    /// Loaded template patterns used for matching.
     pub patt_handle: *mut ARPattHandle,
+    /// Strategy used to choose the binarization threshold.
     pub ar_labeling_thresh_mode: ARLabelingThreshMode,
+    /// Frame interval between automatic threshold recalculations.
     pub ar_labeling_thresh_auto_interval: i32,
+    /// Frames remaining until the next automatic recalculation.
     pub ar_labeling_thresh_auto_interval_ttl: i32,
+    /// Bracketing mode: current over-exposed threshold bound.
     pub ar_labeling_thresh_auto_bracket_over: i32,
+    /// Bracketing mode: current under-exposed threshold bound.
     pub ar_labeling_thresh_auto_bracket_under: i32,
+    /// Image-processing scratch state.
     pub ar_image_proc_info: *mut ARImageProcInfo,
+    /// Fraction of the marker square occupied by the pattern (0.5–0.9).
     pub patt_ratio: ARdouble,
+    /// Matrix-code family used when matrix-code detection is enabled.
     pub matrix_code_type: ARMatrixCodeType,
 }
 
 impl ARHandle {
+    /// Create a tracker handle sized to the given camera parameters.
     pub fn new(param: ARParam) -> Self {
         // In the full port, arParamLT would be initialized here too.
         ARHandle {
@@ -500,6 +621,7 @@ impl ARHandle {
         }
     }
 
+    /// Set the input pixel format and update the derived pixel size.
     pub fn set_pixel_format(&mut self, format: ARPixelFormat) {
         self.ar_pixel_format = format;
         // Update pixel size based on format if needed
@@ -514,14 +636,17 @@ impl ARHandle {
         };
     }
 
+    /// Select the matrix-code family used for barcode decoding.
     pub fn set_matrix_code_type(&mut self, code_type: ARMatrixCodeType) {
         self.matrix_code_type = code_type;
     }
 
+    /// Select the pattern detection mode (template, matrix code, or both).
     pub fn set_pattern_detection_mode(&mut self, mode: i32) {
         self.ar_pattern_detection_mode = mode;
     }
 
+    /// Return the currently selected matrix-code family.
     pub fn get_matrix_code_type(&self) -> ARMatrixCodeType {
         self.matrix_code_type
     }
@@ -576,6 +701,7 @@ pub use crate::icp::{ICPHandleT, ICPStereoHandleT};
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct AR3DHandle {
+    /// ICP solver state used for monocular pose estimation.
     pub icp_handle: *mut ICPHandleT,
 }
 
@@ -591,6 +717,7 @@ impl Default for AR3DHandle {
 #[derive(Debug, Clone)]
 #[repr(C)]
 pub struct AR3DStereoHandle {
+    /// ICP solver state used for stereo pose estimation.
     pub icp_stereo_handle: *mut ICPStereoHandleT,
 }
 

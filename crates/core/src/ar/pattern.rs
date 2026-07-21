@@ -43,7 +43,9 @@ use std::fs::File;
 use std::io::{BufWriter, Error, ErrorKind, Result as IoResult, Write};
 use std::path::Path;
 
+/// Maximum number of patterns a handle can hold.
 pub const AR_PATT_NUM_MAX: i32 = 50;
+/// Default pattern edge size in samples.
 pub const AR_PATT_SIZE1: i32 = 16;
 
 // Standard sample factor used in ARToolKit for pattern extraction
@@ -53,8 +55,11 @@ const AR_PATT_SAMPLE_FACTOR1: usize = 4;
 // Ensure these match your actual definitions in WebARKitLib-rs.
 const AR_IMAGE_PROC_FRAME_IMAGE: i32 = 0;
 const AR_IMAGE_PROC_FIELD_IMAGE: i32 = 1;
+/// Template matching mode: colour.
 pub const AR_TEMPLATE_MATCHING_COLOR: i32 = 0;
+/// Template matching mode: mono (luminance).
 pub const AR_TEMPLATE_MATCHING_MONO: i32 = 1;
+/// Minimum contrast required to accept an extracted pattern.
 pub const AR_PATT_CONTRAST_THRESH1: ARdouble = 5.0;
 
 impl ARPattHandle {
@@ -507,6 +512,7 @@ pub fn pattern_match(
 }
 
 #[allow(clippy::needless_range_loop)]
+/// Compute the 3×3 homography mapping the unit square to the marker's screen quad.
 pub fn get_cpara(
     world: &[[ARdouble; 2]; 4],
     vertex: &[[ARdouble; 2]; 4],
@@ -1046,6 +1052,7 @@ pub fn ar_patt_get_image2(
     Ok(())
 }
 
+/// Identify a square marker by matching its extracted pattern against loaded templates.
 pub fn ar_patt_get_id(
     patt_handle: &ARPattHandle,
     patt_detect_mode: i32,
@@ -1077,6 +1084,7 @@ fn dot_product(a: &[i16], b: &[i16]) -> i64 {
     dot_product_scalar(a, b)
 }
 
+/// Scalar dot product of two `i16` slices.
 pub fn dot_product_scalar(a: &[i16], b: &[i16]) -> i64 {
     let mut sum = 0i64;
     for i in 0..a.len() {
