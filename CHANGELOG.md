@@ -1,6 +1,38 @@
-# Changelog - webarkit/webarkitlib-rs
+﻿# Changelog - webarkit/webarkitlib-rs
 
 All notable changes to this project will be documented in this file.
+
+## [0.8.1] - 2026-08-06
+
+## Stabilization & DX — benchmarks, coverage, and full API documentation
+
+### ⚡ Performance
+
+- *(kpm)* Add dedicated kpm_bench.rs Criterion benchmark (#225)
+
+### 🐛 Bug Fixes
+
+- *(ci)* Commit Cargo.lock for reproducible coverage/CI (#224)
+- *(kpm)* Exempt bindgen-generated bindings from the missing_docs gate (#226)
+
+### 📚 Documentation
+
+- *(maintainers)* Document committed Cargo.lock + deliberate dep updates
+- *(benches)* Document kpm_bench + drop stale "no KPM benchmark" claim (#225)
+- *(kpm)* Correct stale backend docs + document KPM public API (#226)
+- *(contributing)* Document the libclang/bindgen ffi-backend build failure (#226)
+- *(wasm)* Add JS/TS integration guide + link from README (#226)
+- *(ar2,icp)* Document the AR2 tracking + ICP public API (#226)
+- *(core)* Document remaining public API + enable crate-wide missing_docs (#226)
+- *(kpm)* Rationale comments for kpm/freak too_many_arguments allows (#83)
+
+### 🚜 Refactor
+
+- *(ar,ar2)* Group params in private helpers + document allows (#83)
+
+### 🧪 Testing
+
+- *(core)* Cover error/validation branches in ar/pattern.rs + kpm/freak/pyramid.rs (#224)
 
 ## [0.8.0] - 2026-06-26
 
