@@ -78,9 +78,17 @@ Defer to a deliberate pass rather than obscure the math.
 
 ## Incremental plan
 
-1. **This PR:** refactor `sample_grid`, `make_template`, `select_features`;
-   add rationale comments to the 13 public/SIMD `ar`/`ar2` allows.
-2. **Follow-up:** `kpm/freak` public rationale comments + narrow the
-   `detector.rs` module-level allow.
+1. **Done (PR #228):** refactored `sample_grid`, `make_template`,
+   `select_features`; added rationale comments to the public/SIMD `ar`/`ar2`
+   allows.
+2. **Done:** `kpm/freak` + `ref_data_set` rationale comments — the
+   homography numerical routines, the Hough constructors / voting, and
+   `KpmRefDataSet::generate`. The `webarkit_cpp_*` FFI extern shim and the
+   `detector.rs` module-level allow are left as-is: both already carry an
+   explanatory rationale comment, and narrowing the 34-fn detector module
+   would be churn with no lint benefit.
 3. **Pre-1.0 (maybe):** deliberate public-API restructure of the
-   C-faithful `ar`/`ar2` entry points into param structs (breaking).
+   C-faithful `ar`/`ar2` entry points into param structs (breaking). This is
+   the only remaining item; every current allow is now either removed or
+   carries a `// rationale:` note, so #83 can be closed and this restructure
+   tracked as its own pre-1.0 API task if desired.
