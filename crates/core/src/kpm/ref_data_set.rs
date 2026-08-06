@@ -244,6 +244,8 @@ impl KpmRefDataSet {
     /// * `page_no`         — page number to assign to all features.
     /// * `image_no`        — image number within the page.
     /// * `matcher`         — backend that will extract FREAK features.
+    // rationale: public generator mirroring the C++ kpmGenRefDataSet parameter
+    // list; struct-grouping deferred to a pre-1.0 pass (#83).
     #[allow(clippy::too_many_arguments)]
     pub fn generate(
         image: &[u8],

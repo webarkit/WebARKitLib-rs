@@ -104,6 +104,8 @@ impl BinParams {
     /// * `min_y`, `max_y` - Translation y range (min_y < max_y)
     /// * `min_scale`, `max_scale` - Scale range (min_scale < max_scale)
     /// * `scale_k` - Log base for scale (typically 2.0 or e)
+    // rationale: mirrors the C++ HoughSimilarityVoting init parameter list
+    // (bin + scale configuration); struct-grouping deferred to pre-1.0 (#83).
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         num_x_bins: i32,
@@ -213,6 +215,8 @@ impl BinParams {
     /// 0, 0, num_angle_bins, num_scale_bins)` from
     /// `hough_similarity_voting.cpp:95-99`, where `numXBins == 0 &&
     /// numYBins == 0` toggles `mAutoAdjustXYNumBins = true`.
+    // rationale: mirrors the C++ HoughSimilarityVoting init parameter list
+    // (bin + scale configuration); struct-grouping deferred to pre-1.0 (#83).
     #[allow(clippy::too_many_arguments)]
     pub fn new_auto_xy(
         num_angle_bins: i32,
@@ -633,6 +637,8 @@ pub fn find_features(
 /// # Returns
 /// The bin index with the most votes (>= MIN_VOTES_THRESHOLD).
 /// Returns `Err(InvalidInput("insufficient votes for feature matching".into()))` if no bin reaches the threshold.
+// rationale: numerical voting routine — flat signature matches the C++
+// source; struct-grouping deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 pub fn find_hough_similarity(
     voting: &mut HoughSimilarityVoting,
