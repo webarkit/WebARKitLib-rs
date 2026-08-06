@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "webarkitlib-rs"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "bindgen",
  "byteorder",
@@ -2146,7 +2146,7 @@ dependencies = [
 
 [[package]]
 name = "webarkitlib-wasm"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
