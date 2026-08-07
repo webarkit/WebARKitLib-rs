@@ -67,7 +67,10 @@ pub enum PyramidError {
     /// Downsampling at this level would produce a 0-sized image.
     /// Returned when the input image is too small for the requested
     /// number of levels.
-    LevelTooSmall { level: usize },
+    LevelTooSmall {
+        /// Index of the level that could not be built.
+        level: usize,
+    },
 }
 
 impl std::fmt::Display for PyramidError {
@@ -533,6 +536,37 @@ mod tests {
         let mut p = Pyramid::new(4, 2.0);
         p.build(&img).expect("build should succeed");
         assert_eq!(p.num_levels(), 4);
+    }
+
+    #[test]
+    fn test_build_rejects_invalid_config() {
+        // num_levels == 0.
+        let mut p = Pyramid::new(0, 2.0);
+        assert!(matches!(
+            p.build(&gradient(8, 8)),
+            Err(PyramidError::ZeroLevels)
+        ));
+
+        // scale_factor other than 2.0 is unsupported.
+        let mut p = Pyramid::new(3, 1.5);
+        assert!(matches!(
+            p.build(&gradient(8, 8)),
+            Err(PyramidError::InvalidScaleFactor(s)) if (s - 1.5).abs() < f32::EPSILON
+        ));
+
+        // Empty input image (0 rows / 0 cols).
+        let mut p = Pyramid::new(3, 2.0);
+        assert!(matches!(
+            p.build(&gradient(0, 0)),
+            Err(PyramidError::EmptyImage)
+        ));
+
+        // Pyramid too deep for a tiny image: level 2 would be 0-sized.
+        let mut p = Pyramid::new(3, 2.0);
+        assert!(matches!(
+            p.build(&gradient(2, 2)),
+            Err(PyramidError::LevelTooSmall { level: 2 })
+        ));
     }
 
     #[test]

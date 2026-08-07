@@ -53,7 +53,7 @@
 //! - [`ar2::ar2_gen_feature_map`] — extracts gradient-based features at each pyramid level (`.fset`)
 //! - [`ar2::AR2ImageSetT::save`] — writes the image pyramid as a JPEG-compressed `.iset` file
 //!   matching `ar2WriteImageSet()` format (~300 KB vs ~10 MB raw)
-//! - [`kpm::KpmRefDataSet::generate`] — extracts FREAK descriptors for KPM recognition (`.fset3`)
+//! - [`kpm::types::KpmRefDataSet::generate`] — extracts FREAK descriptors for KPM recognition (`.fset3`)
 //!
 //! See the `nft_marker_gen` example for a complete end-to-end usage.
 //!
@@ -84,11 +84,17 @@
 //! ### Recommended build for NFT marker generation (x86_64)
 //!
 //! ```bash
-//! cargo run --release --features "ffi-backend,simd-x86-sse41,simd-x86-avx2" \
+//! cargo run --release --features "log-helpers,simd-x86-sse41,simd-x86-avx2" \
 //!     --example nft_marker_gen -- --input marker.jpg --output marker --dpi 220
 //! ```
 //!
 //! > **Always use `--release`** — debug builds are 5–10× slower.
+//!
+//! No C++ toolchain is required: since #179 `nft_marker_gen` produces the
+//! complete marker set (`.iset` + `.fset` + `.fset3`) through the pure-Rust
+//! [`RustFreakMatcher`](kpm::RustFreakMatcher). The `ffi-backend` feature is
+//! **not** needed for marker generation — it exists only for development
+//! cross-validation against the C++ backend.
 //!
 //! Detailed benchmark results can be found in `crates/core/benches/BENCHMARKS.md`.
 //!
@@ -102,6 +108,12 @@
 //! // Also available via the top-level re-export (backward compatibility):
 //! use webarkitlib_rs::marker::ar_detect_marker as ar_detect_marker_compat;
 //! ```
+
+// Every `pub` item in the crate is documented (#226). CI's
+// `clippy -D warnings` escalates this lint, so a new undocumented public
+// item fails the build. Bindgen-generated FFI bindings opt out locally with
+// their own `#![allow(missing_docs)]` (see `kpm::kpm_ffi`).
+#![warn(missing_docs)]
 
 pub mod ar;
 pub mod ar2;

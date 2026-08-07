@@ -41,17 +41,24 @@ use crate::arlog_e;
 use crate::types::{ARLabelInfo, ARdouble};
 use log::trace;
 
+/// Size of the labeling pass scratch work buffer.
 pub const AR_LABELING_WORK_SIZE: usize = 1024 * 32;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// Which luminance polarity to trace during connected-component labeling.
 pub enum LabelingMode {
+    /// Trace dark regions on a lighter background.
     BlackRegion,
+    /// Trace light regions on a darker background.
     WhiteRegion,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
+/// Whether to process the full frame or a half-resolution field.
 pub enum ImageProcMode {
+    /// Process the full-resolution frame.
     FrameImage,
+    /// Process a single interlaced half-resolution field.
     FieldImage, // Handles interlaced half-resolution fields
 }
 
@@ -95,6 +102,9 @@ pub enum ImageProcMode {
 ///             ImageProcMode::FrameImage, &mut label_info, false).unwrap();
 /// arlog_i!("{} regions found", label_info.label_num);
 /// ```
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arLabeling); struct-grouping is a breaking change deferred to a pre-1.0
+// API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_labeling(
     image: &[u8],

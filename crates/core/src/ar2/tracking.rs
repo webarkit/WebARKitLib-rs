@@ -44,24 +44,40 @@ use crate::icp::ICPHandleT;
 use crate::types::{ARParamLT, ARPixelFormat, ARdouble};
 use crate::{arlog_d, arlog_e};
 
+/// Tracking mode: full 6-DoF pose estimation.
 pub const AR2_TRACKING_6DOF: i32 = 1;
+/// Tracking mode: homography (planar) estimation only.
 pub const AR2_TRACKING_HOMOGRAPHY: i32 = 2;
 
+/// Maximum number of features searched per frame.
 pub const AR2_SEARCH_FEATURE_MAX: usize = 500;
+/// Maximum number of template candidates considered per frame.
 pub const AR2_TRACKING_CANDIDATE_MAX: usize = 1000;
+/// Maximum number of trackable surfaces per marker.
 pub const AR2_TRACKING_SURFACE_MAX: usize = 10;
+/// Maximum worker threads for tracking.
 pub const AR2_THREAD_MAX: usize = 8; // Adjust as needed for Rust safety/concurrency
+/// Maximum number of pre-blurred image levels retained.
 pub const AR2_BLUR_IMAGE_MAX: usize = 5;
+/// Template coordinate scale factor.
 pub const AR2_TEMP_SCALE: i32 = 1;
+/// Sentinel value marking an out-of-bounds / invalid template pixel.
 pub const AR2_TEMPLATE_NULL_PIXEL: u16 = 0xFFFF;
 
+/// A candidate feature template selected for tracking in the current frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AR2TemplateCandidate {
+    /// Index of the surface this candidate belongs to.
     pub snum: i32,
+    /// Pyramid level (resolution) at which it was selected.
     pub level: i32,
+    /// Index of the feature within its feature-point list.
     pub num: i32,
-    pub flag: i32, // -1: end of list, 0: valid, 1: selected
+    /// State flag: `-1` end of list, `0` valid, `1` selected.
+    pub flag: i32,
+    /// Screen x coordinate (pixels).
     pub sx: f32,
+    /// Screen y coordinate (pixels).
     pub sy: f32,
 }
 
@@ -78,91 +94,152 @@ impl Default for AR2TemplateCandidate {
     }
 }
 
+/// One resolution level of an NFT image pyramid, with pre-blurred variants.
 #[derive(Debug, Default, Clone)]
 pub struct AR2Image {
+    /// Pre-blurred grayscale copies of the image (one per blur level).
     pub img_bw_blur: Vec<Option<Vec<u8>>>,
+    /// Image width in pixels.
     pub xsize: i32,
+    /// Image height in pixels.
     pub ysize: i32,
+    /// Resolution of this level in dots per inch.
     pub dpi: f32,
 }
 
+/// A multi-resolution image pyramid (the parsed `.iset`).
 #[derive(Debug, Default, Clone)]
 pub struct AR2ImageSet {
+    /// Levels from highest to lowest resolution.
     pub scale: Vec<AR2Image>,
 }
 
+/// A single tracking feature: its pixel position, marker-space position, and
+/// self-similarity score.
 #[derive(Debug, Default, Clone)]
 pub struct AR2FeatureCoord {
+    /// Feature x position in image pixels.
     pub x: i32,
+    /// Feature y position in image pixels.
     pub y: i32,
+    /// Feature x position in marker coordinates (millimetres).
     pub mx: f32,
+    /// Feature y position in marker coordinates (millimetres).
     pub my: f32,
+    /// Maximum self-similarity of the feature template (lower = more distinctive).
     pub max_sim: f32,
 }
 
+/// The features detected at one pyramid scale, with the DPI range they cover.
 #[derive(Debug, Default, Clone)]
 pub struct AR2FeaturePoints {
+    /// Feature coordinates at this scale.
     pub coord: Vec<AR2FeatureCoord>,
+    /// Pyramid scale index.
     pub scale: i32,
+    /// Upper DPI bound this scale is valid for.
     pub maxdpi: f32,
+    /// Lower DPI bound this scale is valid for.
     pub mindpi: f32,
 }
 
+/// The full tracking feature set (the parsed `.fset`), one entry per scale.
 #[derive(Debug, Default, Clone)]
 pub struct AR2FeatureSet {
+    /// Feature points grouped by scale.
     pub list: Vec<AR2FeaturePoints>,
 }
 
+/// A zero-mean template patch used for normalized-cross-correlation matching.
 #[derive(Debug, Default, Clone)]
 pub struct AR2Template {
+    /// Left extent of the patch from its centre (pixels).
     pub xts1: i32,
+    /// Right extent of the patch from its centre (pixels).
     pub xts2: i32,
+    /// Top extent of the patch from its centre (pixels).
     pub yts1: i32,
+    /// Bottom extent of the patch from its centre (pixels).
     pub yts2: i32,
+    /// Patch width in pixels.
     pub xsize: i32,
+    /// Patch height in pixels.
     pub ysize: i32,
+    /// Zero-mean pixel values (`AR2_TEMPLATE_NULL_PIXEL` marks invalid pixels).
     pub img1: Vec<u16>,
+    /// Precomputed vector length (√Σv²) for correlation normalization.
     pub vlen: i32,
+    /// Sum of pixel values.
     pub sum: i32,
+    /// Number of valid (non-null) pixels in the patch.
     pub valid_num: usize,
 }
 
+/// The AR2 tracking handle: configuration plus per-frame working buffers for
+/// template-matching pose refinement.
 pub struct AR2Handle {
+    /// Tracking mode ([`AR2_TRACKING_6DOF`] or [`AR2_TRACKING_HOMOGRAPHY`]).
     pub tracking_mode: i32,
+    /// Frame width in pixels.
     pub xsize: i32,
+    /// Frame height in pixels.
     pub ysize: i32,
-    pub cparam_lt: *mut ARParamLT, // Pointer for now consistent with C API, or Box?
+    /// Camera parameter lookup table (raw pointer, C-API compatible).
+    pub cparam_lt: *mut ARParamLT,
+    /// ICP handle used for the 6-DoF pose solve.
     pub icp_handle: *mut ICPHandleT,
+    /// Pixel format of incoming frames.
     pub pix_format: ARPixelFormat,
 
+    /// Blur method selector.
     pub blur_method: i32,
+    /// Number of blur levels to apply.
     pub blur_level: i32,
+    /// Half-size of the search window (pixels).
     pub search_size: i32,
+    /// Inner template half-size (pixels).
     pub template_size1: i32,
+    /// Outer template half-size (pixels).
     pub template_size2: i32,
+    /// Number of features to search per frame.
     pub search_feature_num: i32,
+    /// Similarity threshold for accepting a template match.
     pub sim_thresh: f32,
+    /// Overall tracking-confidence threshold.
     pub tracking_thresh: f32,
 
+    /// Current-frame per-surface pose estimates (3×4).
     pub wtrans1: Vec<[[f32; 4]; 3]>,
+    /// One-frame-ago per-surface poses.
     pub wtrans2: Vec<[[f32; 4]; 3]>,
+    /// Two-frames-ago per-surface poses.
     pub wtrans3: Vec<[[f32; 4]; 3]>,
 
+    /// Scratch screen positions.
     pub pos: Vec<[f32; 2]>,
+    /// Matched 2D screen positions for the pose solve.
     pub pos2d: Vec<[f32; 2]>,
+    /// Corresponding 3D marker positions for the pose solve.
     pub pos3d: Vec<[f32; 3]>,
 
+    /// Primary candidate feature list.
     pub candidate: Vec<AR2TemplateCandidate>,
+    /// Secondary candidate feature list.
     pub candidate2: Vec<AR2TemplateCandidate>,
+    /// Features actually used in this frame's solve.
     pub used_feature: Vec<AR2TemplateCandidate>,
 
-    pub templ: Vec<AR2Template>, // For sequential tracking
+    /// Cached templates for sequential (frame-to-frame) tracking.
+    pub templ: Vec<AR2Template>,
+    /// Working match-filtered image buffer.
     pub mf_image: Vec<u8>,
 
+    /// Number of worker threads in use.
     pub thread_num: i32,
 }
 
 impl AR2Handle {
+    /// Create a new AR2 tracking handle for a frame of the given size and pixel format.
     pub fn new(xsize: i32, ysize: i32, pix_format: ARPixelFormat) -> Self {
         Self {
             tracking_mode: AR2_TRACKING_6DOF,
@@ -211,6 +288,7 @@ impl AR2Handle {
     }
 }
 
+/// Project a marker-space coordinate to screen (image) coordinates using a 6-DoF pose.
 pub fn marker_coord_to_screen_coord(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -240,6 +318,7 @@ pub fn marker_coord_to_screen_coord(
     }
 }
 
+/// Project a marker-space coordinate to screen coordinates using a homography.
 pub fn marker_coord_to_screen_coord2(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -270,6 +349,7 @@ pub fn marker_coord_to_screen_coord2(
     Ok((sx, sy))
 }
 
+/// Back-project a screen coordinate onto the marker plane using a pose.
 pub fn ar2_screen_coord_2_marker_coord(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -315,6 +395,7 @@ pub fn ar2_screen_coord_2_marker_coord(
     }
 }
 
+/// Map a marker coordinate to distorted image pixel coordinates.
 pub fn ar2_marker_coord_2_image_coord(
     _xsize: i32,
     ysize: i32,
@@ -327,6 +408,7 @@ pub fn ar2_marker_coord_2_image_coord(
     (iix, iiy)
 }
 
+/// Bilinearly sample a grayscale image at a sub-pixel location.
 pub fn ar2_get_image_value(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -352,6 +434,7 @@ pub fn ar2_get_image_value(
     }
 }
 
+/// Build a zero-mean template patch around a feature for correlation matching.
 pub fn ar2_set_template_sub(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -418,6 +501,7 @@ pub fn ar2_set_template_sub(
     Ok(())
 }
 
+/// Return the effective tracking resolution (DPI) for the current 6-DoF pose.
 pub fn get_resolution(
     cparam_lt: Option<&ARParamLT>,
     trans: &[[f32; 4]; 3],
@@ -427,6 +511,7 @@ pub fn get_resolution(
     get_resolution2(cparam, trans, pos)
 }
 
+/// Return the effective tracking resolution (DPI) for a homography pose.
 pub fn get_resolution2(
     cparam: Option<&crate::types::ARParam>,
     trans: &[[f32; 4]; 3],
@@ -488,6 +573,7 @@ pub fn get_resolution2(
     Ok(dpi)
 }
 
+/// Select the feature points currently visible under the given 6-DoF pose.
 pub fn extract_visible_features(
     cparam_lt: &ARParamLT,
     wtrans1: &[[[f32; 4]; 3]],
@@ -584,6 +670,7 @@ pub fn extract_visible_features(
     Ok(())
 }
 
+/// Select the feature points currently visible under a homography pose.
 pub fn extract_visible_features_homography(
     xsize: i32,
     ysize: i32,
@@ -661,6 +748,7 @@ pub fn extract_visible_features_homography(
     Ok(())
 }
 
+/// Choose the best template candidates to track in the current frame.
 pub fn ar2_select_template(
     candidate: &mut [AR2TemplateCandidate],
     prev_feature: &mut [AR2TemplateCandidate],
@@ -901,6 +989,7 @@ pub fn ar2_select_template(
     }
 }
 
+/// Return the angle in radians of a 2D vector.
 pub fn get_vector_angle(
     p1: [f32; 2],
     p2: [f32; 2],
@@ -916,10 +1005,13 @@ pub fn get_vector_angle(
     Ok(())
 }
 
+/// Compute the area of a quadrilateral as the sum of two triangles from its
+/// corner points.
 pub fn get_region_area(pos: &[[f32; 2]; 4], q1: usize, r1: usize, r2: usize) -> f32 {
     get_triangle_area(pos[0], pos[q1], pos[r1]) + get_triangle_area(pos[0], pos[r1], pos[r2])
 }
 
+/// Compute the area of a triangle from its three vertices.
 pub fn get_triangle_area(p1: [f32; 2], p2: [f32; 2], p3: [f32; 2]) -> f32 {
     let x1 = p2[0] - p1[0];
     let y1 = p2[1] - p1[1];
@@ -928,6 +1020,7 @@ pub fn get_triangle_area(p1: [f32; 2], p2: [f32; 2], p3: [f32; 2]) -> f32 {
     ((x1 * y2 - x2 * y1) / 2.0).abs()
 }
 
+/// Compute the predicted search location of a feature in the current frame.
 pub fn ar2_get_search_point(
     cparam_lt: Option<&ARParamLT>,
     trans1: Option<&[[f32; 4]; 3]>,
@@ -1002,13 +1095,22 @@ pub fn ar2_get_search_point(
     }
 }
 
+/// Result of matching one feature template in 2D: the similarity score and
+/// the matched screen / marker positions.
 pub struct AR2Tracking2DResult {
+    /// Normalized-cross-correlation similarity of the best match.
     pub sim: f32,
+    /// Matched position in screen (image) coordinates.
     pub pos2d: [f32; 2],
+    /// Corresponding position in 3D marker coordinates.
     pub pos3d: [f32; 3],
 }
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2Tracking internals); struct-grouping is a breaking change deferred to
+// a pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
+/// Match one feature template within its search window — the core 2D tracking step.
 pub fn ar2_tracking_2d_sub(
     cparam_lt: Option<&ARParamLT>,
     pix_format: ARPixelFormat,
@@ -1118,6 +1220,7 @@ pub fn ar2_tracking_2d_sub(
     Ok(result)
 }
 
+/// Run one frame of AR2 template tracking, refining the pose from previous frames.
 pub fn ar2_tracking(
     handle: &mut AR2Handle,
     surface_set: &mut AR2SurfaceSet,
@@ -1334,6 +1437,7 @@ pub fn ar2_tracking(
     Ok(())
 }
 
+/// Estimate the 3×4 pose from matched 2D–3D correspondences via ICP.
 pub fn ar2_get_trans_mat(
     icp_handle: &mut ICPHandleT,
     init_conv: [[f32; 4]; 3],
@@ -1423,10 +1527,16 @@ pub fn ar2_get_trans_mat(
     err
 }
 
+/// Number of best matches to keep when ranking candidates.
 pub const KEEP_NUM: usize = 3;
+/// Stride between sampled search points during coarse matching.
 pub const SKIP_INTERVAL: i32 = 3;
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2GetBestMatching); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
+/// Find the best template match for a feature by scanning its search window.
 pub fn ar2_get_best_matching(
     img: &[u8],
     mf_image: &mut [u8],
@@ -1554,7 +1664,11 @@ pub fn ar2_get_best_matching(
     final_ret
 }
 
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (ar2GetBestMatchingSubFine); struct-grouping is a breaking change deferred
+// to a pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
+/// Sub-pixel refinement of the best template match around an integer peak.
 pub fn ar2_get_best_matching_sub_fine(
     img: &[u8],
     xsize: i32,

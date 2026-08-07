@@ -43,7 +43,9 @@ use std::fs::File;
 use std::io::{BufWriter, Error, ErrorKind, Result as IoResult, Write};
 use std::path::Path;
 
+/// Maximum number of patterns a handle can hold.
 pub const AR_PATT_NUM_MAX: i32 = 50;
+/// Default pattern edge size in samples.
 pub const AR_PATT_SIZE1: i32 = 16;
 
 // Standard sample factor used in ARToolKit for pattern extraction
@@ -53,8 +55,11 @@ const AR_PATT_SAMPLE_FACTOR1: usize = 4;
 // Ensure these match your actual definitions in WebARKitLib-rs.
 const AR_IMAGE_PROC_FRAME_IMAGE: i32 = 0;
 const AR_IMAGE_PROC_FIELD_IMAGE: i32 = 1;
+/// Template matching mode: colour.
 pub const AR_TEMPLATE_MATCHING_COLOR: i32 = 0;
+/// Template matching mode: mono (luminance).
 pub const AR_TEMPLATE_MATCHING_MONO: i32 = 1;
+/// Minimum contrast required to accept an extracted pattern.
 pub const AR_PATT_CONTRAST_THRESH1: ARdouble = 5.0;
 
 impl ARPattHandle {
@@ -199,6 +204,9 @@ pub fn ar_patt_load(patt_handle: &mut ARPattHandle, filename: &str) -> Result<i3
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `patt_size` - Size of the pattern grid.
 /// * `filename` - Destination path for the saved pattern file.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattSave); struct-grouping is a breaking change deferred to a pre-1.0
+// API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
 pub fn ar_patt_save(
     image: &[u8],
@@ -504,6 +512,7 @@ pub fn pattern_match(
 }
 
 #[allow(clippy::needless_range_loop)]
+/// Compute the 3×3 homography mapping the unit square to the marker's screen quad.
 pub fn get_cpara(
     world: &[[ARdouble; 2]; 4],
     vertex: &[[ARdouble; 2]; 4],
@@ -567,6 +576,9 @@ pub fn get_cpara(
 /// * `vertex` - Array of 4 indices pointing to the corners in the coord arrays.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattGetImage); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image(
     image_proc_mode: i32,
@@ -806,6 +818,9 @@ pub fn ar_patt_get_image(
 /// * `vertex` - 4 corners of the detected marker.
 /// * `patt_ratio` - Ratio of the pattern relative to the marker size.
 /// * `ext_patt` - Output buffer where the extracted pattern will be written.
+// rationale: public C-faithful API — mirrors the flat ARToolKit signature
+// (arPattGetImage2); struct-grouping is a breaking change deferred to a
+// pre-1.0 API pass (#83, docs/design/issue-83-too-many-args-audit.md).
 #[allow(clippy::too_many_arguments)]
 pub fn ar_patt_get_image2(
     image_proc_mode: i32,
@@ -1037,6 +1052,7 @@ pub fn ar_patt_get_image2(
     Ok(())
 }
 
+/// Identify a square marker by matching its extracted pattern against loaded templates.
 pub fn ar_patt_get_id(
     patt_handle: &ARPattHandle,
     patt_detect_mode: i32,
@@ -1068,6 +1084,7 @@ fn dot_product(a: &[i16], b: &[i16]) -> i64 {
     dot_product_scalar(a, b)
 }
 
+/// Scalar dot product of two `i16` slices.
 pub fn dot_product_scalar(a: &[i16], b: &[i16]) -> i64 {
     let mut sum = 0i64;
     for i in 0..a.len() {
@@ -1200,6 +1217,79 @@ mod tests {
         let ok = result.unwrap();
         assert!(ok.cf >= 0.0);
         assert_eq!(ok.error_corrected, 0);
+    }
+
+    #[test]
+    fn test_ar_patt_activate_deactivate_free() {
+        let mut handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
+
+        // Load one pattern into slot 0.
+        let mut buf = String::new();
+        for _ in 0..(4 * AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) {
+            buf.push_str("128 ");
+        }
+        assert_eq!(ar_patt_load_from_buffer(&mut handle, &buf).unwrap(), 0);
+
+        // Happy path: activate then deactivate the loaded pattern.
+        assert!(ar_patt_activate(&mut handle, 0).is_ok());
+        assert!(handle.active[0]);
+        assert!(ar_patt_deactivate(&mut handle, 0).is_ok());
+        assert!(!handle.active[0]);
+
+        // Invalid index (negative and out of range).
+        assert_eq!(
+            ar_patt_activate(&mut handle, -1),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(
+            ar_patt_activate(&mut handle, AR_PATT_NUM_MAX),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(
+            ar_patt_deactivate(&mut handle, -1),
+            Err("Invalid pattern index")
+        );
+        assert_eq!(ar_patt_free(&mut handle, -1), Err("Invalid pattern index"));
+
+        // Not-loaded slot (slot 1 was never populated).
+        assert_eq!(ar_patt_activate(&mut handle, 1), Err("Pattern not loaded"));
+        assert_eq!(
+            ar_patt_deactivate(&mut handle, 1),
+            Err("Pattern not loaded")
+        );
+
+        // free() on an empty slot is a no-op Ok; on a loaded slot it decrements.
+        assert!(ar_patt_free(&mut handle, 1).is_ok());
+        assert_eq!(handle.patt_num, 1);
+        assert!(ar_patt_free(&mut handle, 0).is_ok());
+        assert_eq!(handle.patt_num, 0);
+    }
+
+    #[test]
+    fn test_pattern_match_input_errors() {
+        use crate::types::MatchError;
+        let handle = ARPattHandle::new(AR_PATT_SIZE1, AR_PATT_NUM_MAX);
+
+        // size <= 0 is rejected up front.
+        assert!(matches!(
+            pattern_match(&handle, AR_TEMPLATE_MATCHING_COLOR, &[], 0),
+            Err(MatchError::PatternExtraction)
+        ));
+
+        // Buffer smaller than size*size*3 (color) is rejected.
+        assert!(matches!(
+            pattern_match(
+                &handle,
+                AR_TEMPLATE_MATCHING_COLOR,
+                &[0u8; 3],
+                AR_PATT_SIZE1
+            ),
+            Err(MatchError::PatternExtraction)
+        ));
+
+        // Unsupported matching mode is rejected.
+        let big = vec![0u8; (AR_PATT_SIZE1 * AR_PATT_SIZE1 * 3) as usize];
+        assert!(pattern_match(&handle, 999, &big, AR_PATT_SIZE1).is_err());
     }
 
     #[test]

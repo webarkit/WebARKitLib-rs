@@ -58,13 +58,21 @@ pub enum GaussianPyramidError {
     EmptyImage,
     /// Input image is smaller than 5x5; the binomial filter needs 2 border
     /// pixels on each side.
-    ImageTooSmall { rows: usize, cols: usize },
+    ImageTooSmall {
+        /// Row count of the offending input image.
+        rows: usize,
+        /// Column count of the offending input image.
+        cols: usize,
+    },
     /// `num_octaves` was 0 — a pyramid must have at least one octave.
     ZeroOctaves,
     /// Halving for `octave` would produce a level smaller than 5x5.
     OctaveTooSmall {
+        /// Index of the octave that could not be built.
         octave: usize,
+        /// Row count the octave would have had.
         rows: usize,
+        /// Column count the octave would have had.
         cols: usize,
     },
 }

@@ -296,6 +296,9 @@ fn homography_3_points_geometrically_consistent(
 /// `math/geometry.h:71`. Private helper used by RANSAC to filter degenerate
 /// 4-tuples before solving for the homography.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn homography_4_points_geometrically_consistent(
     x1: &[f32; 2],
@@ -964,6 +967,9 @@ pub fn update_projective_motion_post_multiply(hp: &mut [f32; 9], h: &[f32; 9], x
 /// C++ equivalent: `vision::Condition4Points2d<T>` from
 /// `homography_estimation/homography_solver.h:47`.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn condition_4_points_2d(
     xp: &mut [[f32; 2]; 4],
@@ -1022,6 +1028,9 @@ fn condition_4_points_2d(
 /// C++ equivalent: `vision::DenormalizeHomography<T>` from
 /// `homography_estimation/homography_solver.h:104`.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn denormalize_homography(
     hp: &mut [f32; 9],
@@ -1104,6 +1113,9 @@ fn add_homography_point_constraint(dst: &mut [f32; 18], x: &[f32; 2], xp: &[f32;
 /// C++ equivalent: `vision::SolveHomography4PointsInhomogenous<T>` from
 /// `homography_estimation/homography_solver.h:185`.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn solve_homography_4_points_inhomogeneous(
     h: &mut [f32; 9],
@@ -1155,6 +1167,9 @@ fn solve_homography_4_points_inhomogeneous(
 /// `homography_estimation/homography_solver.h:209`. Called from
 /// [`preemptive_robust_homography`] for each RANSAC trial.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn solve_homography_4_points(
     h: &mut [f32; 9],
@@ -1396,6 +1411,9 @@ fn fast_median(a: &mut [(f32, i32)]) {
 /// `vision::PreemptiveRobustHomography<T>` from
 /// `homography_estimation/robust_homography.h:96`.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 pub fn preemptive_robust_homography(
     h: &mut [f32; 9],
@@ -1819,6 +1837,9 @@ fn symmetric_extend_upper_to_lower_8x8(a: &mut [f32; 64]) {
 /// `vision::ComputeHomographyNormalEquationsPostMultiply<T>` from
 /// `homography_estimation/robust_homography.h:397`.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 fn compute_homography_normal_equations_post_multiply(
     jt_j: &mut [f32; 64],
@@ -1983,6 +2004,9 @@ fn solve_positive_definite_system_8x8(x: &mut [f32; 8], a: &[f32; 64], b: &[f32;
 /// `homography_estimation/robust_homography.h:500`. Called by
 /// [`RobustHomography::find`] after the RANSAC step.
 #[inline(always)]
+// rationale: numerical homography routine — the flat point/matrix/scalar
+// signature mirrors the math and the C++ source; a param struct would
+// obscure it. Restructure deferred to a pre-1.0 pass (#83).
 #[allow(clippy::too_many_arguments)]
 pub fn polish_homography(
     h: &mut [f32; 9],

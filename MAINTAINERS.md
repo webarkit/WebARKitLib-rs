@@ -70,3 +70,22 @@ git push origin vX.Y.Z
 ``` 
 
 This will trigger the CI/CD pipeline to publish the new version to crates.io and npm.
+
+## 3. Dependency Management
+
+`Cargo.lock` **is committed** to the repository. CI resolves against this
+pinned graph (rather than re-resolving on every run), which keeps the
+coverage, dual-mode parity, and benchmark jobs reproducible and prevents a
+newly published transitive crate from silently breaking a build. Committing
+the lockfile does **not** constrain downstream crates.io consumers — Cargo
+ignores a dependency's lockfile.
+
+Because the graph is pinned, dependency updates are **deliberate**:
+
+- To pull the latest compatible versions, run `cargo update` (or
+  `cargo update -p <crate>` for a single dependency), verify the full
+  pre-commit checklist (§5 in `CLAUDE.md`) still passes, and commit the
+  updated `Cargo.lock` in its own `chore(deps): …` PR.
+- Do **not** run `cargo update` as part of an unrelated PR — an unexpected
+  lockfile churn hides the real change and can regress CI.
+- Consider a scheduled job or Dependabot to surface updates on a cadence.

@@ -45,8 +45,11 @@ use std::ops::Mul;
 #[repr(C)]
 #[derive(Default)]
 pub struct ARMat {
+    /// Row-major matrix elements.
     pub m: Vec<ARdouble>,
+    /// Number of rows.
     pub row: i32,
+    /// Number of columns.
     pub clm: i32,
 }
 
@@ -298,6 +301,7 @@ pub fn household(x: &mut [ARdouble]) -> ARdouble {
     -s
 }
 
+/// QR decomposition of `a` in place, accumulating the diagonal into `dv`.
 pub fn qrm(a: &mut ARMat, dv: &mut [ARdouble]) -> Result<(), &'static str> {
     let dim = a.row as usize;
     if dim != a.clm as usize || dim < 2 || dv.len() != dim {
@@ -397,6 +401,7 @@ pub fn qrm(a: &mut ARMat, dv: &mut [ARdouble]) -> Result<(), &'static str> {
 
 impl ARMat {
     #[allow(clippy::needless_range_loop)]
+    /// Compute the per-column mean vector of the matrix.
     pub fn ex(&self, mean: &mut [ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -421,6 +426,7 @@ impl ARMat {
     }
 
     #[allow(clippy::needless_range_loop)]
+    /// Subtract `mean` from every row, centering the data in place.
     pub fn center(&mut self, mean: &[ARdouble]) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -436,6 +442,7 @@ impl ARMat {
         Ok(())
     }
 
+    /// Compute `X · Xᵀ` into `output`.
     pub fn x_by_xt(&self, output: &mut ARMat) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -459,6 +466,7 @@ impl ARMat {
         Ok(())
     }
 
+    /// Compute `Xᵀ · X` into `output`.
     pub fn xt_by_x(&self, output: &mut ARMat) -> Result<(), &'static str> {
         let row = self.row as usize;
         let clm = self.clm as usize;
@@ -482,6 +490,7 @@ impl ARMat {
         Ok(())
     }
 
+    /// Compute the eigenvalues and eigenvectors of the (symmetric) matrix.
     pub fn ev_create(
         &self,
         u: &ARMat,
@@ -527,6 +536,7 @@ impl ARMat {
         Ok(())
     }
 
+    /// Internal principal-component-analysis worker shared by the PCA entry points.
     pub fn pca_internal(
         &self,
         output: &mut ARMat,
@@ -577,6 +587,7 @@ impl ARMat {
         Ok(())
     }
 
+    /// Compute the principal components of the data matrix.
     pub fn pca(
         &self,
         evec: &mut ARMat,
@@ -653,8 +664,11 @@ impl<'b> Mul<&'b ARMat> for &ARMat {
 #[repr(C)]
 #[derive(Default)]
 pub struct ARMatf {
+    /// Row-major matrix elements (single precision).
     pub m: Vec<f32>,
+    /// Number of rows.
     pub row: i32,
+    /// Number of columns.
     pub clm: i32,
 }
 
@@ -706,7 +720,9 @@ impl<'b> Mul<&'b ARMatf> for &ARMatf {
 #[repr(C)]
 #[derive(Default)]
 pub struct ARVec {
+    /// Vector elements.
     pub v: Vec<ARdouble>,
+    /// Number of columns.
     pub clm: i32,
 }
 

@@ -44,7 +44,9 @@ use crate::{arlog_d, arlog_e};
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct ICP2DCoordT {
+    /// Horizontal image coordinate in pixels.
     pub x: ARdouble,
+    /// Vertical image coordinate in pixels.
     pub y: ARdouble,
 }
 
@@ -52,49 +54,65 @@ pub struct ICP2DCoordT {
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct ICP3DCoordT {
+    /// X coordinate in world space (millimetres).
     pub x: ARdouble,
+    /// Y coordinate in world space (millimetres).
     pub y: ARdouble,
+    /// Z coordinate in world space (millimetres).
     pub z: ARdouble,
 }
 
-/// 2D Line for ICP
+/// 2D Line for ICP, in the implicit form `a*x + b*y + c = 0`.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct ICP2DLineT {
+    /// Coefficient of `x`.
     pub a: ARdouble,
+    /// Coefficient of `y`.
     pub b: ARdouble,
+    /// Constant term.
     pub c: ARdouble,
 }
 
-/// 2D Line Segment for ICP
+/// 2D Line Segment for ICP.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct ICP2DLineSegT {
+    /// First endpoint.
     pub p1: ICP2DCoordT,
+    /// Second endpoint.
     pub p2: ICP2DCoordT,
 }
 
-/// 3D Line Segment for ICP
+/// 3D Line Segment for ICP.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[repr(C)]
 pub struct ICP3DLineSegT {
+    /// First endpoint.
     pub p1: ICP3DCoordT,
+    /// Second endpoint.
     pub p2: ICP3DCoordT,
 }
 
-/// Point Data for ICP
+/// Point Data for ICP: paired screen/world observations of a single view.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ICPDataT {
+    /// Observed 2D screen (image) coordinates.
     pub screen_coord: Vec<ICP2DCoordT>,
+    /// Corresponding 3D world coordinates.
     pub world_coord: Vec<ICP3DCoordT>,
 }
 
-/// Stereo Point Data for ICP
+/// Stereo Point Data for ICP: screen/world observations for a left/right pair.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ICPStereoDataT {
+    /// Left-camera screen coordinates.
     pub screen_coord_l: Vec<ICP2DCoordT>,
+    /// Left-camera world coordinates.
     pub world_coord_l: Vec<ICP3DCoordT>,
+    /// Right-camera screen coordinates.
     pub screen_coord_r: Vec<ICP2DCoordT>,
+    /// Right-camera world coordinates.
     pub world_coord_r: Vec<ICP3DCoordT>,
 }
 
@@ -102,11 +120,19 @@ pub struct ICPStereoDataT {
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct ICPHandleT {
+    /// Camera projection matrix (3×4) mapping world/camera coordinates to
+    /// image (undistorted) coordinates.
     pub mat_xc2u: [[ARdouble; 4]; 3],
+    /// Maximum number of ICP refinement iterations.
     pub max_loop: i32,
+    /// Absolute error threshold below which iteration stops.
     pub break_loop_error_thresh: ARdouble,
+    /// Iteration stops when the error ratio between successive loops exceeds
+    /// this value (i.e. the error is no longer improving enough).
     pub break_loop_error_ratio_thresh: ARdouble,
+    /// Secondary absolute error threshold used by the robust variant.
     pub break_loop_error_thresh2: ARdouble,
+    /// Assumed inlier probability for the robust (outlier-rejecting) solver.
     pub inlier_prob: ARdouble,
 }
 
@@ -123,6 +149,7 @@ impl Default for ICPHandleT {
     }
 }
 
+/// Set the robust solver's inlier probability on an [`ICPHandleT`].
 pub fn icp_set_inlier_probability(handle: &mut ICPHandleT, prob: f64) {
     handle.inlier_prob = prob;
 }
@@ -131,14 +158,23 @@ pub fn icp_set_inlier_probability(handle: &mut ICPHandleT, prob: f64) {
 #[derive(Debug, Clone, PartialEq)]
 #[repr(C)]
 pub struct ICPStereoHandleT {
+    /// Left-camera projection matrix (3×4), world → left image coordinates.
     pub mat_xcl2ul: [[ARdouble; 4]; 3],
+    /// Right-camera projection matrix (3×4), world → right image coordinates.
     pub mat_xcr2ur: [[ARdouble; 4]; 3],
+    /// Transform (3×4) from the common camera frame to the left camera.
     pub mat_c2l: [[ARdouble; 4]; 3],
+    /// Transform (3×4) from the common camera frame to the right camera.
     pub mat_c2r: [[ARdouble; 4]; 3],
+    /// Maximum number of ICP refinement iterations.
     pub max_loop: i32,
+    /// Absolute error threshold below which iteration stops.
     pub break_loop_error_thresh: ARdouble,
+    /// Iteration stops when the successive-loop error ratio exceeds this.
     pub break_loop_error_ratio_thresh: ARdouble,
+    /// Secondary absolute error threshold used by the robust variant.
     pub break_loop_error_thresh2: ARdouble,
+    /// Assumed inlier probability for the robust (outlier-rejecting) solver.
     pub inlier_prob: ARdouble,
 }
 
@@ -160,6 +196,8 @@ impl Default for ICPStereoHandleT {
 
 use crate::math::ARMat;
 
+/// Compose two 3×4 rigid-transform matrices (`dest = m1 · m2`, treating each
+/// as a 4×4 with an implicit `[0 0 0 1]` bottom row).
 pub fn icp_mat_mul(
     m1: &[[ARdouble; 4]; 3],
     m2: &[[ARdouble; 4]; 3],
@@ -175,6 +213,9 @@ pub fn icp_mat_mul(
     }
 }
 
+/// Refine a monocular pose (`mat_xw2xc`, world→camera) from 2D screen /
+/// 3D world point correspondences by iterative closest point. Returns the
+/// final mean reprojection error.
 pub fn icp_point(
     handle: &ICPHandleT,
     data: &ICPDataT,
@@ -263,6 +304,8 @@ pub fn icp_point(
     Ok(err1)
 }
 
+/// Robust (outlier-rejecting) variant of [`icp_point`], down-weighting
+/// correspondences using the handle's inlier probability.
 pub fn icp_point_robust(
     handle: &ICPHandleT,
     data: &ICPDataT,
@@ -277,6 +320,7 @@ pub fn icp_point_robust(
     icp_point(handle, data, init_mat_xw2xc, mat_xw2xc)
 }
 
+/// Transform a world point into camera coordinates via a world→camera matrix.
 pub fn icp_get_xc_from_xw_by_mat_xw2xc(
     xc: &mut ICP3DCoordT,
     mat_xw2xc: &[[ARdouble; 4]; 3],
@@ -290,6 +334,8 @@ pub fn icp_get_xc_from_xw_by_mat_xw2xc(
         mat_xw2xc[2][0] * xw.x + mat_xw2xc[2][1] * xw.y + mat_xw2xc[2][2] * xw.z + mat_xw2xc[2][3];
 }
 
+/// Project a camera-space point to image (screen) coordinates via a
+/// projection matrix.
 pub fn icp_get_u_from_x_by_mat_x2u(
     u: &mut ICP2DCoordT,
     mat_x2u: &[[ARdouble; 4]; 3],
@@ -408,6 +454,8 @@ fn icp_get_j_xc_s(
     }
 }
 
+/// Compute the Jacobian of the projected image coordinates with respect to
+/// the six pose parameters (3 rotation + 3 translation).
 pub fn icp_get_j_u_s(
     j_u_s: &mut [[ARdouble; 6]; 2],
     mat_xc2u: &[[ARdouble; 4]; 3],
@@ -472,6 +520,8 @@ fn icp_get_mat_from_q(mat: &mut [[ARdouble; 4]; 3], q: &[ARdouble; 7]) {
     mat[2][3] = q[6];
 }
 
+/// Apply an incremental 6-DoF pose update `ds` (3 rotation + 3 translation)
+/// to a world→camera matrix in place.
 pub fn icp_update_mat(mat_xw2xc: &mut [[ARdouble; 4]; 3], ds: &[ARdouble; 6]) {
     let mut q = [0.0; 7];
     let mut mat = [[0.0; 4]; 3];
@@ -497,6 +547,8 @@ pub fn icp_update_mat(mat_xw2xc: &mut [[ARdouble; 4]; 3], ds: &[ARdouble; 6]) {
 }
 
 #[allow(clippy::needless_range_loop)]
+/// Solve the normal equations for the incremental pose update Δs from the
+/// stacked Jacobian and residual vector.
 pub fn icp_get_delta_s(
     s: &mut [ARdouble; 6],
     du: &[ARdouble],
@@ -527,6 +579,8 @@ pub fn icp_get_delta_s(
     Ok(())
 }
 
+/// Allocate an [`ICPHandleT`] initialized with the given camera projection
+/// matrix. Returns a raw owning pointer; free it with [`icp_delete_handle`].
 pub fn icp_create_handle(mat_xc2u: &[[ARdouble; 4]; 3]) -> Result<*mut ICPHandleT, &'static str> {
     let mut handle = Box::new(ICPHandleT::default());
     for (dst, src) in handle.mat_xc2u.iter_mut().zip(mat_xc2u.iter()) {
@@ -535,6 +589,7 @@ pub fn icp_create_handle(mat_xc2u: &[[ARdouble; 4]; 3]) -> Result<*mut ICPHandle
     Ok(Box::into_raw(handle))
 }
 
+/// Free a handle created by [`icp_create_handle`] and null the pointer.
 pub fn icp_delete_handle(handle: &mut *mut ICPHandleT) -> Result<(), &'static str> {
     if handle.is_null() {
         return Err("Null handle");
@@ -766,6 +821,8 @@ fn check_rotation(rot: &mut [[ARdouble; 3]; 3]) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// Estimate an initial world→camera pose from planar (Z = 0) point
+/// correspondences, used to seed the ICP refinement.
 pub fn icp_get_init_xw2xc_from_planar_data(
     mat_xc2u: &[[ARdouble; 4]; 3],
     screen_coord: &[ICP2DCoordT],

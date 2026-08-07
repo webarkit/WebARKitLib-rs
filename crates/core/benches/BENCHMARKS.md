@@ -1,6 +1,6 @@
 # WebARKitLib.rs Core Benchmarks
 
-**Last Updated**: 2026-06-10 (chore: criterion 0.5.1 → 0.8 — #174)
+**Last Updated**: 2026-07-15 (perf: add dedicated `kpm_bench.rs` — #225)
 
 This document tracks the performance of critical image processing and pattern matching functions in the `webarkitlib_rs` core crate.
 
@@ -39,6 +39,17 @@ cargo bench --features simd --bench simd_bench
 cargo bench --bench simd_bench
 ```
 
+The crate registers these benches (all `harness = false`):
+
+| Bench | Measures |
+| :--- | :--- |
+| `simd_bench` | Scalar vs SIMD kernels — the table above (`--features simd-x86-sse41`) |
+| `marker_bench` | `ar_detect_marker` + pose — barcode/template marker pipeline |
+| `feature_map_bench` | `ar2_gen_feature_map` — NFT marker generation (`--features log-helpers`) |
+| `pyramid_bench` | Box-filter pyramid downsample (kept-but-unused reference, #203) |
+| `gaussian_pyramid_bench` | Gaussian scale-space pyramid build (#200/#201/#207) |
+| `kpm_bench` | `KpmHandle::kpm_matching` — KPM/NFT detection (#225; see below) |
+
 ## Setup Details
 
 - **Tooling**: [Criterion.rs](https://github.com/bheisler/criterion.rs) `0.8`
@@ -48,20 +59,51 @@ cargo bench --bench simd_bench
 - **Toolchain**: `rustc 1.94.0 (stable)`
 - **SIMD activation**: SSE4.1 intrinsics are gated by `#[cfg(target_feature = "sse4.1")]` — set `RUSTFLAGS="-C target-feature=+sse4.1"` (or `target-cpu=native`) when running `simd_bench` to exercise the SIMD paths.
 
-## KPM / NFT performance (M9-3 status)
+## KPM / NFT performance
 
 Issue #142's acceptance criterion calls for the pure-Rust NFT pipeline
-to run within 20% of the C++ backend on `pinball-demo`. As of M9-3,
-**there is no dedicated benchmark exercising the KPM / FreakMatcher
-path**. The existing `marker_bench` measures `ar_detect_marker`
-(barcode/template marker detection), which doesn't touch the
-FreakMatcher and therefore can't distinguish pure-Rust from the C++
-FFI backend.
+to run within 20% of the C++ backend on `pinball-demo`. `marker_bench`
+measures `ar_detect_marker` (barcode/template marker detection), which
+never touches the FreakMatcher and therefore can't distinguish the
+pure-Rust backend from the C++ FFI one — hence the dedicated
+`kpm_bench.rs` below, added in #225.
 
-### Functional parity evidence (in lieu of wall-clock numbers)
+### `kpm_bench.rs` — dedicated KPM wall-clock (#225)
 
-The Rust and C++ backends agree on the meaningful outputs across
-several test suites:
+Times a single `KpmHandle::kpm_matching` query — the per-frame NFT
+detection path — using the pure-Rust `RustFreakMatcher` backend.
+
+| | |
+|---|---|
+| **Measures** | one `KpmHandle::kpm_matching` call (detection only) |
+| **Reference marker** | `pinball.fset3`, assigned to page 0 |
+| **Query image** | `pinball-demo.jpg` — 2000×1500, converted to luma |
+| **Fixtures** | `crates/core/examples/Data/` (shared with the `simple_nft` example and the KPM regression tests) |
+| **Criterion config** | `sample_size = 10`, 15 s measurement — a full query is heavy |
+
+```sh
+cargo bench -p webarkitlib-rs --bench kpm_bench
+```
+
+Setup — reference-data load and handle construction — happens once
+**outside** the measured loop, so only `kpm_matching` is timed.
+
+Baseline (release build, x86_64):
+
+| Backend | Query time (median) |
+|---------|---------------------|
+| Rust (`RustFreakMatcher`) | ~0.30 s |
+
+To produce the C++ side of the #142 within-20% comparison, build with
+`--features ffi-backend` and swap `RustFreakMatcher` for
+`CppFreakMatcher` in the bench. Wall-clock numbers are
+hardware-dependent, so treat the committed figure as an
+order-of-magnitude reference rather than a hard CI gate.
+
+### Functional parity evidence
+
+Beyond wall-clock timing, the Rust and C++ backends agree on the
+meaningful outputs across several test suites:
 
 | Test | What it asserts | Status post-#170 |
 |------|------------------|------------------|
@@ -70,13 +112,10 @@ several test suites:
 | `cross_stack_parity` (jsartoolkitNFT#584 Track 2) | C++ FFI and Rust pose agree with jsartoolkitNFT-Node within rot 0.08 / trans 10 mm | ✅ green |
 | `kpm_regression::test_full_pipeline_pose` | Linux C++ pose matches committed numerical baseline to 1e-2 | ✅ green |
 
-The within-20% perf target is treated as **deferred, not failed**:
-the functional evidence shows Rust meets parity by every quality
-metric we measure, and #142 explicitly permits deferring the
-quantitative perf check to a follow-up: *"If slower, open a follow-up
-performance issue rather than blocking this PR."*
-
-A future PR will add a KPM-specific Criterion bench (`kpm_bench.rs`)
-that loads `pinball.fset3` + `pinball-demo.jpg` and times
-`kpm_matching` with each backend, producing the dedicated wall-clock
-comparison.
+Taken together: Rust meets parity by every quality metric we measure,
+and `kpm_bench` now provides the wall-clock baseline needed to catch
+performance regressions in the FreakMatcher pipeline. The formal
+within-20% comparison against C++ remains a manual, opt-in run
+(`--features ffi-backend`) rather than a CI gate, per #142: *"If
+slower, open a follow-up performance issue rather than blocking this
+PR."*

@@ -41,6 +41,7 @@ use crate::icp::{
 use crate::types::{AR3DHandle, ARMarkerInfo, ARParam, ARdouble};
 // use log::debug; // Removed unused import
 
+/// Allocate an `AR3DHandle` for pose estimation from the given camera parameters.
 pub fn ar_3d_create_handle(ar_param: &ARParam) -> Result<*mut AR3DHandle, &'static str> {
     let icp_handle = icp_create_handle(&ar_param.mat)?;
     let mut handle = Box::new(AR3DHandle::default());
@@ -48,6 +49,7 @@ pub fn ar_3d_create_handle(ar_param: &ARParam) -> Result<*mut AR3DHandle, &'stat
     Ok(Box::into_raw(handle))
 }
 
+/// Free an `AR3DHandle` and null the pointer.
 pub fn ar_3d_delete_handle(handle: &mut *mut AR3DHandle) -> Result<(), &'static str> {
     if handle.is_null() {
         return Err("Null AR3DHandle");
@@ -61,6 +63,7 @@ pub fn ar_3d_delete_handle(handle: &mut *mut AR3DHandle) -> Result<(), &'static 
     Ok(())
 }
 
+/// Estimate the 3×4 pose of a square marker of the given side length.
 pub fn ar_get_trans_mat_square(
     handle: &AR3DHandle,
     marker_info: &ARMarkerInfo,
@@ -129,6 +132,7 @@ pub fn ar_get_trans_mat_square(
     }
 }
 
+/// Estimate a square marker's pose using the previous frame's pose as a seed.
 pub fn ar_get_trans_mat_square_cont(
     handle: &AR3DHandle,
     marker_info: &ARMarkerInfo,
@@ -186,6 +190,7 @@ pub fn ar_get_trans_mat_square_cont(
     }
 }
 
+/// Estimate a 3×4 pose from 2D–3D correspondences via iterative refinement.
 pub fn ar_get_trans_mat(
     handle: &AR3DHandle,
     init_conv: &[[ARdouble; 4]; 3],
