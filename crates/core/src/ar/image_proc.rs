@@ -406,6 +406,7 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
 }
 
 /// Scalar RGBA → grayscale (luminance) conversion.
+#[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn rgba_to_gray_scalar(rgba: &[u8]) -> Vec<u8> {
     let mut gray = Vec::with_capacity(rgba.len() / 4);
     for chunk in rgba.chunks_exact(4) {
@@ -428,6 +429,7 @@ pub fn rgb_to_gray(rgb: &[u8]) -> Vec<u8> {
     rgb_to_gray_scalar(rgb)
 }
 
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn rgb_to_gray_scalar(rgb: &[u8]) -> Vec<u8> {
     let mut gray = Vec::with_capacity(rgb.len() / 3);
     for chunk in rgb.chunks_exact(3) {
