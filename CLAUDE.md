@@ -339,3 +339,30 @@ surface. PR #188 cleaned up 26 such lints unmasked by PR #187.
   - `perf(wasm): optimize memory allocation for Emscripten target`
   - `fix(core): resolve out-of-bounds error in Row-Major layout`
   - `doc: add usage examples for parallel processing`
+
+---
+
+## 🤖 Agent Skills Configuration
+
+Repository configuration for AI agent skills framework:
+
+- **Issue Tracker**: GitHub Issues (`webarkit/WebARKitLib.rs` via `gh` CLI) with local fallback in `issues/`.
+- **Triage Vocabulary**:
+  - `triage:needs-info` (Awaiting clarification or repro)
+  - `triage:ready` (Scaffolded and ready for implementation)
+  - `triage:in-progress` (Actively being worked on)
+  - `triage:blocked` (Blocked by dependencies or technical questions)
+  - `triage:done` (Completed and verified)
+- **Domain Documentation & Architecture**:
+  - [ARCHITECTURE.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/ARCHITECTURE.md) (System design, core vs WASM boundary)
+  - `docs/design/` (Design specs and architectural notes)
+  - [docs/wasm-js-integration.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/docs/wasm-js-integration.md) (JS/WASM API interface specs)
+  - [docs/miri.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/docs/miri.md) (Miri memory safety verification guidelines)
+  - `docs/agents/` (Agent specs, context maps, and task PRDs)
+- **Workspace Architecture**:
+  - Cargo Workspace: `crates/core` (pure Rust CV/AR logic) & `crates/wasm` (WASM bindings)
+- **Exclusions / Scope Constraints**:
+  - NO video capture handling (`video.h`, V4L2, DirectShow, QuickTime).
+  - NO OpenGL/rendering (`gsub`, `arGL`).
+  - NO multi-marker tracking (`arMulti`).
+

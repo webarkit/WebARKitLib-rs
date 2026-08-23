@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebARKitLib.rs – WebWorker Live Video NFT Example</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 920px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 12px;
+        }
+
+        .status {
+            font-weight: bold;
+            margin-bottom: 14px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            background: #e8f0fe;
+            color: #1a73e8;
+            border-left: 4px solid #1a73e8;
+        }
+
+        .status.error {
+            background: #fce8e6;
+            color: #c5221f;
+            border-left-color: #c5221f;
+        }
+
+        .status.success {
+            background: #e6f4ea;
+            color: #137333;
+            border-left-color: #137333;
+        }
+
+        .status.searching {
+            background: #fef7e0;
+            color: #b06000;
+            border-left-color: #b06000;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px;
+            align-items: flex-end;
+            margin-bottom: 16px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 150px;
+        }
+
+        label {
+            font-size: 0.85rem;
+            color: #444;
+            font-weight: 600;
+        }
+
+        select {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            background: #fafafa;
+        }
+
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 4px;
+            background: #1a73e8;
+            color: white;
+            cursor: pointer;
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #1557b0;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        button.stop {
+            background: #d93025;
+        }
+
+        button.stop:hover {
+            background: #a50e0e;
+        }
+
+        button.secondary {
+            background: #5f6368;
+        }
+
+        button.secondary:hover {
+            background: #3c4043;
+        }
+
+        #canvas-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+
+        video {
+            display: none;
+        }
+
+        canvas {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        #results {
+            white-space: pre-wrap;
+            background: #f8f9fa;
+            padding: 14px;
+            border-radius: 4px;
+            border-left: 4px solid #1a73e8;
+            font-family: monospace;
+            font-size: 0.88rem;
+            min-height: 110px;
+            width: 100%;
+        }
+
+        .description {
+            margin-bottom: 16px;
+            color: #555;
+            line-height: 1.5;
+            font-size: 0.95rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>WebARKitLib.rs – WebWorker Live Video NFT Example</h1>
+
+        <div class="description">
+            <p>
+                Real-time Natural Feature Tracking (NFT) running in a <strong>Dedicated WebWorker</strong>.
+                Offloads CPU-heavy WASM KPM detection (FREAK keypoint matching) and AR2 template tracking
+                to a background thread to maintain smooth <strong>60 FPS main-thread UI rendering</strong>.
+            </p>
+        </div>
+
+        <div class="status" id="status">Status: Ready. Select settings and click "Start Pipeline".</div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="wasm-version">WASM Engine:</label>
+                <select id="wasm-version">
+                    <option value="dist-std">Standard (Scalar)</option>
+                    <option value="dist-simd" selected>SIMD (wasm32)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="input-source">Video Source:</label>
+                <select id="input-source">
+                    <option value="camera">Live Camera (getUserMedia)</option>
+                    <option value="static">Static Test Image (pinball-demo.jpg)</option>
+                </select>
+            </div>
+
+            <button id="btn-start">Start Pipeline</button>
+            <button id="btn-stop" class="stop" disabled>Stop Pipeline</button>
+            <button id="btn-detect" class="secondary" disabled>Force KPM Detect</button>
+            <button id="btn-reset" class="secondary" disabled>Reset Tracking</button>
+        </div>
+
+        <div id="canvas-wrapper">
+            <video id="video" playsinline></video>
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <div id="results">Pipeline results will appear here...</div>
+    </div>
+
+    <script type="module">
+        const statusEl = document.getElementById('status');
+        const wasmVersionSel = document.getElementById('wasm-version');
+        const inputSourceSel = document.getElementById('input-source');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const btnDetect = document.getElementById('btn-detect');
+        const btnReset = document.getElementById('btn-reset');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const resultsEl = document.getElementById('results');
+
+        let worker = null;
+        let workerBusy = false;
+        let cameraStream = null;
+        let animFrameId = null;
+
+        // Target marker dimensions & WASM Camera Intrinsics
+        let markerWidthPx = 0;
+        let markerHeightPx = 0;
+        let markerDpi = 0;
+        let markerW_mm = 0;
+        let markerH_mm = 0;
+
+        let cameraIntrinsics = null; // [fx, fy, cx, cy] from camera_para.dat
+        let projectionMatrix = null; // 4x4 OpenGL Projection Matrix (16 floats)
+
+        let pipelineState = 'IDLE';
+        let currentPose = null;
+        let lastWorkerStage = '-';
+        let lastWorkerMs = 0;
+        let lastWorkerError = 0;
+        let workerFpsCounter = 0;
+
+        let lastFrameTime = performance.now();
+        let fpsCounter = 0;
+        let mainFps = 0;
+        let workerFps = 0;
+        let lastWorkerFpsTime = performance.now();
+
+        let staticImage = null;
+
+        btnStart.addEventListener('click', async () => {
+            try {
+                btnStart.disabled = true;
+                wasmVersionSel.disabled = true;
+                inputSourceSel.disabled = true;
+
+                statusEl.className = 'status';
+                statusEl.textContent = 'Status: Fetching camera parameters and NFT dataset…';
+
+                // 1. Fetch camera parameters & NFT datasets
+                const [paramRes, isetRes, fsetRes, fset3Res] = await Promise.all([
+                    fetch('assets/camera_para.dat'),
+                    fetch('assets/pinball.iset'),
+                    fetch('assets/pinball.fset'),
+                    fetch('assets/pinball.fset3')
+                ]);
+
+                if (!paramRes.ok || !isetRes.ok || !fsetRes.ok || !fset3Res.ok) {
+                    throw new Error('Failed to load dataset files (camera_para.dat / pinball.*)');
+                }
+
+                const paramData = new Uint8Array(await paramRes.arrayBuffer());
+                const isetData = new Uint8Array(await isetRes.arrayBuffer());
+                const fsetData = new Uint8Array(await fsetRes.arrayBuffer());
+                const fset3Data = new Uint8Array(await fset3Res.arrayBuffer());
+
+                // 2. Setup video stream or static image
+                const sourceMode = inputSourceSel.value;
+                if (sourceMode === 'camera') {
+                    cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+                        audio: false
+                    });
+                    video.srcObject = cameraStream;
+                    await new Promise(resolve => video.onloadedmetadata = resolve);
+                    await video.play();
+
+                    canvas.width = video.videoWidth || 640;
+                    canvas.height = video.videoHeight || 480;
+                } else {
+                    staticImage = new Image();
+                    staticImage.src = 'assets/pinball-demo.jpg';
+                    await new Promise((resolve, reject) => {
+                        staticImage.onload = resolve;
+                        staticImage.onerror = () => reject(new Error('Failed to load pinball-demo.jpg'));
+                    });
+                    canvas.width = staticImage.width;
+                    canvas.height = staticImage.height;
+                    ctx.drawImage(staticImage, 0, 0);
+                }
+
+                const w = canvas.width;
+                const h = canvas.height;
+
+                // 3. Initialize Dedicated WebWorker
+                statusEl.textContent = 'Status: Initializing WASM inside WebWorker background thread…';
+
+                if (worker) {
+                    worker.terminate();
+                }
+
+                worker = new Worker('nft.worker.js', { type: 'module' });
+                workerBusy = false;
+
+                worker.onmessage = handleWorkerMessage;
+
+                // Send initialization message to worker
+                const variant = wasmVersionSel.value;
+                worker.postMessage({
+                    type: 'init',
+                    variant,
+                    paramData,
+                    isetData,
+                    fsetData,
+                    fset3Data,
+                    width: w,
+                    height: h
+                });
+
+            } catch (err) {
+                statusEl.textContent = `Status Error: ${err.message || err}`;
+                statusEl.className = 'status error';
+                console.error(err);
+                stopPipeline();
+            }
+        });
+
+        function handleWorkerMessage(e) {
+            const msg = e.data;
+            workerBusy = false;
+            workerFpsCounter++;
+
+            switch (msg.type) {
+                case 'loaded': {
+                    markerWidthPx = msg.markerWidth;
+                    markerHeightPx = msg.markerHeight;
+                    markerDpi = msg.markerDpi;
+                    cameraIntrinsics = msg.intrinsics;
+                    projectionMatrix = msg.projMat;
+
+                    // Convert marker pixel size & DPI into physical millimeters (mm)
+                    if (markerDpi > 0) {
+                        markerW_mm = (markerWidthPx / markerDpi) * 25.4;
+                        markerH_mm = (markerHeightPx / markerDpi) * 25.4;
+                    } else {
+                        markerW_mm = markerWidthPx;
+                        markerH_mm = markerHeightPx;
+                    }
+
+                    console.log(`[NFT Worker] Loaded: ${msg.width}x${msg.height}, Target: ${markerWidthPx}x${markerHeightPx}px @ ${markerDpi} DPI (${markerW_mm.toFixed(1)}x${markerH_mm.toFixed(1)} mm)`);
+                    console.log(`[NFT Worker] Intrinsics [fx, fy, cx, cy]:`, cameraIntrinsics);
+                    console.log(`[NFT Worker] 4x4 Projection Matrix:`, projectionMatrix);
+
+                    btnStop.disabled = false;
+                    btnDetect.disabled = false;
+                    btnReset.disabled = false;
+
+                    pipelineState = 'SEARCHING';
+                    currentPose = null;
+                    fpsCounter = 0;
+                    lastFrameTime = performance.now();
+
+                    statusEl.textContent = 'Status: Worker active. Searching for NFT marker (KPM detection)…';
+                    statusEl.className = 'status searching';
+
+                    animFrameId = requestAnimationFrame(pipelineLoop);
+                    break;
+                }
+
+                case 'found': {
+                    currentPose = msg.pose;
+                    pipelineState = msg.pipelineState;
+                    lastWorkerStage = msg.stage;
+                    lastWorkerMs = msg.elapsed;
+                    lastWorkerError = msg.error || 0;
+
+                    statusEl.textContent = `Status: Marker tracked ✓ [${msg.stage}] (Error: ${msg.error ? msg.error.toFixed(4) : 0}, ${msg.elapsed.toFixed(1)}ms)`;
+                    statusEl.className = 'status success';
+                    break;
+                }
+
+                case 'notFound': {
+                    lastWorkerStage = msg.stage;
+                    lastWorkerMs = msg.elapsed;
+                    pipelineState = msg.pipelineState;
+                    break;
+                }
+
+                case 'lost': {
+                    lastWorkerStage = msg.stage;
+                    lastWorkerMs = msg.elapsed;
+                    pipelineState = msg.pipelineState;
+
+                    statusEl.textContent = 'Status: Tracking lost. Re-scanning with KPM in background worker…';
+                    statusEl.className = 'status searching';
+                    break;
+                }
+
+                case 'error': {
+                    statusEl.textContent = `Worker Error: ${msg.error}`;
+                    statusEl.className = 'status error';
+                    console.error('[Worker Error]', msg.error);
+                    break;
+                }
+            }
+        }
+
+        btnStop.addEventListener('click', stopPipeline);
+
+        btnDetect.addEventListener('click', () => {
+            if (worker) {
+                worker.postMessage({ type: 'forceDetect' });
+            }
+        });
+
+        btnReset.addEventListener('click', () => {
+            if (worker) {
+                worker.postMessage({ type: 'reset' });
+            }
+            currentPose = null;
+            pipelineState = 'SEARCHING';
+            statusEl.textContent = 'Status: Tracking reset. Searching for marker…';
+            statusEl.className = 'status searching';
+        });
+
+        function stopPipeline() {
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            if (video) {
+                video.srcObject = null;
+            }
+            if (worker) {
+                worker.terminate();
+                worker = null;
+            }
+
+            workerBusy = false;
+            pipelineState = 'IDLE';
+            currentPose = null;
+            cameraIntrinsics = null;
+            projectionMatrix = null;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            btnStart.disabled = false;
+            btnStop.disabled = true;
+            btnDetect.disabled = true;
+            btnReset.disabled = true;
+            wasmVersionSel.disabled = false;
+            inputSourceSel.disabled = false;
+
+            statusEl.textContent = 'Status: Pipeline stopped.';
+            statusEl.className = 'status';
+            resultsEl.textContent = 'Pipeline stopped.';
+        }
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // Main Thread Render Loop (Smooth 60 FPS UI & Canvas Rendering)
+        // ──────────────────────────────────────────────────────────────────────────────
+        function pipelineLoop(now) {
+            if (pipelineState === 'IDLE') return;
+            animFrameId = requestAnimationFrame(pipelineLoop);
+
+            // Measure Main UI Thread FPS
+            fpsCounter++;
+            if (now - lastFrameTime >= 1000) {
+                mainFps = Math.round((fpsCounter * 1000) / (now - lastFrameTime));
+                fpsCounter = 0;
+                lastFrameTime = now;
+            }
+
+            // Measure Worker FPS
+            if (now - lastWorkerFpsTime >= 1000) {
+                workerFps = Math.round((workerFpsCounter * 1000) / (now - lastWorkerFpsTime));
+                workerFpsCounter = 0;
+                lastWorkerFpsTime = now;
+            }
+
+            // Draw current video/image frame to canvas
+            if (inputSourceSel.value === 'camera') {
+                if (video.readyState >= 2) {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+            } else if (staticImage) {
+                ctx.drawImage(staticImage, 0, 0, canvas.width, canvas.height);
+            }
+
+            // If WebWorker is ready for the next frame, transfer pixel buffer
+            if (worker && !workerBusy) {
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                workerBusy = true;
+
+                // Transfer ArrayBuffer for zero-copy high performance
+                const buffer = imageData.data.buffer;
+                worker.postMessage({
+                    type: 'process',
+                    rgba: new Uint8Array(buffer),
+                    width: canvas.width,
+                    height: canvas.height
+                }, [buffer]);
+            }
+
+            // Render 3D Pose Overlay on top of canvas frame using physical mm marker size
+            if (currentPose) {
+                drawPoseOverlay(currentPose, markerW_mm, markerH_mm);
+            }
+
+            // Update UI Results panel
+            let resultsText = `Main UI FPS: ${mainFps} | Worker FPS: ${workerFps}\n`;
+            resultsText += `Pipeline State: [${pipelineState}] | Worker Stage: ${lastWorkerStage} (${lastWorkerMs.toFixed(1)} ms)\n`;
+            resultsText += `Canvas Size: ${canvas.width}x${canvas.height} | Target Physical Size: ${markerW_mm.toFixed(1)} x ${markerH_mm.toFixed(1)} mm (${markerWidthPx}x${markerHeightPx} px @ ${markerDpi} DPI)\n`;
+
+            if (cameraIntrinsics) {
+                resultsText += `WASM Camera Intrinsics: [fx: ${cameraIntrinsics[0].toFixed(1)}, fy: ${cameraIntrinsics[1].toFixed(1)}, cx: ${cameraIntrinsics[2].toFixed(1)}, cy: ${cameraIntrinsics[3].toFixed(1)}]\n`;
+            }
+
+            resultsText += `\n`;
+
+            if (currentPose) {
+                resultsText += `3x4 Pose Matrix:\n${formatMatrix(currentPose)}`;
+            } else {
+                resultsText += `Worker is scanning background frames for FREAK feature matches…\n`;
+            }
+
+            resultsEl.textContent = resultsText;
+        }
+
+        // ──────────────────────────────────────────────────────────────────────────────
+        // 2D Canvas 3D Pose Overlay Projection (Driven by WASM Camera Intrinsics)
+        // ──────────────────────────────────────────────────────────────────────────────
+        function drawPoseOverlay(pose, w_mm, h_mm) {
+            if (!pose || pose.length !== 12 || w_mm <= 0 || h_mm <= 0) return;
+
+            // Use camera intrinsics [fx, fy, cx, cy] directly from camera_para.dat via WASM
+            const fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (canvas.width * 0.997);
+            const fy = (cameraIntrinsics && cameraIntrinsics[1] > 0) ? cameraIntrinsics[1] : (canvas.width * 0.997);
+            const cx = (cameraIntrinsics && cameraIntrinsics[2] > 0) ? cameraIntrinsics[2] : (canvas.width * 0.5);
+            const cy = (cameraIntrinsics && cameraIntrinsics[3] > 0) ? cameraIntrinsics[3] : (canvas.height * 0.5);
+
+            // Project 3D point (x,y,z) in marker coordinate space (mm) -> 2D canvas pixel coords (u,v)
+            function project(x, y, z) {
+                // 3x4 pose matrix (row-major)
+                const xc = pose[0] * x + pose[1] * y + pose[2] * z + pose[3];
+                const yc = pose[4] * x + pose[5] * y + pose[6] * z + pose[7];
+                const zc = pose[8] * x + pose[9] * y + pose[10] * z + pose[11];
+
+                if (zc <= 0.001) return null;
+
+                const u = (xc * fx) / zc + cx;
+                const v = (yc * fy) / zc + cy;
+                return { u, v };
+            }
+
+            // 4 Corners of the NFT marker paper extending from (0,0,0) to (+w_mm, +h_mm, 0)
+            const p0 = project(0, 0, 0);         // Bottom-Left
+            const p1 = project(w_mm, 0, 0);      // Bottom-Right
+            const p2 = project(w_mm, h_mm, 0);   // Top-Right
+            const p3 = project(0, h_mm, 0);      // Top-Left
+
+            // Draw bounding quad
+            if (p0 && p1 && p2 && p3) {
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#00e676';
+                ctx.beginPath();
+                ctx.moveTo(p0.u, p0.v);
+                ctx.lineTo(p1.u, p1.v);
+                ctx.lineTo(p2.u, p2.v);
+                ctx.lineTo(p3.u, p3.v);
+                ctx.closePath();
+                ctx.stroke();
+
+                // Fill translucent green overlay
+                ctx.fillStyle = 'rgba(0, 230, 118, 0.16)';
+                ctx.fill();
+
+                // Draw corner dots
+                ctx.fillStyle = '#ff1744';
+                [p0, p1, p2, p3].forEach(p => {
+                    ctx.beginPath();
+                    ctx.arc(p.u, p.v, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+            }
+
+            // Draw 3D Coordinate Axes at Bottom-Left Origin (0,0,0)
+            const axisLength = Math.min(w_mm, h_mm) * 0.35;
+            const origin = project(0, 0, 0);
+            const xAxis = project(axisLength, 0, 0);
+            const yAxis = project(0, axisLength, 0);
+            const zAxis = project(0, 0, -axisLength);
+
+            if (origin) {
+                ctx.lineWidth = 3;
+
+                // X Axis - Red (points Right along bottom edge)
+                if (xAxis) {
+                    ctx.strokeStyle = '#ff1744';
+                    ctx.beginPath();
+                    ctx.moveTo(origin.u, origin.v);
+                    ctx.lineTo(xAxis.u, xAxis.v);
+                    ctx.stroke();
+                }
+                // Y Axis - Green (points Up along left edge)
+                if (yAxis) {
+                    ctx.strokeStyle = '#00e676';
+                    ctx.beginPath();
+                    ctx.moveTo(origin.u, origin.v);
+                    ctx.lineTo(yAxis.u, yAxis.v);
+                    ctx.stroke();
+                }
+                // Z Axis - Blue (points Out towards camera)
+                if (zAxis) {
+                    ctx.strokeStyle = '#2979ff';
+                    ctx.beginPath();
+                    ctx.moveTo(origin.u, origin.v);
+                    ctx.lineTo(zAxis.u, zAxis.v);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function formatMatrix(mat) {
+            let s = '';
+            for (let i = 0; i < 3; i++) {
+                s += `  [ ${mat[i * 4].toFixed(4).padStart(10)}, ${mat[i * 4 + 1].toFixed(4).padStart(10)}, ` +
+                    `${mat[i * 4 + 2].toFixed(4).padStart(10)}, ${mat[i * 4 + 3].toFixed(4).padStart(10)} ]\n`;
+            }
+            return s;
+        }
+    </script>
+</body>
+
+</html>
