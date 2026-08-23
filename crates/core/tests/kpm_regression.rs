@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  kpm_regression.rs
  *  WebARKitLib-rs

@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  absolute_corner_error.rs
  *  WebARKitLib-rs

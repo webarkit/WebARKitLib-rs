@@ -1,3 +1,4 @@
+#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  simple_nft.rs
  *  WebARKitLib-rs
