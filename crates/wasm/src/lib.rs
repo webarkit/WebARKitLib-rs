@@ -633,6 +633,50 @@ impl WasmNFTHandle {
     pub fn reset_tracking(&mut self) {
         self.surface_set.cont_num = 0;
     }
+
+    /// Get camera intrinsic parameters `[fx, fy, cx, cy]` from `camera_para.dat`.
+    pub fn get_camera_intrinsics(&self) -> Box<[f32]> {
+        unsafe {
+            if !self.ar2_handle.cparam_lt.is_null() {
+                let mat = &(*self.ar2_handle.cparam_lt).param.mat;
+                vec![
+                    mat[0][0] as f32,
+                    mat[1][1] as f32,
+                    mat[0][2] as f32,
+                    mat[1][2] as f32,
+                ]
+                .into_boxed_slice()
+            } else {
+                vec![0.0, 0.0, 0.0, 0.0].into_boxed_slice()
+            }
+        }
+    }
+
+    /// Get the 4x4 OpenGL projection matrix for Three.js / WebGL rendering.
+    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Box<[f32]> {
+        unsafe {
+            if self.ar2_handle.cparam_lt.is_null() {
+                return vec![0.0; 16].into_boxed_slice();
+            }
+            let param = &(*self.ar2_handle.cparam_lt).param;
+            let fx = param.mat[0][0] as f32;
+            let fy = param.mat[1][1] as f32;
+            let cx = param.mat[0][2] as f32;
+            let cy = param.mat[1][2] as f32;
+            let width = param.xsize as f32;
+            let height = param.ysize as f32;
+
+            let mut proj = vec![0.0f32; 16];
+            proj[0] = 2.0 * fx / width;
+            proj[5] = 2.0 * fy / height;
+            proj[8] = (2.0 * cx / width) - 1.0;
+            proj[9] = (2.0 * cy / height) - 1.0;
+            proj[10] = -(far + near) / (far - near);
+            proj[11] = -1.0;
+            proj[14] = -(2.0 * far * near) / (far - near);
+            proj.into_boxed_slice()
+        }
+    }
 }
 
 impl Drop for WasmNFTHandle {
@@ -766,5 +810,46 @@ impl WasmKpmHandle {
     /// Whether reference data has been loaded.
     pub fn is_loaded(&self) -> bool {
         self.loaded
+    }
+
+    /// Get camera intrinsic parameters `[fx, fy, cx, cy]` from `camera_para.dat`.
+    pub fn get_camera_intrinsics(&self) -> Box<[f32]> {
+        if let Some(param_lt) = &self.handle.cparam_lt {
+            let mat = &param_lt.param.mat;
+            vec![
+                mat[0][0] as f32,
+                mat[1][1] as f32,
+                mat[0][2] as f32,
+                mat[1][2] as f32,
+            ]
+            .into_boxed_slice()
+        } else {
+            vec![0.0, 0.0, 0.0, 0.0].into_boxed_slice()
+        }
+    }
+
+    /// Get the 4x4 OpenGL projection matrix for Three.js / WebGL rendering.
+    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Box<[f32]> {
+        if let Some(param_lt) = &self.handle.cparam_lt {
+            let param = &param_lt.param;
+            let fx = param.mat[0][0] as f32;
+            let fy = param.mat[1][1] as f32;
+            let cx = param.mat[0][2] as f32;
+            let cy = param.mat[1][2] as f32;
+            let width = param.xsize as f32;
+            let height = param.ysize as f32;
+
+            let mut proj = vec![0.0f32; 16];
+            proj[0] = 2.0 * fx / width;
+            proj[5] = 2.0 * fy / height;
+            proj[8] = (2.0 * cx / width) - 1.0;
+            proj[9] = (2.0 * cy / height) - 1.0;
+            proj[10] = -(far + near) / (far - near);
+            proj[11] = -1.0;
+            proj[14] = -(2.0 * far * near) / (far - near);
+            proj.into_boxed_slice()
+        } else {
+            vec![0.0; 16].into_boxed_slice()
+        }
     }
 }
