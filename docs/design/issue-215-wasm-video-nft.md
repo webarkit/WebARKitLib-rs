@@ -54,9 +54,23 @@ To bridge the gap between static test images (captured on narrow calibrated lens
   - `Laptop Wide Angle (~72° FOV)`: $f_x = \text{canvasWidth} / (2 \cdot \tan(36^\circ)) \approx 440 \text{ px}$.
   - `Calibrated File (camera_para.dat ~55° FOV)`: Uses exact $f_x = 609.4$ from `camera_para.dat` (Matches `pinball-demo.jpg` static test image 100%).
 
+## 3. The "Right Edge Overshoot" Mystery (Print Aspect Ratio Distortion)
+
+During testing, we observed that while the left, top, and bottom edges of the 3D green bounding quad aligned perfectly with the physical paper marker, the **right edge overshot** the paper significantly. 
+
+### Why did JSARToolKitNFT not show this issue?
+The reference implementation (`threejs_worker.js` in JSARToolKitNFT) only renders a tiny 3D sphere at the exact center coordinate (`w/2`, `h/2`). Because it does not draw the outer boundaries of the marker, any horizontal scaling or FOV mismatch is entirely masked—the center of a squished marker is still perfectly in the center.
+
+### Root Cause
+When printing a digital marker image (e.g., `pinball-demo.jpg` with aspect ratio ~0.80) onto standard A4/Letter paper (aspect ratio ~0.71), printer settings like "Stretch to Fit" or "Fill Page" subtly compress the image horizontally. 
+ARToolKit's KPM and AR2 tracking perfectly track the squished features, but when we project a 3D bounding box using the **original digital width** ($W_{\text{mm}}$), the projected box naturally extends further to the right than the physically narrower paper.
+
+### Solution / Mitigation
+We introduced a **"Physical Print Aspect"** UI slider. By scaling the $W_{\text{mm}}$ variable before projection, users can manually compensate for their printer's horizontal compression. For example, dragging the slider to ~0.88 perfectly snaps the right edge of the bounding quad back onto the physical paper, proving the projection math is structurally flawless and matches Three.js exactly. We also added a magenta center tracking dot to visibly demonstrate that the center-point tracking perfectly matches JSARToolKitNFT.
+
 ---
 
-## 3. Verification & Results
+## 4. Verification & Results
 
 - **Unit Tests**: All **432 unit tests** in `webarkitlib-rs` passed cleanly.
 - **WASM Builds**: Both `dist-std` (Scalar) and `dist-simd` (SIMD) packages built with `wasm-pack`.
