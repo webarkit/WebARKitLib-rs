@@ -200,18 +200,21 @@
                     <option value="static">Static Test Image (pinball-demo.jpg)</option>
                 </select>
             </div>
-
             <div class="control-group">
-                <label for="camera-fov">Camera Lens FOV:</label>
+                <label for="camera-fov">Camera FOV:</label>
                 <select id="camera-fov">
-                    <option value="auto" selected>Auto (Webcam ~61° FOV)</option>
-                    <option value="72">Laptop Wide Angle (~72° FOV)</option>
-                    <option value="calibrated">Calibrated (camera_para.dat ~55°)</option>
+                    <option value="calibrated">Default (camera_para.dat - ~55°)</option>
+                    <option value="auto">Auto Webcam (~61°)</option>
+                    <option value="72">Wide Webcam (~72°)</option>
                 </select>
             </div>
+            <div class="control-group">
+                <label for="marker-scale">Physical Print Aspect:</label>
+                <input type="range" id="marker-scale" min="0.5" max="1.0" step="0.01" value="1.0">
+            </div>
 
-            <button id="btn-start">Start Pipeline</button>
-            <button id="btn-stop" class="stop" disabled>Stop Pipeline</button>
+            <button id="btn-start">Start Tracking</button>
+            <button id="btn-stop" class="stop" disabled>Stop</button>
             <button id="btn-detect" class="secondary" disabled>Force KPM Detect</button>
             <button id="btn-reset" class="secondary" disabled>Reset Tracking</button>
         </div>
@@ -229,6 +232,7 @@
         const wasmVersionSel = document.getElementById('wasm-version');
         const inputSourceSel = document.getElementById('input-source');
         const cameraFovSel = document.getElementById('camera-fov');
+        const markerScaleRange = document.getElementById('marker-scale');
         const btnStart = document.getElementById('btn-start');
         const btnStop = document.getElementById('btn-stop');
         const btnDetect = document.getElementById('btn-detect');
@@ -250,8 +254,21 @@
         let markerW_mm = 0;
         let markerH_mm = 0;
 
-        let cameraIntrinsics = null; // [fx, fy, cx, cy] from camera_para.dat
+        let cameraIntrinsics = null; // [fx, fy, cx, cy] from camera_para.dat (in processing space)
         let projectionMatrix = null; // 4x4 OpenGL Projection Matrix (16 floats)
+
+        // ── jsartoolkitNFT-style 4:3 padding variables ──
+        // camera_para.dat is calibrated for 4:3 aspect ratio.
+        // If the webcam delivers 16:9 (or any non-4:3) frames, we must pad the
+        // processing buffer to 4:3 and center the video inside it with black borders.
+        // This matches jsartoolkitNFT/examples/threejs_worker.js lines 87-103 & 200-208.
+        let vw = 0, vh = 0;                // native video dimensions
+        let pscale = 1;                     // downscale factor (target max dim = 320)
+        let scaledW = 0, scaledH = 0;      // downscaled video dimensions
+        let pw = 0, ph = 0;                // padded 4:3 processing canvas dimensions
+        let ox = 0, oy = 0;                // offset to center scaled video inside padded canvas
+        let canvasProcess = null;           // hidden processing canvas
+        let ctxProcess = null;
 
         let pipelineState = 'IDLE';
         let currentPose = null;
@@ -305,8 +322,25 @@
                     await new Promise(resolve => video.onloadedmetadata = resolve);
                     await video.play();
 
-                    canvas.width = video.videoWidth || 640;
-                    canvas.height = video.videoHeight || 480;
+                    // Use NATIVE video stream resolution (may be 16:9 even if we asked for 4:3)
+                    vw = video.videoWidth;
+                    vh = video.videoHeight;
+                    console.log(`[Camera] Native video stream: ${vw}x${vh} (aspect: ${(vw/vh).toFixed(3)})`);
+
+                    // ── jsartoolkitNFT 4:3 padding logic (lines 87-98) ──
+                    // Downscale so max dimension fits 320px, then pad to 4:3
+                    pscale = 320 / Math.max(vw, (vh / 3) * 4);
+                    scaledW = vw * pscale;
+                    scaledH = vh * pscale;
+                    pw = Math.max(scaledW, (scaledH / 3) * 4);
+                    ph = Math.max(scaledH, (scaledW / 4) * 3);
+                    ox = (pw - scaledW) / 2;
+                    oy = (ph - scaledH) / 2;
+
+                    // Display canvas shows the native video 1:1 (no stretch)
+                    canvas.width = vw;
+                    canvas.height = vh;
+
                 } else {
                     staticImage = new Image();
                     staticImage.src = 'assets/pinball-demo.jpg';
@@ -314,13 +348,31 @@
                         staticImage.onload = resolve;
                         staticImage.onerror = () => reject(new Error('Failed to load pinball-demo.jpg'));
                     });
-                    canvas.width = staticImage.width;
-                    canvas.height = staticImage.height;
+
+                    vw = staticImage.width;
+                    vh = staticImage.height;
+                    canvas.width = vw;
+                    canvas.height = vh;
+
+                    // Static image: no padding needed (pinball-demo.jpg matches camera_para.dat exactly)
+                    pscale = 1;
+                    scaledW = vw;
+                    scaledH = vh;
+                    pw = vw;
+                    ph = vh;
+                    ox = 0;
+                    oy = 0;
+
                     ctx.drawImage(staticImage, 0, 0);
                 }
 
-                const w = canvas.width;
-                const h = canvas.height;
+                // Create hidden processing canvas for 4:3-padded WASM frames
+                canvasProcess = document.createElement('canvas');
+                canvasProcess.width = pw;
+                canvasProcess.height = ph;
+                ctxProcess = canvasProcess.getContext('2d', { willReadFrequently: true });
+
+                console.log(`[4:3 Pad] pscale=${pscale.toFixed(4)}, scaled: ${scaledW.toFixed(0)}x${scaledH.toFixed(0)}, padded: ${pw.toFixed(0)}x${ph.toFixed(0)}, offset: (${ox.toFixed(0)}, ${oy.toFixed(0)})`);
 
                 // 3. Initialize Dedicated WebWorker
                 statusEl.textContent = 'Status: Initializing WASM inside WebWorker background thread…';
@@ -334,7 +386,7 @@
 
                 worker.onmessage = handleWorkerMessage;
 
-                // Send initialization message to worker
+                // Send PADDED 4:3 processing dimensions to worker (matching camera_para.dat aspect ratio)
                 const variant = wasmVersionSel.value;
                 worker.postMessage({
                     type: 'init',
@@ -343,8 +395,8 @@
                     isetData,
                     fsetData,
                     fset3Data,
-                    width: w,
-                    height: h
+                    width: Math.round(pw),
+                    height: Math.round(ph)
                 });
 
             } catch (err) {
@@ -379,7 +431,6 @@
 
                     console.log(`[NFT Worker] Loaded: ${msg.width}x${msg.height}, Target: ${markerWidthPx}x${markerHeightPx}px @ ${markerDpi} DPI (${markerW_mm.toFixed(1)}x${markerH_mm.toFixed(1)} mm)`);
                     console.log(`[NFT Worker] Intrinsics [fx, fy, cx, cy]:`, cameraIntrinsics);
-                    console.log(`[NFT Worker] 4x4 Projection Matrix:`, projectionMatrix);
 
                     btnStop.disabled = false;
                     btnDetect.disabled = false;
@@ -489,12 +540,6 @@
             resultsEl.textContent = 'Pipeline stopped.';
         }
 
-        // Calculate focal length from horizontal Field of View (FOV in degrees)
-        function getFocalLengthForFOV(canvasWidth, fovDeg) {
-            const halfAngleRad = ((fovDeg * Math.PI) / 180) / 2;
-            return canvasWidth / (2 * Math.tan(halfAngleRad));
-        }
-
         // ──────────────────────────────────────────────────────────────────────────────
         // Main Thread Render Loop (Smooth 60 FPS UI & Canvas Rendering)
         // ──────────────────────────────────────────────────────────────────────────────
@@ -517,7 +562,7 @@
                 lastWorkerFpsTime = now;
             }
 
-            // Draw current video/image frame to canvas
+            // Draw current video/image frame to display canvas (1:1 native, no stretch)
             if (inputSourceSel.value === 'camera') {
                 if (video.readyState >= 2) {
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -526,9 +571,23 @@
                 ctx.drawImage(staticImage, 0, 0, canvas.width, canvas.height);
             }
 
-            // If WebWorker is ready for the next frame, transfer pixel buffer
+            // If WebWorker is ready for the next frame, prepare the 4:3-padded processing buffer
             if (worker && !workerBusy) {
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let imageData;
+
+                if (inputSourceSel.value === 'camera') {
+                    // ── jsartoolkitNFT 4:3 padding (lines 200-208): ──
+                    // 1. Fill processing canvas with black
+                    // 2. Draw video scaled and centered inside the 4:3 padded frame
+                    ctxProcess.fillStyle = 'black';
+                    ctxProcess.fillRect(0, 0, pw, ph);
+                    ctxProcess.drawImage(video, 0, 0, vw, vh, ox, oy, scaledW, scaledH);
+                    imageData = ctxProcess.getImageData(0, 0, Math.round(pw), Math.round(ph));
+                } else {
+                    // Static: draw image directly (already 4:3 matched)
+                    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                }
+
                 workerBusy = true;
 
                 // Transfer ArrayBuffer for zero-copy high performance
@@ -536,12 +595,12 @@
                 worker.postMessage({
                     type: 'process',
                     rgba: new Uint8Array(buffer),
-                    width: canvas.width,
-                    height: canvas.height
+                    width: imageData.width,
+                    height: imageData.height
                 }, [buffer]);
             }
 
-            // Render 3D Pose Overlay on top of canvas frame using physical mm marker size
+            // Render 3D Pose Overlay on top of display canvas using physical mm marker size
             if (currentPose) {
                 drawPoseOverlay(currentPose, markerW_mm, markerH_mm);
             }
@@ -549,7 +608,8 @@
             // Update UI Results panel
             let resultsText = `Main UI FPS: ${mainFps} | Worker FPS: ${workerFps}\n`;
             resultsText += `Pipeline State: [${pipelineState}] | Worker Stage: ${lastWorkerStage} (${lastWorkerMs.toFixed(1)} ms)\n`;
-            resultsText += `Canvas Size: ${canvas.width}x${canvas.height} | Target Physical Size: ${markerW_mm.toFixed(1)} x ${markerH_mm.toFixed(1)} mm (${markerWidthPx}x${markerHeightPx} px @ ${markerDpi} DPI)\n`;
+            resultsText += `Native Video: ${vw}x${vh} | Processing (4:3 padded): ${Math.round(pw)}x${Math.round(ph)} | Offset: (${ox.toFixed(1)}, ${oy.toFixed(1)}) | Scale: ${pscale.toFixed(4)}\n`;
+            resultsText += `Target Physical Size: ${markerW_mm.toFixed(1)} x ${markerH_mm.toFixed(1)} mm (${markerWidthPx}x${markerHeightPx} px @ ${markerDpi} DPI)\n`;
 
             if (cameraIntrinsics) {
                 resultsText += `WASM Camera Intrinsics: [fx: ${cameraIntrinsics[0].toFixed(1)}, fy: ${cameraIntrinsics[1].toFixed(1)}, cx: ${cameraIntrinsics[2].toFixed(1)}, cy: ${cameraIntrinsics[3].toFixed(1)}]\n`;
@@ -567,43 +627,46 @@
         }
 
         // ──────────────────────────────────────────────────────────────────────────────
-        // 2D Canvas 3D Pose Overlay Projection (Driven by WASM Intrinsics / Camera FOV)
+        // 2D Canvas 3D Pose Overlay Projection
+        //
+        // The WASM pose is computed in the padded processing coordinate space (pw x ph).
+        // We must transform projected (u,v) back to the display canvas coordinate space
+        // by reversing the padding offset and pscale factor.
         // ──────────────────────────────────────────────────────────────────────────────
-        function drawPoseOverlay(pose, w_mm, h_mm) {
-            if (!pose || pose.length !== 12 || w_mm <= 0 || h_mm <= 0) return;
-
-            let fx, fy;
-            const fovSetting = cameraFovSel.value;
-            const isStatic = (inputSourceSel.value === 'static');
-
-            if (fovSetting === 'calibrated' || (isStatic && fovSetting === 'auto')) {
-                // Use exact calibrated camera intrinsics from camera_para.dat via WASM
-                fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (canvas.width * 0.95);
-                fy = (cameraIntrinsics && cameraIntrinsics[1] > 0) ? cameraIntrinsics[1] : (canvas.width * 0.95);
-            } else if (fovSetting === '72') {
-                // Laptop wide angle lens (~72° FOV)
-                fx = getFocalLengthForFOV(canvas.width, 72);
-                fy = fx;
-            } else {
-                // Auto / Standard Webcam (~61° FOV)
-                fx = getFocalLengthForFOV(canvas.width, 61);
-                fy = fx;
+        function drawPoseOverlay(pose, raw_w_mm, h_mm) {
+            if (!pose || pose.length !== 12 || raw_w_mm <= 0 || h_mm <= 0) return;
+            
+            // Adjust w_mm based on physical print aspect ratio slider (compensates for printer squishing)
+            let printAspectScale = 1.0;
+            if (typeof markerScaleRange !== 'undefined' && markerScaleRange) {
+                printAspectScale = parseFloat(markerScaleRange.value);
             }
+            const w_mm = raw_w_mm * printAspectScale;
 
-            const cx = (cameraIntrinsics && cameraIntrinsics[2] > 0) ? cameraIntrinsics[2] : (canvas.width * 0.5);
-            const cy = (cameraIntrinsics && cameraIntrinsics[3] > 0) ? cameraIntrinsics[3] : (canvas.height * 0.5);
+            // Camera intrinsics are in the padded processing canvas coordinate space
+            const fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (pw * 0.95);
+            const fy = (cameraIntrinsics && cameraIntrinsics[1] > 0) ? cameraIntrinsics[1] : (pw * 0.95);
+            const cx = (cameraIntrinsics && cameraIntrinsics[2] > 0) ? cameraIntrinsics[2] : (pw * 0.5);
+            const cy = (cameraIntrinsics && cameraIntrinsics[3] > 0) ? cameraIntrinsics[3] : (ph * 0.5);
 
-            // Project 3D point (x,y,z) in marker coordinate space (mm) -> 2D canvas pixel coords (u,v)
+            // Project 3D point (x,y,z) in marker space (mm) -> display canvas pixel coords
             function project(x, y, z) {
-                // 3x4 pose matrix (row-major)
+                // Apply 3x4 pose matrix (row-major) from WASM
                 const xc = pose[0] * x + pose[1] * y + pose[2] * z + pose[3];
                 const yc = pose[4] * x + pose[5] * y + pose[6] * z + pose[7];
                 const zc = pose[8] * x + pose[9] * y + pose[10] * z + pose[11];
 
                 if (zc <= 0.001) return null;
 
-                const u = (xc * fx) / zc + cx;
-                const v = (yc * fy) / zc + cy;
+                // Project into padded processing canvas space (pw x ph)
+                const uProc = (xc * fx) / zc + cx;
+                const vProc = (yc * fy) / zc + cy;
+
+                // Transform from padded processing space back to display canvas space:
+                // 1. Subtract padding offset (ox, oy) to get scaled-video-relative coords
+                // 2. Divide by pscale to get native video pixel coords
+                const u = (uProc - ox) / pscale;
+                const v = (vProc - oy) / pscale;
                 return { u, v };
             }
 
@@ -612,11 +675,12 @@
             const p1 = project(w_mm, 0, 0);      // Bottom-Right
             const p2 = project(w_mm, h_mm, 0);   // Top-Right
             const p3 = project(0, h_mm, 0);      // Top-Left
+            const center = project(w_mm / 2, h_mm / 2); // Center point (JSARToolKitNFT Sphere location)
 
             // Draw bounding quad
             if (p0 && p1 && p2 && p3) {
+                ctx.strokeStyle = '#00ff00';
                 ctx.lineWidth = 3;
-                ctx.strokeStyle = '#00e676';
                 ctx.beginPath();
                 ctx.moveTo(p0.u, p0.v);
                 ctx.lineTo(p1.u, p1.v);
@@ -625,17 +689,20 @@
                 ctx.closePath();
                 ctx.stroke();
 
-                // Fill translucent green overlay
-                ctx.fillStyle = 'rgba(0, 230, 118, 0.16)';
+                // Draw translucent fill
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
                 ctx.fill();
+            }
 
-                // Draw corner dots
-                ctx.fillStyle = '#ff1744';
-                [p0, p1, p2, p3].forEach(p => {
-                    ctx.beginPath();
-                    ctx.arc(p.u, p.v, 4, 0, 2 * Math.PI);
-                    ctx.fill();
-                });
+            // Draw Center Tracking Point
+            if (center) {
+                ctx.fillStyle = '#ff00ff';
+                ctx.beginPath();
+                ctx.arc(center.u, center.v, 6, 0, 2 * Math.PI);
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
             }
 
             // Draw 3D Coordinate Axes at Bottom-Left Origin (0,0,0)
@@ -648,7 +715,7 @@
             if (origin) {
                 ctx.lineWidth = 3;
 
-                // X Axis - Red (points Right along bottom edge)
+                // X Axis - Red
                 if (xAxis) {
                     ctx.strokeStyle = '#ff1744';
                     ctx.beginPath();
@@ -656,7 +723,7 @@
                     ctx.lineTo(xAxis.u, xAxis.v);
                     ctx.stroke();
                 }
-                // Y Axis - Green (points Up along left edge)
+                // Y Axis - Green
                 if (yAxis) {
                     ctx.strokeStyle = '#00e676';
                     ctx.beginPath();
@@ -664,7 +731,7 @@
                     ctx.lineTo(yAxis.u, yAxis.v);
                     ctx.stroke();
                 }
-                // Z Axis - Blue (points Out towards camera)
+                // Z Axis - Blue
                 if (zAxis) {
                     ctx.strokeStyle = '#2979ff';
                     ctx.beginPath();
@@ -672,6 +739,12 @@
                     ctx.lineTo(zAxis.u, zAxis.v);
                     ctx.stroke();
                 }
+
+                // Origin dot
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(origin.u, origin.v, 4, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
 
