@@ -201,6 +201,15 @@
                 </select>
             </div>
 
+            <div class="control-group">
+                <label for="camera-fov">Camera Lens FOV:</label>
+                <select id="camera-fov">
+                    <option value="auto" selected>Auto (Webcam ~61° FOV)</option>
+                    <option value="72">Laptop Wide Angle (~72° FOV)</option>
+                    <option value="calibrated">Calibrated (camera_para.dat ~55°)</option>
+                </select>
+            </div>
+
             <button id="btn-start">Start Pipeline</button>
             <button id="btn-stop" class="stop" disabled>Stop Pipeline</button>
             <button id="btn-detect" class="secondary" disabled>Force KPM Detect</button>
@@ -219,6 +228,7 @@
         const statusEl = document.getElementById('status');
         const wasmVersionSel = document.getElementById('wasm-version');
         const inputSourceSel = document.getElementById('input-source');
+        const cameraFovSel = document.getElementById('camera-fov');
         const btnStart = document.getElementById('btn-start');
         const btnStop = document.getElementById('btn-stop');
         const btnDetect = document.getElementById('btn-detect');
@@ -479,6 +489,12 @@
             resultsEl.textContent = 'Pipeline stopped.';
         }
 
+        // Calculate focal length from horizontal Field of View (FOV in degrees)
+        function getFocalLengthForFOV(canvasWidth, fovDeg) {
+            const halfAngleRad = ((fovDeg * Math.PI) / 180) / 2;
+            return canvasWidth / (2 * Math.tan(halfAngleRad));
+        }
+
         // ──────────────────────────────────────────────────────────────────────────────
         // Main Thread Render Loop (Smooth 60 FPS UI & Canvas Rendering)
         // ──────────────────────────────────────────────────────────────────────────────
@@ -551,14 +567,29 @@
         }
 
         // ──────────────────────────────────────────────────────────────────────────────
-        // 2D Canvas 3D Pose Overlay Projection (Driven by WASM Camera Intrinsics)
+        // 2D Canvas 3D Pose Overlay Projection (Driven by WASM Intrinsics / Camera FOV)
         // ──────────────────────────────────────────────────────────────────────────────
         function drawPoseOverlay(pose, w_mm, h_mm) {
             if (!pose || pose.length !== 12 || w_mm <= 0 || h_mm <= 0) return;
 
-            // Use camera intrinsics [fx, fy, cx, cy] directly from camera_para.dat via WASM
-            const fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (canvas.width * 0.997);
-            const fy = (cameraIntrinsics && cameraIntrinsics[1] > 0) ? cameraIntrinsics[1] : (canvas.width * 0.997);
+            let fx, fy;
+            const fovSetting = cameraFovSel.value;
+            const isStatic = (inputSourceSel.value === 'static');
+
+            if (fovSetting === 'calibrated' || (isStatic && fovSetting === 'auto')) {
+                // Use exact calibrated camera intrinsics from camera_para.dat via WASM
+                fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (canvas.width * 0.95);
+                fy = (cameraIntrinsics && cameraIntrinsics[1] > 0) ? cameraIntrinsics[1] : (canvas.width * 0.95);
+            } else if (fovSetting === '72') {
+                // Laptop wide angle lens (~72° FOV)
+                fx = getFocalLengthForFOV(canvas.width, 72);
+                fy = fx;
+            } else {
+                // Auto / Standard Webcam (~61° FOV)
+                fx = getFocalLengthForFOV(canvas.width, 61);
+                fy = fx;
+            }
+
             const cx = (cameraIntrinsics && cameraIntrinsics[2] > 0) ? cameraIntrinsics[2] : (canvas.width * 0.5);
             const cy = (cameraIntrinsics && cameraIntrinsics[3] > 0) ? cameraIntrinsics[3] : (canvas.height * 0.5);
 
