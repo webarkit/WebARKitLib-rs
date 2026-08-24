@@ -430,14 +430,21 @@ impl WasmNFTHandle {
         let mut param = ARParam::load(cursor)
             .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
 
-        // Scale camera parameters to match the requested frame size
-        // (equivalent to arParamChangeSize).
-        let sx = width as f64 / param.xsize as f64;
-        let sy = height as f64 / param.ysize as f64;
-        for col in 0..4 {
-            param.mat[0][col] *= sx;
-            param.mat[1][col] *= sy;
-        }
+        // Scale camera parameters to match the requested frame size.
+        // For digital cameras with square pixels, scale focal lengths isotropically
+        // (based on height) to preserve fx == fy, and adjust optical center proportionally.
+        let scale = height as f64 / param.ysize as f64;
+        let orig_cx = param.mat[0][2];
+        let orig_cy = param.mat[1][2];
+
+        param.mat[0][0] *= scale;
+        param.mat[0][1] *= scale;
+        param.mat[1][0] *= scale;
+        param.mat[1][1] *= scale;
+
+        param.mat[0][2] = (orig_cx / param.xsize as f64) * width as f64;
+        param.mat[1][2] = (orig_cy / param.ysize as f64) * height as f64;
+
         param.xsize = width;
         param.ysize = height;
 
@@ -730,13 +737,21 @@ impl WasmKpmHandle {
         let mut param = ARParam::load(cursor)
             .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
 
-        // Scale camera params to the frame size (arParamChangeSize equivalent).
-        let sx = width as f64 / param.xsize as f64;
-        let sy = height as f64 / param.ysize as f64;
-        for col in 0..4 {
-            param.mat[0][col] *= sx;
-            param.mat[1][col] *= sy;
-        }
+        // Scale camera parameters to match the requested frame size.
+        // For digital cameras with square pixels, scale focal lengths isotropically
+        // (based on height) to preserve fx == fy, and adjust optical center proportionally.
+        let scale = height as f64 / param.ysize as f64;
+        let orig_cx = param.mat[0][2];
+        let orig_cy = param.mat[1][2];
+
+        param.mat[0][0] *= scale;
+        param.mat[0][1] *= scale;
+        param.mat[1][0] *= scale;
+        param.mat[1][1] *= scale;
+
+        param.mat[0][2] = (orig_cx / param.xsize as f64) * width as f64;
+        param.mat[1][2] = (orig_cy / param.ysize as f64) * height as f64;
+
         param.xsize = width;
         param.ysize = height;
 

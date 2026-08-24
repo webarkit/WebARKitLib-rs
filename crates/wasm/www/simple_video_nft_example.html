@@ -208,10 +208,7 @@
                     <option value="72">Wide Webcam (~72°)</option>
                 </select>
             </div>
-            <div class="control-group">
-                <label for="marker-scale">Physical Print Aspect:</label>
-                <input type="range" id="marker-scale" min="0.5" max="1.0" step="0.01" value="1.0">
-            </div>
+
 
             <button id="btn-start">Start Tracking</button>
             <button id="btn-stop" class="stop" disabled>Stop</button>
@@ -232,7 +229,6 @@
         const wasmVersionSel = document.getElementById('wasm-version');
         const inputSourceSel = document.getElementById('input-source');
         const cameraFovSel = document.getElementById('camera-fov');
-        const markerScaleRange = document.getElementById('marker-scale');
         const btnStart = document.getElementById('btn-start');
         const btnStop = document.getElementById('btn-stop');
         const btnDetect = document.getElementById('btn-detect');
@@ -258,10 +254,8 @@
         let projectionMatrix = null; // 4x4 OpenGL Projection Matrix (16 floats)
 
         // ── jsartoolkitNFT-style 4:3 padding variables ──
-        // camera_para.dat is calibrated for 4:3 aspect ratio.
-        // If the webcam delivers 16:9 (or any non-4:3) frames, we must pad the
-        // processing buffer to 4:3 and center the video inside it with black borders.
-        // This matches jsartoolkitNFT/examples/threejs_worker.js lines 87-103 & 200-208.
+        // Downscale frames so max dimension fits 320px for high-performance WASM processing,
+        // and pad non-4:3 video feeds to 4:3 matching camera_para.dat aspect ratio.
         let vw = 0, vh = 0;                // native video dimensions
         let pscale = 1;                     // downscale factor (target max dim = 320)
         let scaledW = 0, scaledH = 0;      // downscaled video dimensions
@@ -322,12 +316,12 @@
                     await new Promise(resolve => video.onloadedmetadata = resolve);
                     await video.play();
 
-                    // Use NATIVE video stream resolution (may be 16:9 even if we asked for 4:3)
+                    // Use NATIVE video stream resolution
                     vw = video.videoWidth;
                     vh = video.videoHeight;
                     console.log(`[Camera] Native video stream: ${vw}x${vh} (aspect: ${(vw/vh).toFixed(3)})`);
 
-                    // ── jsartoolkitNFT 4:3 padding logic (lines 87-98) ──
+                    // ── jsartoolkitNFT 4:3 padding & downscale logic ──
                     // Downscale so max dimension fits 320px, then pad to 4:3
                     pscale = 320 / Math.max(vw, (vh / 3) * 4);
                     scaledW = vw * pscale;
@@ -337,7 +331,7 @@
                     ox = (pw - scaledW) / 2;
                     oy = (ph - scaledH) / 2;
 
-                    // Display canvas shows the native video 1:1 (no stretch)
+                    // Display canvas matches native video 1:1
                     canvas.width = vw;
                     canvas.height = vh;
 
@@ -571,12 +565,11 @@
                 ctx.drawImage(staticImage, 0, 0, canvas.width, canvas.height);
             }
 
-            // If WebWorker is ready for the next frame, prepare the 4:3-padded processing buffer
+            // If WebWorker is ready for the next frame, grab the display canvas pixels
             if (worker && !workerBusy) {
                 let imageData;
 
                 if (inputSourceSel.value === 'camera') {
-                    // ── jsartoolkitNFT 4:3 padding (lines 200-208): ──
                     // 1. Fill processing canvas with black
                     // 2. Draw video scaled and centered inside the 4:3 padded frame
                     ctxProcess.fillStyle = 'black';
@@ -633,15 +626,8 @@
         // We must transform projected (u,v) back to the display canvas coordinate space
         // by reversing the padding offset and pscale factor.
         // ──────────────────────────────────────────────────────────────────────────────
-        function drawPoseOverlay(pose, raw_w_mm, h_mm) {
-            if (!pose || pose.length !== 12 || raw_w_mm <= 0 || h_mm <= 0) return;
-            
-            // Adjust w_mm based on physical print aspect ratio slider (compensates for printer squishing)
-            let printAspectScale = 1.0;
-            if (typeof markerScaleRange !== 'undefined' && markerScaleRange) {
-                printAspectScale = parseFloat(markerScaleRange.value);
-            }
-            const w_mm = raw_w_mm * printAspectScale;
+        function drawPoseOverlay(pose, w_mm, h_mm) {
+            if (!pose || pose.length !== 12 || w_mm <= 0 || h_mm <= 0) return;
 
             // Camera intrinsics are in the padded processing canvas coordinate space
             const fx = (cameraIntrinsics && cameraIntrinsics[0] > 0) ? cameraIntrinsics[0] : (pw * 0.95);
