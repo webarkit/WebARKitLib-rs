@@ -3,6 +3,12 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure cargo bin directory (where wasm-pack is installed) is in PATH
+$cargoBin = Join-Path $env:USERPROFILE ".cargo\bin"
+if ((Test-Path $cargoBin) -and ($env:PATH -notlike "*$cargoBin*")) {
+    $env:PATH = "$cargoBin;$env:PATH"
+}
+
 # Get the directory where the script is located
 $scriptDir = $PSScriptRoot
 $wasmDir = Join-Path $scriptDir ".." | Resolve-Path

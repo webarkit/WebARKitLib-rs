@@ -9,9 +9,12 @@ const scriptsDir = __dirname;
 
 try {
   if (process.platform === 'win32') {
-    // Windows: run the PowerShell script
+    // Windows: ensure cargo bin is in PATH and run the PowerShell script
+    const cargoBin = path.join(process.env.USERPROFILE || '', '.cargo', 'bin');
+    const pathKey = Object.keys(process.env).find(k => k.toLowerCase() === 'path') || 'PATH';
+    const env = { ...process.env, [pathKey]: `${cargoBin};${process.env[pathKey] || ''}` };
     const script = path.join(scriptsDir, 'build-dual.ps1');
-    execFileSync('powershell.exe', ['-ExecutionPolicy', 'RemoteSigned', '-File', script], { stdio: 'inherit' });
+    execFileSync('powershell.exe', ['-ExecutionPolicy', 'RemoteSigned', '-File', script], { stdio: 'inherit', env });
   } else {
     // Linux / macOS: run the bash script
     const script = path.join(scriptsDir, 'build-dual.sh');
