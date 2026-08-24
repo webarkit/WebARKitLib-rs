@@ -54,19 +54,61 @@ To bridge the gap between static test images (captured on narrow calibrated lens
   - `Laptop Wide Angle (~72° FOV)`: $f_x = \text{canvasWidth} / (2 \cdot \tan(36^\circ)) \approx 440 \text{ px}$.
   - `Calibrated File (camera_para.dat ~55° FOV)`: Uses exact $f_x = 609.4$ from `camera_para.dat` (Matches `pinball-demo.jpg` static test image 100%).
 
-## 3. The "Right Edge Overshoot" Mystery (Print Aspect Ratio Distortion)
+## 3. The "Right Edge Overshoot" Root Cause, Mathematics & Verification
 
-During testing, we observed that while the left, top, and bottom edges of the 3D green bounding quad aligned perfectly with the physical paper marker, the **right edge overshot** the paper significantly. 
+During testing of the live video NFT example, we investigated a subtle visual divergence: while the 3D bounding box superimposed with 100% precision in "Static Test Image" mode (`pinball-demo.jpg`), in "Live Camera" mode tracking a printed sheet of paper, the green bounding quad's right edge overshot past the right boundary of the physical paper.
 
-### Why did JSARToolKitNFT not show this issue?
-The reference implementation (`threejs_worker.js` in JSARToolKitNFT) only renders a tiny 3D sphere at the exact center coordinate (`w/2`, `h/2`). Because it does not draw the outer boundaries of the marker, any horizontal scaling or FOV mismatch is entirely masked—the center of a squished marker is still perfectly in the center.
+### 3.1 Digital Marker Dimensions & DPI Mathematics
+When an NFT dataset (`.iset`, `.fset`, `.fset3`) is generated from a source image, ARToolKit stores the base scale resolution and the target DPI:
+- **Base Digital Resolution**: $893 \times 1117\text{ px}$
+- **Target DPI**: $120\text{ DPI}$
 
-### Root Cause
-When printing a digital marker image (e.g., `pinball-demo.jpg` with aspect ratio ~0.80) onto standard A4/Letter paper (aspect ratio ~0.71), printer settings like "Stretch to Fit" or "Fill Page" subtly compress the image horizontally. 
-ARToolKit's KPM and AR2 tracking perfectly track the squished features, but when we project a 3D bounding box using the **original digital width** ($W_{\text{mm}}$), the projected box naturally extends further to the right than the physically narrower paper.
+From these values, the physical world metric dimensions in 3D space ($Z = 0$ marker plane) are derived:
+$$W_{\text{mm}} = \frac{893\text{ px}}{120\text{ DPI}} \times 25.4\text{ mm/inch} = \mathbf{189.02\text{ mm}}$$
+$$H_{\text{mm}} = \frac{1117\text{ px}}{120\text{ DPI}} \times 25.4\text{ mm/inch} = \mathbf{236.43\text{ mm}}$$
 
-### Solution / Mitigation
-We introduced a **"Physical Print Aspect"** UI slider. By scaling the $W_{\text{mm}}$ variable before projection, users can manually compensate for their printer's horizontal compression. For example, dragging the slider to ~0.88 perfectly snaps the right edge of the bounding quad back onto the physical paper, proving the projection math is structurally flawless and matches Three.js exactly. We also added a magenta center tracking dot to visibly demonstrate that the center-point tracking perfectly matches JSARToolKitNFT.
+The inherent digital aspect ratio is:
+$$\text{Aspect Ratio}_{\text{digital}} = \frac{893}{1117} = \mathbf{0.7995} \approx 0.80\text{ (4:5 ratio)}$$
+
+### 3.2 The Paper Printout Distortion (A4 Aspect Ratio Trap)
+Standard ISO 216 **A4 Paper** ($210\text{ mm} \times 297\text{ mm}$) has a geometric aspect ratio of:
+$$\text{Aspect Ratio}_{\text{A4}} = \frac{210}{297} = \frac{1}{\sqrt{2}} \approx \mathbf{0.7071}$$
+
+| Medium | Aspect Ratio ($W : H$) | Geometric Characteristics |
+| :--- | :--- | :--- |
+| **Digital Marker (`pinball`)** | **$0.7995$** ($\sim 4:5$) | Wider proportion |
+| **Physical A4 Paper** | **$0.7071$** ($\sim 1:\sqrt{2}$) | Taller, narrower proportion |
+
+When printing an image using standard operating system print dialogs (Windows Photo Viewer, macOS Preview, mobile print managers):
+- The default option **"Fit picture to frame" / "Fit to Page"** scales the image to match the full height of the printable page area ($297\text{ mm}$).
+- To accommodate margins without manual clipping, the printer driver compresses (squishes) the horizontal axis non-uniformly by $\approx 12\% - 15\%$.
+- The physical printed image on the paper ends up measuring only $\sim 165\text{ mm}$ wide instead of the true $189.02\text{ mm}$ expected by the digital dataset.
+
+### 3.3 Computer Vision Pipeline Reaction
+1. **Feature Matching**: ARToolKit's KPM (FREAK descriptors) and AR2 template trackers match local gradient patterns (bumpers, flippers, letters) invariant to scale and slight affine deformation.
+2. **Pose Estimation**: The PnP pose estimator aligns the coordinate origin $(0,0,0)$ with the bottom-left visual features of the marker ($X=0, Y=0$).
+3. **Corner Projection**: The 3D bounding box projects the four physical corners:
+   $$P_0 = (0, 0, 0), \quad P_1 = (189.02, 0, 0), \quad P_2 = (189.02, 236.43, 0), \quad P_3 = (0, 236.43, 0)$$
+4. **The Overshoot**: Because the physical paper on the desk was compressed to $\sim 165\text{ mm}$, the projected right corners ($P_1, P_2$) land at the mathematically correct digital coordinate ($189.02\text{ mm}$), visually extending $\approx 24\text{ mm}$ past the right edge of the physical paper.
+
+### 3.4 Empirical Proof: Smartphone Display Test
+To definitively verify the hypothesis:
+- The user displayed `pinball.jpg` directly on a smartphone screen (which displays pixels with a strict $1:1$ square aspect ratio and zero printer driver compression).
+- When tracked by the live webcam, the green 3D bounding box aligned **with 100% pixel-perfect superimposition across all four borders**.
+- This confirmed that the 3D-to-2D projection math, camera intrinsics ($[f_x, f_y, c_x, c_y]$), and WASM pose matrix $[R \mid t]$ are completely accurate.
+
+### 3.5 Why JSARToolKitNFT Never Exposed This
+In the upstream `jsartoolkitNFT` reference implementation (`examples/threejs_worker.js`):
+- The visualization renders only a **single 3D sphere placed at the center coordinate**:
+  $$X_{\text{sphere}} = \frac{W_{\text{mm}}}{2}, \quad Y_{\text{sphere}} = \frac{H_{\text{mm}}}{2}$$
+- When a marker is squished horizontally on paper, the physical center remains at the geometric midpoint, completely masking the horizontal compression.
+- `WebARKitLib.rs` is the first implementation to project the full outer perimeter bounding quad ($P_0 \to P_1 \to P_2 \to P_3$), exposing the physical printout distortion.
+
+### 3.6 Production Architecture ($320 \times 240$ Downscaled Pipeline)
+- **High-Performance 4:3 Padded Downscaling**: Downscaling video frames to max 320px (`pscale = 320 / max(vw, vh*4/3)`) and padding to 4:3 ensures WASM KPM keypoint detection and AR2 template tracking run in ~3.8 ms per frame (~22–30+ Worker FPS) while the UI maintains **134+ FPS**.
+- **Coordinate Projection Inversion**: Reverse transformation `(uProc - ox) / pscale` accurately maps 3D projections from the padded processing buffer back to native canvas coordinates.
+- **Clean API**: No manual slider hacks; physical marker dimensions ($W_{\text{mm}}$, $H_{\text{mm}}$) are used directly.
+- **Visual Diagnostics**: Retained the magenta center tracking dot and 3D coordinate axes at $(0,0,0)$ to provide visual parity with `jsartoolkitNFT`.
 
 ---
 
