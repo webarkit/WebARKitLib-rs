@@ -54,6 +54,17 @@ To bridge the gap between static test images (captured on narrow calibrated lens
   - `Laptop Wide Angle (~72° FOV)`: $f_x = \text{canvasWidth} / (2 \cdot \tan(36^\circ)) \approx 440 \text{ px}$.
   - `Calibrated File (camera_para.dat ~55° FOV)`: Uses exact $f_x = 609.4$ from `camera_para.dat` (Matches `pinball-demo.jpg` static test image 100%).
 
+### 2.4 Webcam Resolution Presets & Soft Constraints
+To support modern 16:9 webcam streams with smooth cross-device fallback:
+- **Resolution Selector**:
+  - `1280x720` — **1280×720 (HD 16:9, Default)**: Modern high-definition standard.
+  - `1920x1080` — **1920×1080 (FHD 16:9)**: Full HD widescreen.
+  - `640x480` — **640×480 (VGA 4:3)**: Classic legacy aspect ratio.
+  - `640x360` — **640×360 (SD 16:9)**: Low-bandwidth mobile widescreen.
+  - `auto` — **Auto / Native Default**: Browser-negotiated default resolution.
+- **`getUserMedia` Soft Constraints**: Employs `{ width: { ideal: W }, height: { ideal: H } }` so the browser gracefully falls back to the nearest supported mode on constrained hardware without throwing exceptions.
+- **Dynamic Form Management**: Automatically disables resolution settings when "Static Test Image" is active or while pipeline tracking is in progress.
+
 ## 3. The "Right Edge Overshoot" Root Cause, Mathematics & Verification
 
 During testing of the live video NFT example, we investigated a subtle visual divergence: while the 3D bounding box superimposed with 100% precision in "Static Test Image" mode (`pinball-demo.jpg`), in "Live Camera" mode tracking a printed sheet of paper, the green bounding quad's right edge overshot past the right boundary of the physical paper.

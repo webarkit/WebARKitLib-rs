@@ -201,6 +201,16 @@
                 </select>
             </div>
             <div class="control-group">
+                <label for="camera-res">Camera Resolution:</label>
+                <select id="camera-res">
+                    <option value="1280x720" selected>1280×720 (HD 16:9)</option>
+                    <option value="1920x1080">1920×1080 (FHD 16:9)</option>
+                    <option value="640x480">640×480 (VGA 4:3)</option>
+                    <option value="640x360">640×360 (SD 16:9)</option>
+                    <option value="auto">Auto / Native Default</option>
+                </select>
+            </div>
+            <div class="control-group">
                 <label for="camera-fov">Camera FOV:</label>
                 <select id="camera-fov">
                     <option value="calibrated">Default (camera_para.dat - ~55°)</option>
@@ -228,6 +238,7 @@
         const statusEl = document.getElementById('status');
         const wasmVersionSel = document.getElementById('wasm-version');
         const inputSourceSel = document.getElementById('input-source');
+        const cameraResSel = document.getElementById('camera-res');
         const cameraFovSel = document.getElementById('camera-fov');
         const btnStart = document.getElementById('btn-start');
         const btnStop = document.getElementById('btn-stop');
@@ -237,6 +248,11 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const resultsEl = document.getElementById('results');
+
+        inputSourceSel.addEventListener('change', () => {
+            const isCamera = inputSourceSel.value === 'camera';
+            cameraResSel.disabled = !isCamera;
+        });
 
         let worker = null;
         let workerBusy = false;
@@ -284,6 +300,8 @@
                 btnStart.disabled = true;
                 wasmVersionSel.disabled = true;
                 inputSourceSel.disabled = true;
+                cameraResSel.disabled = true;
+                cameraFovSel.disabled = true;
 
                 statusEl.className = 'status';
                 statusEl.textContent = 'Status: Fetching camera parameters and NFT dataset…';
@@ -308,8 +326,16 @@
                 // 2. Setup video stream or static image
                 const sourceMode = inputSourceSel.value;
                 if (sourceMode === 'camera') {
+                    const resVal = cameraResSel.value;
+                    let videoConstraints = { facingMode: 'environment' };
+                    if (resVal !== 'auto') {
+                        const [reqW, reqH] = resVal.split('x').map(Number);
+                        videoConstraints.width = { ideal: reqW };
+                        videoConstraints.height = { ideal: reqH };
+                    }
+
                     cameraStream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+                        video: videoConstraints,
                         audio: false
                     });
                     video.srcObject = cameraStream;
@@ -528,6 +554,8 @@
             btnReset.disabled = true;
             wasmVersionSel.disabled = false;
             inputSourceSel.disabled = false;
+            cameraResSel.disabled = inputSourceSel.value !== 'camera';
+            cameraFovSel.disabled = false;
 
             statusEl.textContent = 'Status: Pipeline stopped.';
             statusEl.className = 'status';
