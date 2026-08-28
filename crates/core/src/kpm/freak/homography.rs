@@ -2652,9 +2652,6 @@ mod tests {
 
     #[test]
     fn test_solve_positive_definite_system_8x8_singular() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // All-zero matrix → not SPD
         let a = [0.0_f32; 64];
         let b = [1.0_f32; 8];
@@ -2683,9 +2680,6 @@ mod tests {
 
     #[test]
     fn preemptive_robust_homography_rejects_fewer_than_four_points() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // A homography needs 4 correspondences; 3 is an immediate reject.
         let n = 3;
         let p = [0.0_f32, 0.0, 1.0, 0.0, 1.0, 1.0];
@@ -2712,9 +2706,6 @@ mod tests {
 
     #[test]
     fn preemptive_robust_homography_rejects_when_no_hypothesis_survives() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // Every correspondence is the same point, so every RANSAC draw is
         // degenerate and no hypothesis is ever accepted.
         let n = 8;
@@ -2742,9 +2733,6 @@ mod tests {
 
     #[test]
     fn solve_positive_definite_system_8x8_rejects_negative_pivot() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // A negative leading entry cannot come from a Cholesky factor, so the
         // `s < 0.0` guard fires on the very first diagonal.
         let mut a = [0.0_f32; 64];
@@ -2759,9 +2747,6 @@ mod tests {
 
     #[test]
     fn solve_positive_definite_system_8x8_rejects_zero_diagonal_in_substitution() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // A = L·Lᵀ for a lower-triangular L whose *last* diagonal entry is
         // zero. Cholesky reproduces L without tripping the zero-pivot guard
         // (every earlier pivot is 1), so the rejection lands in forward
