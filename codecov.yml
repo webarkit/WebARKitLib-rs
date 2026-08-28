@@ -13,6 +13,32 @@
 #
 # Surfaced during #180 PR 4.5: a cleanup PR touching examples/, benches/,
 # and tests/ failed codecov/patch even though the library was unchanged.
+#
+# `patch` is informational (see below) because tarpaulin cannot reliably
+# attribute coverage to `arlog_*!` call sites. Measured on #242: of the 203
+# `arlog_*!` call sites in instrumented files, tarpaulin instruments only 45
+# and marks just 17 as hit. Which ones land is not something the code under
+# test controls.
+#
+# The failure mode is visible in that PR's own report
+# (crates/core/src/kpm/freak/homography.rs):
+#
+#     1969: if l_ii == 0.0 {          hits 2
+#     1970:     arlog_d!(             hits 0
+#     1974:     return false;         hits 1
+#
+# The branch executed and the `return false` after it recorded a hit, but the
+# macro line between them reported zero. Adding tests does not fix it: #242
+# added five tests that reach these guards for the first time, and the diff
+# lines — which ARE the macro lines — stayed at zero. Nor does installing a
+# logger, which was tried and reverted there (be26c28 / be73077). Note also
+# that tarpaulin stops instrumenting at the `#[cfg(test)] mod tests` boundary,
+# so in-file test code never counts toward a patch either way.
+#
+# This matters for any PR whose diff is mostly logging: #242 changed nothing
+# but `arlog_e!` -> `arlog_d!` and scored a hard 0/8, with no change a
+# contributor could make to raise it. `project` remains a blocking status, so
+# a real drop in overall library coverage is still caught.
 
 coverage:
   status:
@@ -24,6 +50,9 @@ coverage:
       default:
         target: auto
         threshold: 1%
+        # Report the number, never block on it — see the note at the top of
+        # this file on tarpaulin's `arlog_*!` attribution.
+        informational: true
 
 ignore:
   - "crates/core/examples/**"
