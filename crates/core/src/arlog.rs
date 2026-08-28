@@ -354,7 +354,7 @@ pub fn ar_log_init_wasm_verbose() {
 // --- Tests ----------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Mutex, OnceLock};
@@ -408,11 +408,27 @@ mod tests {
 
     static LOGGER: CaptureLogger = CaptureLogger;
 
-    fn init_capture() {
+    /// Install the global logger at `Trace`, once per test binary.
+    ///
+    /// Tests elsewhere in the crate call this when they exercise a code path
+    /// containing an `arlog_*!` call. Without a logger installed, `log`'s
+    /// level filter short-circuits and the macro body never runs, so those
+    /// lines report as uncovered even when the branch around them executed
+    /// (#241: the `return false` after a rejection showed 1 hit while the
+    /// `arlog_d!` line directly above it showed 0).
+    ///
+    /// Safe to call from any test: [`CaptureLogger`] discards records from
+    /// threads that are not the active capture target, so this cannot leak
+    /// into the arlog tests' own exact-count assertions.
+    pub(crate) fn ensure_logger_installed() {
         INIT.get_or_init(|| {
             let _ = log::set_logger(&LOGGER);
             log::set_max_level(log::LevelFilter::Trace);
         });
+    }
+
+    fn init_capture() {
+        ensure_logger_installed();
         // Mark THIS thread as the active capture target. test_lock() ensures
         // only one arlog test runs at a time, so this is safe to overwrite.
         *CAPTURING_THREAD.lock().unwrap() = Some(std::thread::current().id());
