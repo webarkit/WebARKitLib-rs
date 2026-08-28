@@ -1342,9 +1342,15 @@ fn orthogonalize_identity_8x9(x: &mut [f32; 9], q: &[f32; 72]) -> bool {
 /// of the DLT homography solver.
 ///
 /// Failures log at `arlog_d!`, not `arlog_e!`: the only runtime caller is the
-/// 4-point DLT inside RANSAC, where a rank-deficient constraint matrix means
-/// the drawn correspondences were degenerate. That is an expected per-frame
-/// rejection, not a caller error.
+/// 4-point DLT inside RANSAC (`homography::solve_homography_4_points`), which
+/// treats a `false` return as "this sample did not yield a homography" and
+/// draws again. That is an expected per-frame outcome on the search path, not
+/// a caller error.
+///
+/// Note that the column-pivoted Gram-Schmidt is fairly tolerant: four
+/// coincident correspondences still produce a null vector rather than
+/// tripping this guard (see the unit tests), so in practice the branch fires
+/// only on a genuinely degenerate constraint matrix.
 #[inline(always)]
 pub fn solve_null_vector_8x9_destructive(x: &mut [f32; 9], a: &mut [f32; 72]) -> bool {
     let mut q = [0.0_f32; 72];
@@ -1963,6 +1969,20 @@ mod tests {
             a[k * 18 + 9..k * 18 + 18].copy_from_slice(&row_v);
         }
         a
+    }
+
+    /// Rejection path (#241): a rank-deficient constraint matrix.
+    ///
+    /// This branch logs at `arlog_d!` rather than `arlog_e!` because the only
+    /// runtime caller is the 4-point DLT inside RANSAC, where it means the
+    /// drawn correspondences were degenerate — an expected per-frame outcome.
+    /// Pinned here so the rejection behaviour and the log level do not drift.
+    #[test]
+    fn solve_null_vector_8x9_destructive_rejects_rank_deficient_matrix() {
+        // An all-zero design matrix has no pivot at the very first step.
+        let mut a = [0.0_f32; 72];
+        let mut x = [0.0_f32; 9];
+        assert!(!solve_null_vector_8x9_destructive(&mut x, &mut a));
     }
 
     #[test]

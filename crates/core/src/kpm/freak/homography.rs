@@ -2660,6 +2660,120 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // Rejection paths (#241)
+    //
+    // These branches log at `arlog_d!` because they are expected per-frame
+    // outcomes on the KPM search path rather than caller errors. They are
+    // exercised here so the rejection behaviour stays pinned and the log
+    // level does not silently drift back to `arlog_e!`.
+    // ------------------------------------------------------------------
+
+    /// Scratch buffers sized for the default hypothesis count.
+    fn robust_homography_scratch(n: usize) -> (Vec<f32>, Vec<i32>, Vec<(f32, i32)>) {
+        let num_hyp = HOMOGRAPHY_DEFAULT_NUM_HYPOTHESES as usize;
+        (
+            vec![0.0_f32; 9 * num_hyp],
+            vec![0_i32; n.max(1)],
+            vec![(0.0_f32, 0_i32); num_hyp],
+        )
+    }
+
+    #[test]
+    fn preemptive_robust_homography_rejects_fewer_than_four_points() {
+        // A homography needs 4 correspondences; 3 is an immediate reject.
+        let n = 3;
+        let p = [0.0_f32, 0.0, 1.0, 0.0, 1.0, 1.0];
+        let q = [0.0_f32, 0.0, 2.0, 0.0, 2.0, 2.0];
+        let (mut hyp, mut tmp_i, mut hyp_costs) = robust_homography_scratch(n);
+        let mut h = [0.0_f32; 9];
+
+        assert!(!preemptive_robust_homography(
+            &mut h,
+            &p,
+            &q,
+            n,
+            &[],
+            0,
+            &mut hyp,
+            &mut tmp_i,
+            &mut hyp_costs,
+            HOMOGRAPHY_DEFAULT_CAUCHY_SCALE,
+            HOMOGRAPHY_DEFAULT_NUM_HYPOTHESES,
+            HOMOGRAPHY_DEFAULT_MAX_TRIALS,
+            HOMOGRAPHY_DEFAULT_CHUNK_SIZE,
+        ));
+    }
+
+    #[test]
+    fn preemptive_robust_homography_rejects_when_no_hypothesis_survives() {
+        // Every correspondence is the same point, so every RANSAC draw is
+        // degenerate and no hypothesis is ever accepted.
+        let n = 8;
+        let p: Vec<f32> = std::iter::repeat_n(1.0_f32, n * 2).collect();
+        let q: Vec<f32> = std::iter::repeat_n(2.0_f32, n * 2).collect();
+        let (mut hyp, mut tmp_i, mut hyp_costs) = robust_homography_scratch(n);
+        let mut h = [0.0_f32; 9];
+
+        assert!(!preemptive_robust_homography(
+            &mut h,
+            &p,
+            &q,
+            n,
+            &[],
+            0,
+            &mut hyp,
+            &mut tmp_i,
+            &mut hyp_costs,
+            HOMOGRAPHY_DEFAULT_CAUCHY_SCALE,
+            HOMOGRAPHY_DEFAULT_NUM_HYPOTHESES,
+            HOMOGRAPHY_DEFAULT_MAX_TRIALS,
+            HOMOGRAPHY_DEFAULT_CHUNK_SIZE,
+        ));
+    }
+
+    #[test]
+    fn solve_positive_definite_system_8x8_rejects_negative_pivot() {
+        // A negative leading entry cannot come from a Cholesky factor, so the
+        // `s < 0.0` guard fires on the very first diagonal.
+        let mut a = [0.0_f32; 64];
+        for i in 0..8 {
+            a[i * 8 + i] = 1.0;
+        }
+        a[0] = -1.0;
+        let b = [1.0_f32; 8];
+        let mut x = [0.0_f32; 8];
+        assert!(!solve_positive_definite_system_8x8(&mut x, &a, &b));
+    }
+
+    #[test]
+    fn solve_positive_definite_system_8x8_rejects_zero_diagonal_in_substitution() {
+        // A = L·Lᵀ for a lower-triangular L whose *last* diagonal entry is
+        // zero. Cholesky reproduces L without tripping the zero-pivot guard
+        // (every earlier pivot is 1), so the rejection lands in forward
+        // substitution instead.
+        let mut l = [0.0_f32; 64];
+        for i in 0..7 {
+            l[i * 8 + i] = 1.0;
+        }
+        l[7 * 8] = 1.0; // L[7][0] = 1, L[7][7] stays 0
+
+        let mut a = [0.0_f32; 64];
+        for i in 0..8 {
+            for j in 0..8 {
+                let mut s = 0.0_f32;
+                for k in 0..8 {
+                    s += l[i * 8 + k] * l[j * 8 + k];
+                }
+                a[i * 8 + j] = s;
+            }
+        }
+
+        let b = [1.0_f32; 8];
+        let mut x = [0.0_f32; 8];
+        assert!(!solve_positive_definite_system_8x8(&mut x, &a, &b));
+    }
+
+    // ------------------------------------------------------------------
     // DLT 4-point
     // ------------------------------------------------------------------
 
