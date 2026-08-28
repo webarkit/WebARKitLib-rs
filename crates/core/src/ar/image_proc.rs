@@ -406,6 +406,8 @@ pub fn rgba_to_gray(rgba: &[u8]) -> Vec<u8> {
 }
 
 /// Scalar RGBA → grayscale (luminance) conversion.
+// `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+#[allow(unknown_lints)]
 #[allow(clippy::chunks_exact_to_as_chunks)]
 pub fn rgba_to_gray_scalar(rgba: &[u8]) -> Vec<u8> {
     let mut gray = Vec::with_capacity(rgba.len() / 4);
@@ -429,6 +431,8 @@ pub fn rgb_to_gray(rgb: &[u8]) -> Vec<u8> {
     rgb_to_gray_scalar(rgb)
 }
 
+// `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+#[allow(unknown_lints)]
 #[allow(clippy::chunks_exact_to_as_chunks)]
 fn rgb_to_gray_scalar(rgb: &[u8]) -> Vec<u8> {
     let mut gray = Vec::with_capacity(rgb.len() / 3);

@@ -430,6 +430,12 @@
         function handleWorkerMessage(e) {
             const msg = e.data;
             workerBusy = false;
+
+            // A skipped frame is an acknowledgement, not a processed frame:
+            // release the busy flag but keep it out of the worker FPS figure.
+            if (msg.type === 'skipped') {
+                return;
+            }
             workerFpsCounter++;
 
             switch (msg.type) {

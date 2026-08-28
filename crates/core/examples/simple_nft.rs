@@ -1,4 +1,3 @@
-#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  simple_nft.rs
  *  WebARKitLib-rs
@@ -121,6 +120,12 @@ fn main() {
     arlog_i!("  Image: {}x{}", width, height);
 
     // Convert RGB → luma using BT.601 integer formula.
+    // rationale: the manual chunks_exact(3) loop mirrors the BT.601 integer
+    // conversion in the C reference; as_chunks would force a const chunk size
+    // and obscure that mapping. Scoped to the site rather than the crate.
+    // `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+    #[allow(unknown_lints)]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)

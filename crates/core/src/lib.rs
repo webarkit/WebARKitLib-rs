@@ -1,4 +1,3 @@
-#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  lib.rs
  *  WebARKitLib-rs

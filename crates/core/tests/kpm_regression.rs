@@ -1,4 +1,3 @@
-#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  kpm_regression.rs
  *  WebARKitLib-rs
@@ -324,6 +323,12 @@ fn test_full_pipeline_pose() {
     assert_eq!(h, 1500);
 
     // Convert RGB → luma (BT.601).
+    // rationale: the manual chunks_exact(3) loop mirrors the BT.601 integer
+    // conversion in the C reference; as_chunks would force a const chunk size
+    // and obscure that mapping. Scoped to the site rather than the crate.
+    // `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+    #[allow(unknown_lints)]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)
@@ -488,6 +493,12 @@ fn test_luminance_conversion() {
     assert_eq!(pixels.len(), w * h * 3, "expected RGB pixel data");
 
     // Convert to luma using BT.601 (same integer formula as C++ stb_image + fixture generator).
+    // rationale: the manual chunks_exact(3) loop mirrors the BT.601 integer
+    // conversion in the C reference; as_chunks would force a const chunk size
+    // and obscure that mapping. Scoped to the site rather than the crate.
+    // `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+    #[allow(unknown_lints)]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)
@@ -561,6 +572,12 @@ fn test_matched_db_id_zero_finds_pose() {
     let info = decoder.info().unwrap();
     let (w, h) = (info.width as i32, info.height as i32);
 
+    // rationale: the manual chunks_exact(3) loop mirrors the BT.601 integer
+    // conversion in the C reference; as_chunks would force a const chunk size
+    // and obscure that mapping. Scoped to the site rather than the crate.
+    // `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+    #[allow(unknown_lints)]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)

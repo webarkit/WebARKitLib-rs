@@ -354,10 +354,10 @@ Repository configuration for AI agent skills framework:
   - `triage:blocked` (Blocked by dependencies or technical questions)
   - `triage:done` (Completed and verified)
 - **Domain Documentation & Architecture**:
-  - [ARCHITECTURE.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/ARCHITECTURE.md) (System design, core vs WASM boundary)
+  - [ARCHITECTURE.md](ARCHITECTURE.md) (System design, core vs WASM boundary)
   - `docs/design/` (Design specs and architectural notes)
-  - [docs/wasm-js-integration.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/docs/wasm-js-integration.md) (JS/WASM API interface specs)
-  - [docs/miri.md](file:///c:/Users/perda/kalwalt-github/WebARKitLib.rs/docs/miri.md) (Miri memory safety verification guidelines)
+  - [docs/wasm-js-integration.md](docs/wasm-js-integration.md) (JS/WASM API interface specs)
+  - [docs/miri.md](docs/miri.md) (Miri memory safety verification guidelines)
   - `docs/agents/` (Agent specs, context maps, and task PRDs)
 - **Workspace Architecture**:
   - Cargo Workspace: `crates/core` (pure Rust CV/AR logic) & `crates/wasm` (WASM bindings)

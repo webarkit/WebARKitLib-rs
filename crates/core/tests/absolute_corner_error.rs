@@ -1,4 +1,3 @@
-#![allow(clippy::chunks_exact_to_as_chunks)]
 /*
  *  absolute_corner_error.rs
  *  WebARKitLib-rs
@@ -239,6 +238,12 @@ fn decode_jpeg_luma(path: &Path) -> (Vec<u8>, i32, i32) {
     let info = decoder.info().expect("no JPEG info");
     let width = info.width as i32;
     let height = info.height as i32;
+    // rationale: the manual chunks_exact(3) loop mirrors the BT.601 integer
+    // conversion in the C reference; as_chunks would force a const chunk size
+    // and obscure that mapping. Scoped to the site rather than the crate.
+    // `unknown_lints` guard: the lint only exists on Rust >= 1.98.
+    #[allow(unknown_lints)]
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     let luma: Vec<u8> = pixels
         .chunks_exact(3)
         .map(|rgb| ((rgb[0] as u32 * 77 + rgb[1] as u32 * 150 + rgb[2] as u32 * 29) >> 8) as u8)

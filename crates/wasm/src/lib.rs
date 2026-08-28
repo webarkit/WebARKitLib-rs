@@ -68,6 +68,136 @@ use webarkitlib_rs::kpm::ref_data_set::KPM_CHANGE_PAGE_NO_ALL_PAGES;
 use webarkitlib_rs::kpm::types::KpmRefDataSet;
 use webarkitlib_rs::kpm::{KpmHandle, RustFreakMatcher};
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Camera parameter helpers
+//
+// Shared by `WasmNFTHandle` and `WasmKpmHandle` so the scaling and projection
+// math exists in exactly one place.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Rescale a camera parameter set to a new frame size, preserving square pixels.
+///
+/// C equivalent: `arParamChangeSize`, with one deliberate difference — the
+/// focal lengths are scaled *isotropically* by the height ratio instead of
+/// anamorphically by `(sx, sy)`. Digital sensors have square pixels, so
+/// `fx == fy` must hold; the anamorphic form breaks that as soon as the
+/// requested frame aspect differs from the calibration aspect (e.g. a 16:9
+/// webcam stream against a 4:3 `camera_para.dat`).
+///
+/// This assumes the wider frame is a horizontal **field-of-view extension** of
+/// the calibration, not a vertical crop — i.e. the extra width adds scene, it
+/// does not stretch it. The principal point is therefore carried across
+/// proportionally in each axis independently.
+///
+/// The full first two rows are scaled, column 3 (the translation terms)
+/// included: those are non-zero whenever the calibration encodes a camera
+/// offset, and dropping them silently skews every pose.
+///
+/// Returns `Err` if the source parameters have zero dimensions.
+fn scale_param_isotropic(param: &mut ARParam, width: i32, height: i32) -> Result<(), String> {
+    if param.xsize == 0 || param.ysize == 0 {
+        return Err(format!(
+            "camera param has zero image dimensions ({}x{})",
+            param.xsize, param.ysize
+        ));
+    }
+
+    let scale = f64::from(height) / f64::from(param.ysize);
+    let cx_ratio = f64::from(width) / f64::from(param.xsize);
+    let cy_ratio = scale;
+
+    // Focal lengths and skew: isotropic.
+    param.mat[0][0] *= scale;
+    param.mat[0][1] *= scale;
+    param.mat[1][0] *= scale;
+    param.mat[1][1] *= scale;
+
+    // Principal point: proportional to the new frame extent in each axis.
+    param.mat[0][2] *= cx_ratio;
+    param.mat[1][2] *= cy_ratio;
+
+    // Translation column: scaled with the row it belongs to, as
+    // `arParamChangeSize` does for columns 0..4.
+    param.mat[0][3] *= cx_ratio;
+    param.mat[1][3] *= cy_ratio;
+
+    param.xsize = width;
+    param.ysize = height;
+
+    Ok(())
+}
+
+/// Extract `[fx, fy, cx, cy]` from a camera parameter set.
+fn intrinsics_from(param: &ARParam) -> Box<[f32]> {
+    vec![
+        param.mat[0][0] as f32,
+        param.mat[1][1] as f32,
+        param.mat[0][2] as f32,
+        param.mat[1][2] as f32,
+    ]
+    .into_boxed_slice()
+}
+
+/// Build the column-major 4x4 OpenGL projection matrix for a camera parameter set.
+///
+/// C equivalent: `arglCameraFrustumRH` (`lib/SRC/AR/paramGL.c`). Sign
+/// conventions follow that function exactly:
+///
+/// - `m[5]` is `+2*fy/(h-1)`: the C code flips the image y-axis
+///   (`icpara[1][i] = (h-1)*icpara[2][i] - icpara[1][i]`) and then negates the
+///   row, and the two negations cancel for the focal term.
+/// - `m[8]` is `1 - 2*cx/(w-1)`, i.e. **negated** relative to the naive
+///   OpenCV-to-GL form. This is invisible for a centred principal point and
+///   only shows up once `cx` is off-centre.
+/// - `m[9]` is `2*cy/(h-1) - 1` — the y-flip and the row negation cancel here
+///   too.
+/// - Denominators are `w-1` / `h-1`, not `w` / `h`, matching the C.
+///
+/// The `arParamDecompMat` step in the C reference is skipped: `ARParam::load`
+/// yields a matrix whose extrinsic part is the identity, so `icpara == mat`
+/// and the trailing `q * trans` multiply reduces to `q`. `mat[2][2]`
+/// normalisation is applied defensively.
+///
+/// Returns `Err` when `near`/`far` do not describe a usable frustum, rather
+/// than emitting infinities into the render path.
+fn projection_from(param: &ARParam, near: f32, far: f32) -> Result<Box<[f32]>, String> {
+    if !near.is_finite() || !far.is_finite() || near <= 0.0 || far <= near {
+        return Err(format!(
+            "invalid frustum planes: near={near}, far={far} (require 0 < near < far)"
+        ));
+    }
+    if param.xsize < 2 || param.ysize < 2 {
+        return Err(format!(
+            "camera param frame too small for a projection matrix ({}x{})",
+            param.xsize, param.ysize
+        ));
+    }
+
+    // Normalise by mat[2][2] (1.0 for well-formed parameters).
+    let norm = param.mat[2][2];
+    let norm = if norm.abs() > f64::EPSILON { norm } else { 1.0 };
+    let fx = (param.mat[0][0] / norm) as f32;
+    let skew = (param.mat[0][1] / norm) as f32;
+    let fy = (param.mat[1][1] / norm) as f32;
+    let cx = (param.mat[0][2] / norm) as f32;
+    let cy = (param.mat[1][2] / norm) as f32;
+
+    let w = (param.xsize - 1) as f32;
+    let h = (param.ysize - 1) as f32;
+
+    let mut proj = vec![0.0f32; 16];
+    proj[0] = 2.0 * fx / w;
+    proj[4] = 2.0 * skew / w;
+    proj[5] = 2.0 * fy / h;
+    proj[8] = 1.0 - (2.0 * cx / w);
+    proj[9] = (2.0 * cy / h) - 1.0;
+    proj[10] = -(far + near) / (far - near);
+    proj[11] = -1.0;
+    proj[14] = -(2.0 * far * near) / (far - near);
+
+    Ok(proj.into_boxed_slice())
+}
+
 /// Returns the current version string of the library.
 #[wasm_bindgen]
 pub fn get_version() -> String {
@@ -431,22 +561,8 @@ impl WasmNFTHandle {
             .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
 
         // Scale camera parameters to match the requested frame size.
-        // For digital cameras with square pixels, scale focal lengths isotropically
-        // (based on height) to preserve fx == fy, and adjust optical center proportionally.
-        let scale = height as f64 / param.ysize as f64;
-        let orig_cx = param.mat[0][2];
-        let orig_cy = param.mat[1][2];
-
-        param.mat[0][0] *= scale;
-        param.mat[0][1] *= scale;
-        param.mat[1][0] *= scale;
-        param.mat[1][1] *= scale;
-
-        param.mat[0][2] = (orig_cx / param.xsize as f64) * width as f64;
-        param.mat[1][2] = (orig_cy / param.ysize as f64) * height as f64;
-
-        param.xsize = width;
-        param.ysize = height;
+        scale_param_isotropic(&mut param, width, height)
+            .map_err(|e| JsValue::from_str(&format!("Failed to scale camera param: {}", e)))?;
 
         // Create AR2Handle.
         let mut ar2_handle = AR2Handle::new(width, height, ARPixelFormat::MONO);
@@ -641,48 +757,37 @@ impl WasmNFTHandle {
         self.surface_set.cont_num = 0;
     }
 
-    /// Get camera intrinsic parameters `[fx, fy, cx, cy]` from `camera_para.dat`.
-    pub fn get_camera_intrinsics(&self) -> Box<[f32]> {
-        unsafe {
-            if !self.ar2_handle.cparam_lt.is_null() {
-                let mat = &(*self.ar2_handle.cparam_lt).param.mat;
-                vec![
-                    mat[0][0] as f32,
-                    mat[1][1] as f32,
-                    mat[0][2] as f32,
-                    mat[1][2] as f32,
-                ]
-                .into_boxed_slice()
-            } else {
-                vec![0.0, 0.0, 0.0, 0.0].into_boxed_slice()
-            }
-        }
+    /// Borrow the camera parameters owned by this handle, if any.
+    fn cparam(&self) -> Option<&ARParam> {
+        // SAFETY: `cparam_lt` is either null or the raw pointer produced by
+        // `Box::into_raw` in `WasmNFTHandle::new`. This handle is its sole
+        // owner (it is freed once, in `Drop`), the pointee is never moved or
+        // reallocated for the handle's lifetime, and `&self` guarantees no
+        // `&mut` to the same `ARParamLT` is live. The returned reference is
+        // therefore valid and uniquely-shared for the borrow of `self`.
+        unsafe { self.ar2_handle.cparam_lt.as_ref().map(|lt| &lt.param) }
     }
 
-    /// Get the 4x4 OpenGL projection matrix for Three.js / WebGL rendering.
-    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Box<[f32]> {
-        unsafe {
-            if self.ar2_handle.cparam_lt.is_null() {
-                return vec![0.0; 16].into_boxed_slice();
-            }
-            let param = &(*self.ar2_handle.cparam_lt).param;
-            let fx = param.mat[0][0] as f32;
-            let fy = param.mat[1][1] as f32;
-            let cx = param.mat[0][2] as f32;
-            let cy = param.mat[1][2] as f32;
-            let width = param.xsize as f32;
-            let height = param.ysize as f32;
+    /// Get camera intrinsic parameters `[fx, fy, cx, cy]` from `camera_para.dat`.
+    ///
+    /// Returns an error if no camera parameters are loaded.
+    pub fn get_camera_intrinsics(&self) -> Result<Box<[f32]>, JsValue> {
+        let param = self
+            .cparam()
+            .ok_or_else(|| JsValue::from_str("no camera parameters loaded"))?;
+        Ok(intrinsics_from(param))
+    }
 
-            let mut proj = vec![0.0f32; 16];
-            proj[0] = 2.0 * fx / width;
-            proj[5] = 2.0 * fy / height;
-            proj[8] = (2.0 * cx / width) - 1.0;
-            proj[9] = (2.0 * cy / height) - 1.0;
-            proj[10] = -(far + near) / (far - near);
-            proj[11] = -1.0;
-            proj[14] = -(2.0 * far * near) / (far - near);
-            proj.into_boxed_slice()
-        }
+    /// Get the column-major 4x4 OpenGL projection matrix for Three.js / WebGL
+    /// rendering (C equivalent: `arglCameraFrustumRH`).
+    ///
+    /// Returns an error if no camera parameters are loaded, or if `near`/`far`
+    /// do not satisfy `0 < near < far`.
+    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Result<Box<[f32]>, JsValue> {
+        let param = self
+            .cparam()
+            .ok_or_else(|| JsValue::from_str("no camera parameters loaded"))?;
+        projection_from(param, near, far).map_err(|e| JsValue::from_str(&e))
     }
 }
 
@@ -738,22 +843,8 @@ impl WasmKpmHandle {
             .map_err(|e| JsValue::from_str(&format!("Failed to load camera param: {}", e)))?;
 
         // Scale camera parameters to match the requested frame size.
-        // For digital cameras with square pixels, scale focal lengths isotropically
-        // (based on height) to preserve fx == fy, and adjust optical center proportionally.
-        let scale = height as f64 / param.ysize as f64;
-        let orig_cx = param.mat[0][2];
-        let orig_cy = param.mat[1][2];
-
-        param.mat[0][0] *= scale;
-        param.mat[0][1] *= scale;
-        param.mat[1][0] *= scale;
-        param.mat[1][1] *= scale;
-
-        param.mat[0][2] = (orig_cx / param.xsize as f64) * width as f64;
-        param.mat[1][2] = (orig_cy / param.ysize as f64) * height as f64;
-
-        param.xsize = width;
-        param.ysize = height;
+        scale_param_isotropic(&mut param, width, height)
+            .map_err(|e| JsValue::from_str(&format!("Failed to scale camera param: {}", e)))?;
 
         let param_lt = Arc::new(ARParamLT::new_basic(param));
         let backend = RustFreakMatcher::new(width, height)
@@ -828,43 +919,152 @@ impl WasmKpmHandle {
     }
 
     /// Get camera intrinsic parameters `[fx, fy, cx, cy]` from `camera_para.dat`.
-    pub fn get_camera_intrinsics(&self) -> Box<[f32]> {
-        if let Some(param_lt) = &self.handle.cparam_lt {
-            let mat = &param_lt.param.mat;
-            vec![
-                mat[0][0] as f32,
-                mat[1][1] as f32,
-                mat[0][2] as f32,
-                mat[1][2] as f32,
-            ]
-            .into_boxed_slice()
-        } else {
-            vec![0.0, 0.0, 0.0, 0.0].into_boxed_slice()
+    ///
+    /// Returns an error if no camera parameters are loaded.
+    pub fn get_camera_intrinsics(&self) -> Result<Box<[f32]>, JsValue> {
+        let param_lt = self
+            .handle
+            .cparam_lt
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("no camera parameters loaded"))?;
+        Ok(intrinsics_from(&param_lt.param))
+    }
+
+    /// Get the column-major 4x4 OpenGL projection matrix for Three.js / WebGL
+    /// rendering (C equivalent: `arglCameraFrustumRH`).
+    ///
+    /// Returns an error if no camera parameters are loaded, or if `near`/`far`
+    /// do not satisfy `0 < near < far`.
+    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Result<Box<[f32]>, JsValue> {
+        let param_lt = self
+            .handle
+            .cparam_lt
+            .as_ref()
+            .ok_or_else(|| JsValue::from_str("no camera parameters loaded"))?;
+        projection_from(&param_lt.param, near, far).map_err(|e| JsValue::from_str(&e))
+    }
+}
+
+#[cfg(test)]
+mod camera_param_tests {
+    use super::*;
+
+    /// A 640x480 calibration with square pixels and a centred principal point.
+    fn base_param() -> ARParam {
+        ARParam {
+            xsize: 640,
+            ysize: 480,
+            mat: [
+                [500.0, 0.0, 320.0, 0.0],
+                [0.0, 500.0, 240.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ],
+            ..Default::default()
         }
     }
 
-    /// Get the 4x4 OpenGL projection matrix for Three.js / WebGL rendering.
-    pub fn get_projection_matrix(&self, near: f32, far: f32) -> Box<[f32]> {
-        if let Some(param_lt) = &self.handle.cparam_lt {
-            let param = &param_lt.param;
-            let fx = param.mat[0][0] as f32;
-            let fy = param.mat[1][1] as f32;
-            let cx = param.mat[0][2] as f32;
-            let cy = param.mat[1][2] as f32;
-            let width = param.xsize as f32;
-            let height = param.ysize as f32;
+    #[test]
+    fn scale_identity_is_a_no_op() {
+        let mut param = base_param();
+        let before = param.mat;
+        scale_param_isotropic(&mut param, 640, 480).unwrap();
+        assert_eq!(param.mat, before);
+        assert_eq!((param.xsize, param.ysize), (640, 480));
+    }
 
-            let mut proj = vec![0.0f32; 16];
-            proj[0] = 2.0 * fx / width;
-            proj[5] = 2.0 * fy / height;
-            proj[8] = (2.0 * cx / width) - 1.0;
-            proj[9] = (2.0 * cy / height) - 1.0;
-            proj[10] = -(far + near) / (far - near);
-            proj[11] = -1.0;
-            proj[14] = -(2.0 * far * near) / (far - near);
-            proj.into_boxed_slice()
-        } else {
-            vec![0.0; 16].into_boxed_slice()
+    #[test]
+    fn scale_doubles_focal_lengths_and_centre() {
+        let mut param = base_param();
+        scale_param_isotropic(&mut param, 1280, 960).unwrap();
+        assert!((param.mat[0][0] - 1000.0).abs() < 1e-9);
+        assert!((param.mat[1][1] - 1000.0).abs() < 1e-9);
+        assert!((param.mat[0][2] - 640.0).abs() < 1e-9);
+        assert!((param.mat[1][2] - 480.0).abs() < 1e-9);
+        assert_eq!((param.xsize, param.ysize), (1280, 960));
+    }
+
+    #[test]
+    fn scale_preserves_square_pixels_on_widescreen() {
+        // 16:9 target against a 4:3 calibration: the anamorphic (sx, sy) form
+        // would leave fx != fy here.
+        let mut param = base_param();
+        scale_param_isotropic(&mut param, 1280, 720).unwrap();
+        assert!((param.mat[0][0] - param.mat[1][1]).abs() < 1e-9);
+    }
+
+    #[test]
+    fn scale_carries_the_translation_column() {
+        let mut param = base_param();
+        param.mat[0][3] = 10.0;
+        param.mat[1][3] = -4.0;
+        scale_param_isotropic(&mut param, 1280, 960).unwrap();
+        assert!((param.mat[0][3] - 20.0).abs() < 1e-9);
+        assert!((param.mat[1][3] + 8.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn scale_rejects_zero_source_dimensions() {
+        let mut param = ARParam::default();
+        assert!(scale_param_isotropic(&mut param, 640, 480).is_err());
+    }
+
+    #[test]
+    fn intrinsics_are_fx_fy_cx_cy() {
+        let param = base_param();
+        let k = intrinsics_from(&param);
+        assert_eq!(&*k, &[500.0f32, 500.0, 320.0, 240.0]);
+    }
+
+    #[test]
+    fn projection_matches_argl_camera_frustum_rh() {
+        let param = base_param();
+        let (near, far) = (0.1f32, 1000.0f32);
+        let proj = projection_from(&param, near, far).unwrap();
+
+        // Reference values from arglCameraFrustumRH with trans == identity.
+        let w = 639.0f32;
+        let h = 479.0f32;
+        assert!((proj[0] - 2.0 * 500.0 / w).abs() < 1e-5);
+        assert!((proj[5] - 2.0 * 500.0 / h).abs() < 1e-5);
+        assert!((proj[8] - (1.0 - 2.0 * 320.0 / w)).abs() < 1e-5);
+        assert!((proj[9] - (2.0 * 240.0 / h - 1.0)).abs() < 1e-5);
+        assert!((proj[10] - (-(far + near) / (far - near))).abs() < 1e-5);
+        assert!((proj[11] + 1.0).abs() < 1e-6);
+        assert!((proj[14] - (-(2.0 * far * near) / (far - near))).abs() < 1e-5);
+
+        // Unused entries stay zero.
+        for i in [1, 2, 3, 6, 7, 12, 13, 15] {
+            assert_eq!(proj[i], 0.0, "proj[{i}] should be zero");
         }
+    }
+
+    #[test]
+    fn projection_x_shift_is_negated_relative_to_y() {
+        // Off-centre principal point: this is the only configuration where the
+        // arglCameraFrustumRH sign convention is distinguishable.
+        let mut param = base_param();
+        param.mat[0][2] = 400.0;
+        param.mat[1][2] = 300.0;
+        let proj = projection_from(&param, 0.1, 1000.0).unwrap();
+        assert!(proj[8] < 0.0, "m[8] must be 1 - 2cx/(w-1)");
+        assert!(proj[9] > 0.0, "m[9] must be 2cy/(h-1) - 1");
+    }
+
+    #[test]
+    fn projection_rejects_degenerate_frustums() {
+        let param = base_param();
+        assert!(projection_from(&param, 1.0, 1.0).is_err());
+        assert!(projection_from(&param, 10.0, 1.0).is_err());
+        assert!(projection_from(&param, 0.0, 1000.0).is_err());
+        assert!(projection_from(&param, -1.0, 1000.0).is_err());
+        assert!(projection_from(&param, f32::NAN, 1000.0).is_err());
+        assert!(projection_from(&param, 0.1, f32::INFINITY).is_err());
+    }
+
+    #[test]
+    fn projection_rejects_degenerate_frame_size() {
+        let mut param = base_param();
+        param.xsize = 1;
+        assert!(projection_from(&param, 0.1, 1000.0).is_err());
     }
 }

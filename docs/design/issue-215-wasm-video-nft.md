@@ -29,21 +29,60 @@ Goal 5 of Issue [#215](https://github.com/webarkit/WebARKitLib-rs/issues/215) ta
 
 ### 2.2 WASM Projection Matrix & Camera Intrinsics API (`crates/wasm/src/lib.rs`)
 Added `#[wasm_bindgen]` export methods to `WasmNFTHandle` and `WasmKpmHandle`:
-- `get_camera_intrinsics() -> Box<[f32]>`: Returns `[fx, fy, cx, cy]` directly from `camera_para.dat`.
-- `get_projection_matrix(near: f32, far: f32) -> Box<[f32]>`: Computes the $4 \times 4$ OpenGL camera projection matrix (16 floats) matching `arGetProjectionMatrix` / `arglCameraFrustumRH` in `jsartoolkitNFT`.
+- `get_camera_intrinsics() -> Result<Box<[f32]>, JsValue>`: Returns `[fx, fy, cx, cy]` directly from `camera_para.dat`.
+- `get_projection_matrix(near: f32, far: f32) -> Result<Box<[f32]>, JsValue>`: Computes the column-major $4 \times 4$ OpenGL camera projection matrix (16 floats) matching `arglCameraFrustumRH` (`lib/SRC/AR/paramGL.c`).
+
+Both are thin wrappers over the free functions `intrinsics_from` / `projection_from`, so the
+math lives in exactly one place and is shared by `WasmNFTHandle` and `WasmKpmHandle`. Both
+return `Err` rather than a zero-filled buffer when no camera parameters are loaded, and
+`get_projection_matrix` additionally rejects any frustum that is not `0 < near < far` — the
+old form emitted `inf`/`NaN` straight into the render path when `far == near`.
 
 ```rust
-pub fn get_camera_intrinsics(&self) -> Box<[f32]> {
-    unsafe {
-        if !self.ar2_handle.cparam_lt.is_null() {
-            let mat = &(*self.ar2_handle.cparam_lt).param.mat;
-            vec![mat[0][0] as f32, mat[1][1] as f32, mat[0][2] as f32, mat[1][2] as f32].into_boxed_slice()
-        } else {
-            vec![0.0, 0.0, 0.0, 0.0].into_boxed_slice()
-        }
-    }
+fn projection_from(param: &ARParam, near: f32, far: f32) -> Result<Box<[f32]>, String> {
+    // ... validation of near/far and frame size ...
+    let w = (param.xsize - 1) as f32;
+    let h = (param.ysize - 1) as f32;
+    let mut proj = vec![0.0f32; 16];
+    proj[0] = 2.0 * fx / w;
+    proj[4] = 2.0 * skew / w;
+    proj[5] = 2.0 * fy / h;
+    proj[8] = 1.0 - (2.0 * cx / w);   // negated w.r.t. the naive OpenCV -> GL form
+    proj[9] = (2.0 * cy / h) - 1.0;
+    proj[10] = -(far + near) / (far - near);
+    proj[11] = -1.0;
+    proj[14] = -(2.0 * far * near) / (far - near);
+    Ok(proj.into_boxed_slice())
 }
 ```
+
+**Sign conventions** follow `arglCameraFrustumRH` exactly:
+
+- The C code flips the image y-axis (`icpara[1][i] = (h-1)*icpara[2][i] - icpara[1][i]`) and
+  then negates the row. For the focal term the two negations cancel, so `m[5]` is
+  $+2 f_y / (h-1)$; for the centre term they cancel too, giving $m[9] = 2 c_y / (h-1) - 1$.
+- `m[8]` is $1 - 2 c_x / (w-1)$, i.e. **negated** relative to the naive form. This is invisible
+  for a centred principal point and only shows up once $c_x$ is off-centre — see the
+  `projection_x_shift_is_negated_relative_to_y` unit test, which is the only configuration that
+  distinguishes the two conventions.
+- Denominators are $w-1$ / $h-1$, not $w$ / $h$, matching the C.
+- The `arParamDecompMat` step is skipped: `ARParam::load` yields a matrix whose extrinsic part
+  is the identity, so `icpara == mat` and the trailing `q * trans` multiply reduces to `q`.
+
+### 2.2.1 Isotropic Camera Parameter Scaling (`scale_param_isotropic`)
+
+`arParamChangeSize` scales rows 0 and 1 anamorphically by $(s_x, s_y)$. That breaks
+$f_x = f_y$ the moment the requested frame aspect differs from the calibration aspect
+(a 16:9 webcam stream against a 4:3 `camera_para.dat`), so the focal lengths are instead
+scaled **isotropically** by the height ratio.
+
+This assumes the wider frame is a horizontal **field-of-view extension** of the calibration,
+not a vertical crop — the extra width adds scene rather than stretching it. The principal
+point is therefore carried across proportionally in each axis independently.
+
+Column 3 (the translation terms) is scaled along with the rest of its row, as
+`arParamChangeSize` does for `col in 0..4`: those terms are non-zero whenever the calibration
+encodes a camera offset, and silently dropping them skews every pose.
 
 ### 2.3 Camera Field-of-View (FOV) Lens Calculation (`simple_video_nft_example.html`)
 To bridge the gap between static test images (captured on narrow calibrated lenses) and live webcams:
