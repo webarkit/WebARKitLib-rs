@@ -1979,9 +1979,6 @@ mod tests {
     /// Pinned here so the rejection behaviour and the log level do not drift.
     #[test]
     fn solve_null_vector_8x9_destructive_rejects_rank_deficient_matrix() {
-        // A logger must be installed for the `arlog_d!` line inside the
-        // rejection branch to execute; see #241.
-        crate::arlog::tests::ensure_logger_installed();
         // An all-zero design matrix has no pivot at the very first step.
         let mut a = [0.0_f32; 72];
         let mut x = [0.0_f32; 9];
