@@ -49,7 +49,7 @@
 
 use std::ops::{Add, AddAssign, Mul, Sub, SubAssign};
 
-use crate::arlog_e;
+use crate::{arlog_d, arlog_e};
 
 // ============================================================================
 // Constants
@@ -1340,12 +1340,17 @@ fn orthogonalize_identity_8x9(x: &mut [f32; 9], q: &[f32; 72]) -> bool {
 /// `linear_solvers.h:349` — **live** at
 /// `homography_estimation/homography_solver.h:197` as the algorithmic core
 /// of the DLT homography solver.
+///
+/// Failures log at `arlog_d!`, not `arlog_e!`: the only runtime caller is the
+/// 4-point DLT inside RANSAC, where a rank-deficient constraint matrix means
+/// the drawn correspondences were degenerate. That is an expected per-frame
+/// rejection, not a caller error.
 #[inline(always)]
 pub fn solve_null_vector_8x9_destructive(x: &mut [f32; 9], a: &mut [f32; 72]) -> bool {
     let mut q = [0.0_f32; 72];
     for step in 0..8 {
         if !orthogonalize_pivot_8x9_basis(step, &mut q, a) {
-            arlog_e!(
+            arlog_d!(
                 "solve_null_vector_8x9_destructive: rank-deficient at step {}",
                 step
             );
@@ -1353,7 +1358,7 @@ pub fn solve_null_vector_8x9_destructive(x: &mut [f32; 9], a: &mut [f32; 72]) ->
         }
     }
     if !orthogonalize_identity_8x9(x, &q) {
-        arlog_e!("solve_null_vector_8x9_destructive: identity-orthogonalization failed");
+        arlog_d!("solve_null_vector_8x9_destructive: identity-orthogonalization failed");
         return false;
     }
     true
