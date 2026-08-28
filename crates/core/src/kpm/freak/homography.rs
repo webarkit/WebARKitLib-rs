@@ -83,13 +83,17 @@
 //! - **Helpers are private** (`fn`, no `pub`) — the public surface is the
 //!   list of functions explicitly requested in M6-3 (#65), plus the
 //!   [`RobustHomography`] struct.
-//! - **Errors signalled via `bool`** + an `arlog_e!` log line at every
-//!   failure site, per CLAUDE.md.
+//! - **Errors signalled via `bool`** + an `arlog_*!` log line at every
+//!   failure site, per CLAUDE.md. Misconfiguration and invalid inputs log at
+//!   `arlog_e!`; per-frame rejections on the KPM search path (degenerate point
+//!   configurations, hypotheses that fail the geometric checks) log at
+//!   `arlog_d!` — they are expected at runtime and would otherwise flood the
+//!   console for as long as the tracker is searching.
 
 use std::ops::{Add, Mul};
 
-use crate::arlog_e;
 use crate::kpm::backend::KpmError;
+use crate::{arlog_d, arlog_e};
 
 use super::math::{copy_vector_9, max2, min2, solve_null_vector_8x9_destructive, sqr};
 
@@ -1405,7 +1409,8 @@ fn fast_median(a: &mut [(f32, i32)]) {
 /// # Returns
 /// `false` if `num_points < 4`, if every draw failed the geometric checks,
 /// or if all hypotheses converged to zero-cost ties — failures logged via
-/// `arlog_e!`.
+/// `arlog_d!`: these are expected per-frame rejections during marker search,
+/// not caller errors.
 ///
 /// # C++ equivalent
 /// `vision::PreemptiveRobustHomography<T>` from
@@ -1440,7 +1445,7 @@ pub fn preemptive_robust_homography(
     debug_assert!(hyp_costs.len() >= max_num_hypotheses as usize);
 
     if num_points < SAMPLE_SIZE {
-        arlog_e!(
+        arlog_d!(
             "preemptive_robust_homography: num_points ({}) < {}",
             num_points,
             SAMPLE_SIZE
@@ -1517,7 +1522,7 @@ pub fn preemptive_robust_homography(
     }
 
     if num_hypotheses == 0 {
-        arlog_e!(
+        arlog_d!(
             "preemptive_robust_homography: no valid hypothesis after {} trials",
             max_trials
         );
@@ -1914,7 +1919,9 @@ fn regularize_levenberg_marquardt_8x8(out: &mut [f32; 64], in_jt_j: &[f32; 64], 
 /// Specialised to N=8 (the only call site in homography polish).
 ///
 /// Returns `false` if `A` is not SPD (any pivot reaches zero or negative).
-/// Failure is logged via `arlog_e!`.
+/// Failure is logged via `arlog_d!`: this runs inside the Levenberg-Marquardt
+/// refinement loop, so a non-SPD normal-equations matrix is an expected
+/// per-frame outcome that simply ends refinement early.
 ///
 /// C++ equivalent: `vision::SolvePositiveDefiniteSystem<T, 8>` from
 /// `math/cholesky_linear_solvers.h:88`, with the underlying Cholesky from
@@ -1932,7 +1939,7 @@ fn solve_positive_definite_system_8x8(x: &mut [f32; 8], a: &[f32; 64], b: &[f32;
             }
             if i == j {
                 if s < 0.0 {
-                    arlog_e!(
+                    arlog_d!(
                         "solve_positive_definite_system_8x8: matrix not SPD (s={} at i={})",
                         s,
                         i
@@ -1943,7 +1950,7 @@ fn solve_positive_definite_system_8x8(x: &mut [f32; 8], a: &[f32; 64], b: &[f32;
             } else {
                 let l_jj = l[j * 8 + j];
                 if l_jj == 0.0 {
-                    arlog_e!("solve_positive_definite_system_8x8: zero pivot at j={}", j);
+                    arlog_d!("solve_positive_definite_system_8x8: zero pivot at j={}", j);
                     return false;
                 }
                 l[i * 8 + j] = s / l_jj;
@@ -1960,7 +1967,7 @@ fn solve_positive_definite_system_8x8(x: &mut [f32; 8], a: &[f32; 64], b: &[f32;
         }
         let l_ii = l[i * 8 + i];
         if l_ii == 0.0 {
-            arlog_e!(
+            arlog_d!(
                 "solve_positive_definite_system_8x8: zero diagonal in forward substitution at i={}",
                 i
             );
@@ -1977,7 +1984,7 @@ fn solve_positive_definite_system_8x8(x: &mut [f32; 8], a: &[f32; 64], b: &[f32;
         }
         let l_ii = l[i * 8 + i];
         if l_ii == 0.0 {
-            arlog_e!(
+            arlog_d!(
                 "solve_positive_definite_system_8x8: zero diagonal in back substitution at i={}",
                 i
             );
