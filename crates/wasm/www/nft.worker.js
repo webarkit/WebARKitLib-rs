@@ -6,6 +6,8 @@
  *  Offloads CPU-intensive feature extraction and template matching from the main UI thread.
  */
 
+const VALID_VARIANTS = ['dist-std', 'dist-simd'];
+
 let wasmModule = null;
 let kpmHandle = null;
 let nftHandle = null;
@@ -25,6 +27,12 @@ self.onmessage = async function (e) {
             try {
                 const { variant, paramData, isetData, fsetData, fset3Data, width, height } = msg;
 
+                // Only the two builds produced by `npm run build:wasm` are importable.
+                // `variant` arrives over postMessage, so never interpolate it unchecked.
+                if (!VALID_VARIANTS.includes(variant)) {
+                    throw new Error(`Unknown WASM variant '${variant}' (expected one of ${VALID_VARIANTS.join(', ')})`);
+                }
+
                 // Dynamically import WASM module in WebWorker
                 const modulePath = `../pkg/${variant}/webarkitlib_wasm.js`;
                 const module = await import(modulePath);
@@ -36,7 +44,6 @@ self.onmessage = async function (e) {
                 // Instantiate WasmKpmHandle and WasmNFTHandle inside worker thread
                 kpmHandle = new wasmModule.WasmKpmHandle(paramData, width, height);
                 nftHandle = new wasmModule.WasmNFTHandle(paramData, width, height);
-                console.log(nftHandle);
 
                 kpmHandle.load_ref_data(fset3Data);
                 nftHandle.load_nft_marker(isetData, fsetData);
@@ -69,7 +76,17 @@ self.onmessage = async function (e) {
         }
 
         case 'process': {
-            if (!isInitialized || isProcessing) return;
+            // The main thread clears its `workerBusy` flag only when a message
+            // comes back, so a silent return here would stall the pipeline for
+            // good. Always acknowledge, even when the frame is dropped.
+            if (!isInitialized || isProcessing) {
+                self.postMessage({
+                    type: 'skipped',
+                    reason: isInitialized ? 'busy' : 'notInitialized',
+                    pipelineState
+                });
+                return;
+            }
             isProcessing = true;
 
             const { rgba, width, height } = msg;
